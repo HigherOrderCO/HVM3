@@ -13,10 +13,10 @@ import qualified Data.Map.Strict as MS
 
 reduceAt :: Book -> Loc -> HVM Term
 reduceAt book host = do 
-  root <- got 0
-  root <- doExtractCore book root
-  putStrLn $ "---------------- ROOT:"
-  putStrLn $ coreToString root
+  -- root <- got 0
+  -- root <- doExtractCore book root
+  -- putStrLn $ "---------------- ROOT:"
+  -- putStrLn $ coreToString root
   term <- got host
   let tag = termTag term
   let lab = termLab term
@@ -107,22 +107,15 @@ reduceAt book host = do
         USP -> cont host (reduceOpyUsp term val)
         _   -> set (loc + 1) val >> return term
     UDP -> do
-      let key = termKey term
-      sub <- got key
-      if termTag sub == _SUB_
-        then do
-          val <- reduceAt book (loc + 1)
-          case tagT (termTag val) of
-            ERA -> cont host (reduceUdpEra term val)
-            LAM -> cont host (reduceUdpLam term val)
-            SUP -> cont host (reduceUdpSup term val)
-            CTR -> cont host (reduceUdpCtr term val)
-            W32 -> cont host (reduceUdpW32 term val)
-            USP -> cont host (reduceUdpUsp term val)
-            _   -> set (loc + 1) val >> return term
-        else do
-          set host sub
-          reduceAt book host
+      val <- reduceAt book (loc + 0)
+      case tagT (termTag val) of
+        ERA -> cont host (reduceUdpEra term val)
+        LAM -> cont host (reduceUdpLam term val)
+        SUP -> cont host (reduceUdpSup term val)
+        CTR -> cont host (reduceUdpCtr term val)
+        W32 -> cont host (reduceUdpW32 term val)
+        USP -> cont host (reduceUdpUsp term val)
+        _   -> set (loc + 0) val >> return term
     VAR -> do
       sub <- got (loc + 0)
       if termTag sub == _SUB_
@@ -178,7 +171,7 @@ normalAtWith reduceAt book host = do
       normalAtWith reduceAt book (loc + 2)
       return whnf
     UDP -> do
-      normalAtWith reduceAt book (loc + 1)
+      normalAtWith reduceAt book (loc + 0)
       return whnf
     USP -> do
       normalAtWith reduceAt book (loc + 0)

@@ -130,7 +130,6 @@ Loc term_key(Term term) {
   switch (term_tag(term)) {
     case DP0: return term_loc(term) + 0;
     case DP1: return term_loc(term) + 1;
-    case UDP: return term_loc(term) + 0;
     case VAR: return term_loc(term) + 0;
     default:  return 0;
   }
@@ -321,9 +320,8 @@ Term reduce_app_usp(Term app, Term usp) {
   Loc ap1     = alloc_node(2);
   Term cop;
   if (term_tag(arg) != UDP) {
-    Loc du0 = alloc_node(2);
-    set(du0 + 0, term_new(SUB, 0, 0));
-    set(du0 + 1, arg);
+    Loc du0 = alloc_node(1);
+    set(du0 + 0, arg);
     cop = term_new(UDP, usp_lab, du0);
   } else {
     cop = arg;
@@ -599,9 +597,8 @@ Term reduce_mat_usp(Term mat, Term usp) {
     Term cse = got(mat_loc + 1 + i);
     Term cop;
     if (term_tag(cse) != UDP) {
-      Loc du0 = alloc_node(2);
-      set(du0 + 0, term_new(SUB, 0, 0));
-      set(du0 + 1, got(mat_loc + 1 + i));
+      Loc du0 = alloc_node(1);
+      set(du0 + 0, got(mat_loc + 1 + i));
       cop = term_new(UDP, usp_lab, du0);
     } else {
       cop = cse;
@@ -715,9 +712,8 @@ Term reduce_opx_usp(Term opx, Term usp) {
   Loc us0     = alloc_node(2);
   Term cop;
   if (term_tag(nmy) != UDP) {
-    Loc du0 = alloc_node(2);
-    set(du0 + 0, term_new(SUB, 0, 0));
-    set(du0 + 1, nmy);
+    Loc du0 = alloc_node(1);
+    set(du0 + 0, nmy);
     cop = term_new(UDP, usp_lab, du0);
   } else {
     cop = nmy;
@@ -856,17 +852,15 @@ Term reduce_opy_w32(Term opy, Term w32) {
 // x <- *
 Term reduce_udp_era(Term udp, Term era) {
   inc_itr();
-  Loc udp_loc = term_loc(udp);
-  set(udp_loc + 0, era);
   return era;
 }
 
 // ! &L{F} = λx(f)
-// ----------------- UDP-LAM
+// ---------------- UDP-LAM
+// ! &L{F} = λx0(G)
 // ! &L{G} = f
-// F <- λx0(G)
-// F <- λx1(G)
 // x <- &L{x0 x1}
+// λx1(G)
 Term reduce_udp_lam(Term udp, Term lam) {
   inc_itr();
   Loc udp_loc = term_loc(udp);
@@ -878,9 +872,8 @@ Term reduce_udp_lam(Term udp, Term lam) {
   Loc su0     = alloc_node(2);
   Term cop;
   if (term_tag(bod) != UDP) {
-    Loc du0 = alloc_node(2);
-    set(du0 + 0, term_new(SUB, 0, 0));
-    set(du0 + 1, bod);
+    Loc du0 = alloc_node(1);
+    set(du0 + 0, bod);
     cop = term_new(UDP, udp_lab, du0);
   } else {
     cop = bod;
@@ -903,9 +896,9 @@ Term reduce_udp_sup(Term udp, Term sup) {
 }
 
 // ! %L{x} = %R{a b}
-// ------------------- UDP-USP
+// ----------------- UDP-USP
 // if L == R:
-//   x <- b
+//   ! %L{x} = b
 //   a
 // else:
 //   TODO
@@ -948,9 +941,8 @@ Term reduce_udp_ctr(Term udp, Term ctr) {
     Term fld = got(ctr_loc + i);
     Term cop;
     if (term_tag(fld) != UDP) {
-      Loc du0 = alloc_node(2);
-      set(du0 + 0, term_new(SUB, 0, 0));
-      set(du0 + 1, got(ctr_loc + i));
+      Loc du0 = alloc_node(1);
+      set(du0 + 0, got(ctr_loc + i));
       cop = term_new(UDP, udp_lab, du0);
     } else {
       cop = fld;
@@ -964,12 +956,9 @@ Term reduce_udp_ctr(Term udp, Term ctr) {
 
 // ! %L{x} = 123
 // ------------- UDP-W32
-// x <- 123
 // 123
 Term reduce_udp_w32(Term udp, Term w32) {
   inc_itr();
-  Loc udp_loc = term_loc(udp);
-  set(udp_loc + 0, w32);
   return w32;
 }
 

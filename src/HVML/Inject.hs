@@ -94,7 +94,6 @@ injectCore book (Op2 opr nm0 nm1) loc = do
   injectCore book nm1 (opx + 1)
   lift $ set loc (termNew _OPX_ (fromIntegral $ fromEnum opr) opx)
 
-
 injectCore book (USp lab tm0 tm1) loc = do
   usp <- lift $ allocNode 2
   injectCore book tm0 (usp + 0)
@@ -102,10 +101,9 @@ injectCore book (USp lab tm0 tm1) loc = do
   lift $ set loc (termNew _USP_ lab usp)
 
 injectCore book (UDp lab dp0 val bod) loc = do
-  udp <- lift $ allocNode 2
-  lift $ set (udp + 0) (termNew _SUB_ 0 0)
+  udp <- lift $ allocNode 1
   modify $ \s -> s { args = Map.insert dp0 (termNew _UDP_ lab udp) (args s) }
-  injectCore book val (udp + 1)
+  injectCore book val (udp + 0)
   injectCore book bod loc
 
 doInjectCoreAt :: Book -> Core -> Loc -> [(String, Term)] -> HVM Term

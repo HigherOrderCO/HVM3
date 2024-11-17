@@ -6,9 +6,12 @@ import Control.Monad (foldM)
 import Control.Monad.State
 import Data.Char (chr, ord)
 import Data.Word
+import HVML.Show
 import HVML.Type
 import qualified Data.IntSet as IS
 import qualified Data.Map.Strict as MS
+
+import Debug.Trace
 
 type ExtractM a = StateT (IS.IntSet, MS.Map Loc String) HVM a
 
@@ -104,23 +107,8 @@ extractCore book term = case tagT (termTag term) of
 
   UDP -> do
     let loc = termLoc term
-    let lab = termLab term
-    let key = termKey term
-    sub <- lift $ got key
-    if termTag sub == _SUB_
-    then do
-      (dups, _) <- get
-      if IS.member (fromIntegral loc) dups
-      then do
-        name <- genName key
-        return $ Var name
-      else do
-        dp0 <- genName (loc + 0)
-        val <- lift $ got (loc + 1)
-        modify $ \x -> (IS.insert (fromIntegral loc) dups, snd x)
-        val0 <- extractCore book val
-        return $ UDp lab dp0 val0 (Var dp0)
-    else extractCore book sub
+    val <- lift $ got loc
+    extractCore book $ val
 
   USP -> do
     let loc = termLoc term
@@ -259,10 +247,10 @@ liftDups (USp lab tm0 tm1) = do
   tm0 <- liftDups tm0
   tm1 <- liftDups tm1
   return $ USp lab tm0 tm1
-liftDups (UDp lab dp val bod) = do
+liftDups (UDp lab dp0 val bod) = do
   val <- liftDups val
   bod <- liftDups bod
-  modify (\oldState k -> oldState (UDp lab dp val k))
+  modify (\oldState k -> oldState (UDp lab dp0 val k))
   return bod
 
 doLiftDups :: Core -> Core

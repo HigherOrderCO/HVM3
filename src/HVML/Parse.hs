@@ -184,30 +184,42 @@ parseCtr = do
     return fds
   return $ Ctr cid fds
 
-parseMat :: ParserM Core
 parseMat = do
   consume "~"
   val <- parseCore
   consume "{"
   css <- many $ do
     closeWith "}"
-    consume "#"
-    name <- parseName
-    cids <- parsedCtrToCid <$> getState
-    aris <- parsedCtrToAri <$> getState
-    ari  <- case MS.lookup name aris of
-      Just ari -> return ari
-      Nothing  -> return (-1)
-    cid  <- case MS.lookup name cids of
-      Just id -> return id
-      Nothing -> case reads name of
-        [(num, "")] -> return (fromIntegral (num :: Integer))
-        _ -> if name == "_"
+    next <- lookAhead anyChar
+    case next of
+      '#' -> do
+        -- Parse ADT constructor case
+        consume "#"
+        name <- parseName
+        cids <- parsedCtrToCid <$> getState
+        aris <- parsedCtrToAri <$> getState
+        ari  <- case MS.lookup name aris of
+          Just ari -> return ari
+          Nothing  -> return (-1)
+        cid  <- case MS.lookup name cids of
+          Just id -> return id
+          Nothing -> if name == "_"
+            then return 0xFFFFFFFF
+            else fail $ "Unknown constructor: " ++ name
+        consume ":"
+        cas <- parseCore
+        return (cid, (ari, cas))
+      _ -> do
+        -- Parse U32 or wildcard case
+        name <- parseName
+        cid <- if name == "_"
           then return 0xFFFFFFFF
-          else fail $ "Unknown constructor: " ++ name
-    consume ":"
-    cas <- parseCore
-    return (cid, (ari, cas))
+          else case reads name of
+            [(num, "")] -> return (fromIntegral (num :: Integer))
+            _ -> fail $ "Invalid numeric pattern or wildcard"
+        consume ":"
+        cas <- parseCore
+        return (cid, (-1, cas))
   consume "}"
   let sortedCss = map snd $ sortOn fst css
   return $ Mat val sortedCss

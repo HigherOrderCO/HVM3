@@ -1,0 +1,47 @@
+data Nat { #Z #S{pred} }
+
+// Converts an U32 to a Nat
+@nat(n) = ~n{
+  0: #Z
+  _: λnp #S{@nat(np)}
+}
+
+// Converts a Nat to an U32
+@u32(n) = ~n{
+  #Z: 0
+  #S: λnp (+ 1 @u32(np))
+}
+
+// Adds two Nats
+@add(a b) = ~a{
+  #Z: b
+  #S: λap #S{@add(ap b)}
+}
+
+// Compares two Nats for equality
+@eq(a b) = ~a{
+  #Z: ~b{
+    #Z: 1
+    #S: λbp 0
+  }
+  #S: λap ~b{
+    #Z: 0
+    #S: λbp @eq(ap bp)
+  }
+}
+
+// A Pseudo Metavar "X"
+// (Implemented as a superposition of all Nats)
+@X = %0{#Z #S{@X}}
+
+// Collapses a boolean view on 'X', returning it
+@colX(X) = !%0{v}=X @colXGo(v)
+
+@colXGo(v) = ~v{
+  0: (+ 1 @colXGo(v))
+  _: λp 0
+}
+
+// Solves X + 1234 = 10000
+@main = @colX(@eq(@add(@nat(12345) @X) @nat(1000000)))
+// Interactions: ~24m
