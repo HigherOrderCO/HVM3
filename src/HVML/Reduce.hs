@@ -13,10 +13,10 @@ import qualified Data.Map.Strict as MS
 
 reduceAt :: Book -> Loc -> HVM Term
 reduceAt book host = do 
-  -- root <- got 0
-  -- root <- doExtractCore book root
-  -- putStrLn $ "---------------- ROOT:"
-  -- putStrLn $ coreToString root
+  root <- got 0
+  root <- doExtractCore book root
+  putStrLn $ "---------------- ROOT:"
+  putStrLn $ coreToString root
   term <- got host
   let tag = termTag term
   let lab = termLab term

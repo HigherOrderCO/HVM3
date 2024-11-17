@@ -861,6 +861,14 @@ Term reduce_udp_era(Term udp, Term era) {
 // ! &L{G} = f
 // x <- &L{x0 x1}
 // λx1(G)
+
+// ! &L{F} = λx(f)
+// ---------------- UDP-LAM
+// ! &L{F} = *
+// ! &L{G} = f
+// x <- &L{x0 x1}
+// λx1(G)
+
 Term reduce_udp_lam(Term udp, Term lam) {
   inc_itr();
   Loc udp_loc = term_loc(udp);
@@ -884,9 +892,35 @@ Term reduce_udp_lam(Term udp, Term lam) {
   set(lm1 + 1, cop);
   set(su0 + 0, term_new(VAR, 0, lm0));
   set(su0 + 1, term_new(VAR, 0, lm1));
-  set(udp_loc + 0, term_new(LAM, 0, lm0));
+  set(udp_loc + 0, term_new(LAM, 0, lm1));
   set(lam_loc + 0, term_new(USP, udp_lab, su0));
-  return got(udp_loc + 0);
+  return term_new(LAM, 0, lm0);
+
+  //inc_itr();
+  //Loc udp_loc = term_loc(udp);
+  //Lab udp_lab = term_lab(udp);
+  //Loc lam_loc = term_loc(lam);
+  //Term bod    = got(lam_loc + 1);
+  //Loc lm0     = alloc_node(2);
+  //Loc lm1     = alloc_node(2);
+  //Loc su0     = alloc_node(2);
+  //Term cop;
+  //if (term_tag(bod) != UDP) {
+    //Loc du0 = alloc_node(1);
+    //set(du0 + 0, bod);
+    //cop = term_new(UDP, udp_lab, du0);
+  //} else {
+    //cop = bod;
+  //}
+  //set(lm0 + 0, term_new(SUB, 0, 0));
+  //set(lm0 + 1, cop);
+  //set(lm1 + 0, term_new(SUB, 0, 0));
+  //set(lm1 + 1, cop);
+  //set(su0 + 0, term_new(VAR, 0, lm0));
+  //set(su0 + 1, term_new(VAR, 0, lm1));
+  //set(udp_loc + 0, term_new(LAM, 0, lm0));
+  //set(lam_loc + 0, term_new(USP, udp_lab, su0));
+  //return term_new(LAM, 0, lm1);
 }
 
 // TODO: UDP-SUP

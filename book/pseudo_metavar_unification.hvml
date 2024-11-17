@@ -1,4 +1,7 @@
+// Unary Peano Nats
 data Nat { #Z #S{pred} }
+data Par { #P{fst snd} }
+data Lis { #N #C{head tail} }
 
 // Converts an U32 to a Nat
 @nat(n) = ~n{
@@ -18,7 +21,24 @@ data Nat { #Z #S{pred} }
   #S: λap #S{@add(ap b)}
 }
 
+// Muls two Nats
+@mul(a b) = ~a{
+  #Z: #Z
+  #S: λap !&1{b0 b1}=b @add(b0 @mul(ap b1))
+}
+
 // Compares two Nats for equality
+//@eq(a b) = (~a{
+  //#Z: λb0 ~b0{
+    //#Z: 1
+    //#S: λbp0 0
+  //}
+  //#S: λap λb1 ~b1{
+    //#Z: 0
+    //#S: λbp1 @eq(ap bp1)
+  //}
+//} b)
+
 @eq(a b) = ~a{
   #Z: ~b{
     #Z: 1
@@ -32,16 +52,75 @@ data Nat { #Z #S{pred} }
 
 // A Pseudo Metavar "X"
 // (Implemented as a superposition of all Nats)
-@X = %0{#Z #S{@X}}
-
-// Collapses a boolean view on 'X', returning it
-@colX(X) = !%0{v}=X @colXGo(v)
-
-@colXGo(v) = ~v{
-  0: (+ 1 @colXGo(v))
-  _: λp 0
+//@X = %0{#Z #S{@X}}
+@X(n) = ~n{
+  0: #Z
+  _: λnp %0{#Z #S{@X(np)}}
 }
 
-// Solves X + 1234 = 10000
-@main = @colX(@eq(@add(@nat(12345) @X) @nat(1000000)))
+//@colX(X) =
+  //!%0{kv} = X
+  //@colKV(kv)
+
+@col(X) =
+  !%0{x}=X
+  ~x{
+    #P: λk λv ~k{
+      0: @col(x)
+      _: λp λt(t k v)
+    }
+  }
+
+@list(n x) = ~n{
+  0: #N
+  _: λnp !%0{h}=x #C{h @list(np h)}
+}
+
+@find(xs) = ~xs {
+  #N: 0
+  #C: λh λt ~h {
+    #P: λk λv ~k {
+      0: @find(t)
+      _: λp v
+    }
+  }
+}
+
+//@main = @u32(@mul(@nat(10) @nat(20)))
+//@main = ~ @eq(@mul(@nat(2) @X) @nat(10)) {
+  //0: 0
+  //_: λp @X
+//}
+
+//@main = @eq(@nat(10) @nat(10))
+
+@main =
+  //@eq(@add(@nat(8) @X(999)) @nat(10))
+
+  ! x = #P{@eq(@mul(@X(10) @nat(2)) @nat(12)) @u32(@X(10))}
+  @find(@list(10 x))
+  //@find(#1{#0{0 0} #1{#0{0 1} #1{#0{0 2} #1{#0{0 3} #1{#0{0 4} #1{#0{0 5} #1{#0{1 6} #1{#0{0 7} #1{#0{0 8} #1{#0{0 9} #0{}}}}}}}}}}})
+  //@col(x)
+
+  //!%0{KV} = x
+  //@colKV(KV)
+
+  //λt(t KV KV KV KV KV KV)
+
+
+  //! x = #P{@eq(@add(@X(10) @nat(2)) @nat(8)) @X(10)}
+  //@colX(x)
+
+
+  //!%0{kv} = val
+  //λt(t kv kv kv)
+
+//λa ((a
+  //%0{0 %0{0 %0{0 %0{0 %0{1 0}}}}})
+  //%0{#0{} #1{%0{#0{} #1{%0{#0{} #1{%0{#0{} #1{%0{#0{} #1{%0{#0{} #1{%0{#0{} #1{%0{#0{} #1{%0{#0{} #1{%0{#0{} #1{#0{}}}}}}}}}}}}}}}}}}}}})
+
+//@main = @eq(@mul(@nat(1) #Z) @nat(100))
+
+// Solves X + 1234 = 1000000
+//@main = @colX(@eq(@mul(@nat(10) @X) @nat(200)))
 // Interactions: ~24m
