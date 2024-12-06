@@ -1,3 +1,9 @@
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE StandaloneDeriving #-}
+
 module HVML.Type where
 
 import Data.Map.Strict as MS
@@ -7,21 +13,25 @@ import Foreign.Ptr
 -- Core Types
 -- ----------
 
-data Core
-  = Var String -- x
-  | Ref String Word64 [Core] -- @fn
-  | Era -- *
-  | Lam String Core -- λx(F)
-  | App Core Core -- (f x)
-  | Sup Word64 Core Core -- &L{a b}
-  | Dup Word64 String String Core Core -- ! &L{a b} = v body
-  | Ctr Word64 [Core] -- #Ctr{a b ...}
-  | Mat Core [(String,Core)] [(String,[String],Core)] -- ~ v { #A{a b ...}: ... #B{a b ...}: ... ... }
-  | U32 Word32 -- 123
-  | Chr Char -- 'a'
-  | Op2 Oper Core Core -- (+ a b)
-  | Let Mode String Core Core -- ! x = v body
-  deriving (Show, Eq)
+data CoreT r
+  = VarT String
+  | RefT String Word64 [r]
+  | EraT
+  | LamT String r
+  | AppT r r
+  | SupT Word64 r r
+  | DupT Word64 String String r r
+  | CtrT Word64 [r]
+  | MatT r [(String,r)] [(String,[String],r)]
+  | U32T Word32
+  | ChrT Char
+  | Op2T Oper r r
+  | LetT Mode String r r
+  deriving (Show, Eq, Functor, Foldable, Traversable)
+
+newtype Core = Core { unCore :: CoreT Core }
+deriving instance Show Core
+deriving instance Eq Core
 
 data Mode
   = LAZY
@@ -40,13 +50,8 @@ data Oper
 -- - copy: true when ref-copy mode is enabled
 -- - args: a list of (isArgStrict, argName) pairs
 -- - core: the function's body
--- Note: ref-copy improves C speed, but increases interaction count
 type Func = ((Bool, [(Bool,String)]), Core)
 
--- NOTE: the new idToLabs field is a map from a function id to a set of all
--- DUP/SUP labels used in its body. note that, when a function uses either
--- HVM.SUP or HVM.DUP internally, this field is set to Nothing. this will be
--- used to apply the fast DUP-REF and REF-SUP interactions, when safe to do so
 data Book = Book
   { idToFunc :: MS.Map Word64 Func
   , idToName :: MS.Map Word64 String
@@ -143,91 +148,91 @@ foreign import ccall unsafe "Runtime.c inc_itr"
   incItr :: TID -> Word64 -> IO Word64
 
 foreign import ccall unsafe "Runtime.c reduce"
-  reduceC :: Word8 -> Term -> IO Term
+  reduceC :: TID -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_let"
-  reduceLet :: Word8 -> Term -> Term -> IO Term
+  reduceLet :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_app_era"
-  reduceAppEra :: Word8 -> Term -> Term -> IO Term
+  reduceAppEra :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_app_lam"
-  reduceAppLam :: Word8 -> Term -> Term -> IO Term
+  reduceAppLam :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_app_sup"
-  reduceAppSup :: Word8 -> Term -> Term -> IO Term
+  reduceAppSup :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_app_ctr"
-  reduceAppCtr :: Word8 -> Term -> Term -> IO Term
+  reduceAppCtr :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_app_w32"
-  reduceAppW32 :: Word8 -> Term -> Term -> IO Term
+  reduceAppW32 :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_dup_era"
-  reduceDupEra :: Word8 -> Term -> Term -> IO Term
+  reduceDupEra :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_dup_lam"
-  reduceDupLam :: Word8 -> Term -> Term -> IO Term
+  reduceDupLam :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_dup_sup"
-  reduceDupSup :: Word8 -> Term -> Term -> IO Term
+  reduceDupSup :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_dup_ctr"
-  reduceDupCtr :: Word8 -> Term -> Term -> IO Term
+  reduceDupCtr :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_dup_w32"
-  reduceDupW32 :: Word8 -> Term -> Term -> IO Term
+  reduceDupW32 :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_dup_ref"
-  reduceDupRef :: Word8 -> Term -> Term -> IO Term
+  reduceDupRef :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_mat_era"
-  reduceMatEra :: Word8 -> Term -> Term -> IO Term
+  reduceMatEra :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_mat_lam"
-  reduceMatLam :: Word8 -> Term -> Term -> IO Term
+  reduceMatLam :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_mat_sup"
-  reduceMatSup :: Word8 -> Term -> Term -> IO Term
+  reduceMatSup :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_mat_ctr"
-  reduceMatCtr :: Word8 -> Term -> Term -> IO Term
+  reduceMatCtr :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_mat_w32"
-  reduceMatW32 :: Word8 -> Term -> Term -> IO Term
+  reduceMatW32 :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opx_era"
-  reduceOpxEra :: Word8 -> Term -> Term -> IO Term
+  reduceOpxEra :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opx_lam"
-  reduceOpxLam :: Word8 -> Term -> Term -> IO Term
+  reduceOpxLam :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opx_sup"
-  reduceOpxSup :: Word8 -> Term -> Term -> IO Term
+  reduceOpxSup :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opx_ctr"
-  reduceOpxCtr :: Word8 -> Term -> Term -> IO Term
+  reduceOpxCtr :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opx_w32"
-  reduceOpxW32 :: Word8 -> Term -> Term -> IO Term
+  reduceOpxW32 :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opy_era"
-  reduceOpyEra :: Word8 -> Term -> Term -> IO Term
+  reduceOpyEra :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opy_lam"
-  reduceOpyLam :: Word8 -> Term -> Term -> IO Term
+  reduceOpyLam :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opy_sup"
-  reduceOpySup :: Word8 -> Term -> Term -> IO Term
+  reduceOpySup :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opy_ctr"
-  reduceOpyCtr :: Word8 -> Term -> Term -> IO Term
+  reduceOpyCtr :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opy_w32"
-  reduceOpyW32 :: Word8 -> Term -> Term -> IO Term
+  reduceOpyW32 :: TID -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_ref_sup"
-  reduceRefSup :: Word8 -> Term -> Word64 -> IO Term
+  reduceRefSup :: TID -> Term -> Word64 -> IO Term
 
 foreign import ccall unsafe "Runtime.c hvm_define"
   hvmDefine :: Word64 -> FunPtr (IO Term) -> IO ()
@@ -258,15 +263,15 @@ tagT 0x03 = SUB
 tagT 0x04 = REF
 tagT 0x05 = LET
 tagT 0x06 = APP
-tagT 0x08 = MAT
-tagT 0x09 = OPX
-tagT 0x0A = OPY
-tagT 0x0B = ERA
-tagT 0x0C = LAM
-tagT 0x0D = SUP
-tagT 0x0F = CTR
-tagT 0x10 = W32
-tagT 0x11 = CHR
+tagT 0x07 = MAT
+tagT 0x08 = OPX
+tagT 0x09 = OPY
+tagT 0x0A = ERA
+tagT 0x0B = LAM
+tagT 0x0C = SUP
+tagT 0x0D = CTR
+tagT 0x0E = W32
+tagT 0x0F = CHR
 tagT tag  = error $ "unknown tag: " ++ show tag
 
 _DP0_ :: Tag
@@ -291,31 +296,31 @@ _APP_ :: Tag
 _APP_ = 0x06
 
 _MAT_ :: Tag
-_MAT_ = 0x08
+_MAT_ = 0x07
 
 _OPX_ :: Tag
-_OPX_ = 0x09
+_OPX_ = 0x08
 
 _OPY_ :: Tag
-_OPY_ = 0x0A
+_OPY_ = 0x09
 
 _ERA_ :: Tag
-_ERA_ = 0x0B
+_ERA_ = 0x0A
 
 _LAM_ :: Tag
-_LAM_ = 0x0C
+_LAM_ = 0x0B
 
 _SUP_ :: Tag
-_SUP_ = 0x0D
+_SUP_ = 0x0C
 
 _CTR_ :: Tag
-_CTR_ = 0x0F
+_CTR_ = 0x0D
 
 _W32_ :: Tag
-_W32_ = 0x10
+_W32_ = 0x0E
 
 _CHR_ :: Tag
-_CHR_ = 0x11
+_CHR_ = 0x0F
 
 modeT :: Lab -> Mode
 modeT 0x00 = LAZY
@@ -356,3 +361,50 @@ ifLetLab book (Mat _ _ [(ctr,_,_),("_",_,_)]) =
     Just cid -> 1 + cid
     Nothing  -> 0
 ifLetLab book _ = 0
+
+-- Pattern Synonyms
+-- ----------------
+
+pattern Var :: String -> Core
+pattern Var x = Core (VarT x)
+
+pattern Ref :: String -> Word64 -> [Core] -> Core
+pattern Ref a b c = Core (RefT a b c)
+
+pattern Era :: Core
+pattern Era = Core EraT
+
+pattern Lam :: String -> Core -> Core
+pattern Lam a b = Core (LamT a b)
+
+pattern App :: Core -> Core -> Core
+pattern App a b = Core (AppT a b)
+
+pattern Sup :: Word64 -> Core -> Core -> Core
+pattern Sup a b c = Core (SupT a b c)
+
+pattern Dup :: Word64 -> String -> String -> Core -> Core -> Core
+pattern Dup a b c d e = Core (DupT a b c d e)
+
+pattern Ctr :: Word64 -> [Core] -> Core
+pattern Ctr a b = Core (CtrT a b)
+
+pattern Mat :: Core -> [(String,Core)] -> [(String,[String],Core)] -> Core
+pattern Mat a b c = Core (MatT a b c)
+
+pattern U32 :: Word32 -> Core
+pattern U32 a = Core (U32T a)
+
+pattern Chr :: Char -> Core
+pattern Chr a = Core (ChrT a)
+
+pattern Op2 :: Oper -> Core -> Core -> Core
+pattern Op2 a b c = Core (Op2T a b c)
+
+pattern Let :: Mode -> String -> Core -> Core -> Core
+pattern Let a b c d = Core (LetT a b c d)
+
+{-# COMPLETE Var, Ref, Era, Lam, App, Sup, Dup, Ctr, Mat, U32, Chr, Op2, Let #-}
+
+
+

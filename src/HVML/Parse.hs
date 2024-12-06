@@ -346,11 +346,12 @@ parseDef = do
     try $ string "("
     args <- many $ do
       closeWith ")"
-      strict <- option False $ do
+      bang <- option False $ do
         try $ do
           consume "!"
           return True
       arg <- parseName
+      let strict = bang || head arg == '&'
       return (strict, arg)
     consume ")"
     return args

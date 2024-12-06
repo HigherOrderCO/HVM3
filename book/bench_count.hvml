@@ -9,3 +9,9 @@
 //TIME: 1.1376750 seconds
 //SIZE: 3 nodes
 //PERF: 10547.828 MIPS
+
+//WORK: 12000000004 interactions
+//TIME: 1.2051170 seconds
+//SIZE: 3 nodes
+//PERF: 9957.539 MIPS
+
