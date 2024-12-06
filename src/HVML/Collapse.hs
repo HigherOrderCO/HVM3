@@ -4,6 +4,8 @@
 
 module HVML.Collapse where
 
+import Control.Concurrent
+import Control.Concurrent.MVar
 import Control.Monad (ap, forM, forM_)
 import Control.Monad.IO.Class
 import Data.Char (chr, ord)
@@ -13,7 +15,7 @@ import GHC.Conc
 import HVML.Show
 import HVML.Type
 import System.Exit (exitFailure)
-import System.IO.Unsafe (unsafeInterleaveIO)
+import System.IO.Unsafe (unsafeInterleaveIO, unsafePerformIO)
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Map.Strict as MS
 
@@ -81,9 +83,207 @@ instance Monad Collapse where
 -- Dup Collapser
 -- -------------
 
+-- collapseDupsAt :: IM.IntMap [Int] -> ReduceAt -> Book -> Loc -> HVM Core
+-- collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
+  -- term <- reduceAt book host
+  -- putStrLn $ "normalized: " ++ termToString term
+  -- case tagT (termTag term) of
+    -- ERA -> do
+      -- return Era
+
+    -- LET -> do
+      -- let loc = termLoc term
+      -- let mode = modeT (termLab term)
+      -- name <- return $ "$" ++ show (loc + 0)
+      -- val0 <- collapseDupsAt state reduceAt book (loc + 1)
+      -- bod0 <- collapseDupsAt state reduceAt book (loc + 2)
+      -- return $ Let mode name val0 bod0
+
+    -- LAM -> do
+      -- let loc = termLoc term
+      -- name <- return $ "$" ++ show (loc + 0)
+      -- bod0 <- collapseDupsAt state reduceAt book (loc + 0)
+      -- return $ Lam name bod0
+
+    -- APP -> do
+      -- let loc = termLoc term
+      -- fun0 <- collapseDupsAt state reduceAt book (loc + 0)
+      -- arg0 <- collapseDupsAt state reduceAt book (loc + 1)
+      -- return $ App fun0 arg0
+
+    -- SUP -> do
+      -- let loc = termLoc term
+      -- let lab = termLab term
+      -- case IM.lookup (fromIntegral lab) paths of
+        -- Just (p:ps) -> do
+          -- let newPaths = IM.insert (fromIntegral lab) ps paths
+          -- collapseDupsAt (newPaths) reduceAt book (loc + fromIntegral p)
+        -- _ -> do
+          -- tm00 <- collapseDupsAt state reduceAt book (loc + 0)
+          -- tm11 <- collapseDupsAt state reduceAt book (loc + 1)
+          -- return $ Sup lab tm00 tm11
+
+    -- VAR -> do
+      -- let loc = termLoc term
+      -- sub <- got loc
+      -- if termGetBit sub /= 0
+      -- then do
+        -- set (loc + 0) (termRemBit sub)
+        -- collapseDupsAt state reduceAt book (loc + 0)
+      -- else do
+        -- name <- return $ "$" ++ show loc
+        -- return $ Var name
+
+    -- DP0 -> do
+      -- let loc = termLoc term
+      -- let lab = termLab term
+      -- sb0 <- got (loc+0)
+      -- if termGetBit sb0 /= 0
+      -- then do
+        -- set (loc + 0) (termRemBit sb0)
+        -- collapseDupsAt state reduceAt book (loc + 0)
+      -- else do
+        -- let newPaths = IM.alter (Just . maybe [0] (0:)) (fromIntegral lab) paths
+        -- collapseDupsAt (newPaths) reduceAt book (loc + 0)
+
+    -- DP1 -> do
+      -- let loc = termLoc term
+      -- let lab = termLab term
+      -- sb1 <- got (loc+1)
+      -- if termGetBit sb1 /= 0
+      -- then do
+        -- set (loc + 1) (termRemBit sb1)
+        -- collapseDupsAt state reduceAt book (loc + 1)
+      -- else do
+        -- let newPaths = IM.alter (Just . maybe [1] (1:)) (fromIntegral lab) paths
+        -- collapseDupsAt (newPaths) reduceAt book (loc + 0)
+
+    -- CTR -> do
+      -- let loc = termLoc term
+      -- let lab = termLab term
+      -- let cid = u12v2X lab
+      -- let ari = u12v2Y lab
+      -- let aux = if ari == 0 then [] else [loc + i | i <- [0..ari-1]]
+      -- fds0 <- forM aux (collapseDupsAt state reduceAt book)
+      -- return $ Ctr cid fds0
+    
+    -- MAT -> do
+      -- let loc = termLoc term
+      -- let len = u12v2X $ termLab term
+      -- let aux = if len == 0 then [] else [loc + 1 + i | i <- [0..len-1]]
+      -- val0 <- collapseDupsAt state reduceAt book (loc + 0)
+      -- css0 <- forM aux $ \h -> do
+        -- bod <- collapseDupsAt state reduceAt book h
+        -- return $ ("#", [], bod) -- TODO: recover constructor and fields
+      -- return $ Mat val0 [] css0
+
+    -- W32 -> do
+      -- let val = termLoc term
+      -- return $ U32 (fromIntegral val)
+
+    -- CHR -> do
+      -- let val = termLoc term
+      -- return $ Chr (chr (fromIntegral val))
+
+    -- OPX -> do
+      -- let loc = termLoc term
+      -- let opr = toEnum (fromIntegral (termLab term))
+      -- nm00 <- collapseDupsAt state reduceAt book (loc + 0)
+      -- nm10 <- collapseDupsAt state reduceAt book (loc + 1)
+      -- return $ Op2 opr nm00 nm10
+
+    -- OPY -> do
+      -- let loc = termLoc term
+      -- let opr = toEnum (fromIntegral (termLab term))
+      -- nm00 <- collapseDupsAt state reduceAt book (loc + 0)
+      -- nm10 <- collapseDupsAt state reduceAt book (loc + 1)
+      -- return $ Op2 opr nm00 nm10
+
+    -- REF -> do
+      -- let loc = termLoc term
+      -- let lab = termLab term
+      -- let fid = u12v2X lab
+      -- let ari = u12v2Y lab
+      -- arg0 <- mapM (collapseDupsAt state reduceAt book) [loc + i | i <- [0..ari-1]]
+      -- let name = MS.findWithDefault "?" fid (idToName book)
+      -- return $ Ref name fid arg0
+
+    -- tag -> do
+      -- putStrLn ("unexpected-tag:" ++ show tag)
+      -- return $ Var "?"
+      -- -- exitFailure
+
+-- TASK: make this function parallel by using forkIO on the CTR case only, when the arity is exactly 4.
+-- TASK: now, rewrite the whole function to use forkIO.  make ctr properly spark
+-- one thread for each field. remember: all constructors must parallelize. EX:
+-- Sup must fork 2 threads, let must fork 2 threads, etc. -- in general, every
+-- constructor with multiple children must sapwn a thread for each child. to
+-- avoid making the code big and repetitive, abstract the forking logic. try to
+-- keep it as concise and similar to the original one as you can. do it now.
+-- this looks ok, but is still too repetitive. can't we abstract it? like:
+-- your code introduces a bug. you can't map through [0..len-1] because len,
+-- ari, etc., can be 0. since they're word64, 0 - 1 results in a very large
+-- number. there is a reason we have the guards in the original code. also, on
+-- the MAT case, you can reduce the val first and then fork only the cases, to
+-- make it cleaner, avoiding that ugly parenthesis.
+-- -- I see the issue. we need the ! to force the whnf of the recursive call to
+-- -- collapseDupsAt, otherwise it will just return a thunk and not parallelize
+-- -- the heavy computation.
+-- TODO: based on the information above, write the final version of the parallel collapser:
+-- (code hidden)
+-- PROBLEM: the reduceAt function must be called with a "ID" argument (here, 0),
+-- which must always be unique; i.e., it can't be called with the same id at the
+-- same time by two different threads. so, for example, if we call it with id 7,
+-- then, we can only call another reduce with id 7 again once that one returns.
+-- to fix this, we must keep a pool of ids (with 16 ids exactly) that we pop and
+-- push before/after callind reduce. when the list is empty, we must retry until
+-- it isn't empty anymore, in an efficient way.
+-- is it possible to implement such logic in Haskell?
+
+-- Helper function to fork multiple computations and collect results
+fork :: [HVM a] -> HVM [a]
+fork comps = do
+  mvars <- sequence [newEmptyMVar | _ <- comps]
+  forM_ (zip comps mvars) $ \(comp, mv) ->
+    forkIO $ do
+      !val <- comp
+      putMVar mv val
+  mapM takeMVar mvars
+
+-- Thread ID pool management
+tidPool :: MVar [TID]
+tidPool = unsafePerformIO $ newMVar [0..15]
+
+-- Get a thread ID from the pool, retrying if empty
+getTID :: HVM TID
+getTID = do
+  mTid <- tryTakeMVar tidPool
+  case mTid of
+    Nothing -> do
+      -- threadDelay 100 -- Small delay before retry
+      getTID
+    Just (tid:rest) -> do
+      putMVar tidPool rest
+      return tid
+    Just [] -> getTID
+
+-- Return a thread ID to the pool
+putTID :: TID -> HVM ()
+putTID tid = do
+  tids <- takeMVar tidPool
+  putMVar tidPool (tid:tids)
+
+-- Wrapper for reduceAt that manages thread IDs
+safeReduceAt :: ReduceAt -> Book -> Loc -> HVM Term
+safeReduceAt reduceAt book loc = do
+  tid <- getTID
+  result <- reduceAt book tid loc
+  putTID tid
+  return result
+
 collapseDupsAt :: IM.IntMap [Int] -> ReduceAt -> Book -> Loc -> HVM Core
 collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
-  term <- reduceAt book host
+  term <- safeReduceAt reduceAt book host
   case tagT (termTag term) of
     ERA -> do
       return Era
@@ -92,8 +292,9 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
       let loc = termLoc term
       let mode = modeT (termLab term)
       name <- return $ "$" ++ show (loc + 0)
-      val0 <- collapseDupsAt state reduceAt book (loc + 1)
-      bod0 <- collapseDupsAt state reduceAt book (loc + 2)
+      [val0, bod0] <- fork [
+        collapseDupsAt state reduceAt book (loc + 1),
+        collapseDupsAt state reduceAt book (loc + 2)]
       return $ Let mode name val0 bod0
 
     LAM -> do
@@ -104,8 +305,9 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
 
     APP -> do
       let loc = termLoc term
-      fun0 <- collapseDupsAt state reduceAt book (loc + 0)
-      arg0 <- collapseDupsAt state reduceAt book (loc + 1)
+      [fun0, arg0] <- fork [
+        collapseDupsAt state reduceAt book (loc + 0),
+        collapseDupsAt state reduceAt book (loc + 1)]
       return $ App fun0 arg0
 
     SUP -> do
@@ -116,8 +318,9 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
           let newPaths = IM.insert (fromIntegral lab) ps paths
           collapseDupsAt (newPaths) reduceAt book (loc + fromIntegral p)
         _ -> do
-          tm00 <- collapseDupsAt state reduceAt book (loc + 0)
-          tm11 <- collapseDupsAt state reduceAt book (loc + 1)
+          [tm00, tm11] <- fork [
+            collapseDupsAt state reduceAt book (loc + 0),
+            collapseDupsAt state reduceAt book (loc + 1)]
           return $ Sup lab tm00 tm11
 
     VAR -> do
@@ -160,19 +363,23 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
       let lab = termLab term
       let cid = u12v2X lab
       let ari = u12v2Y lab
-      let aux = if ari == 0 then [] else [loc + i | i <- [0..ari-1]]
-      fds0 <- forM aux (collapseDupsAt state reduceAt book)
-      return $ Ctr cid fds0
+      if ari == 0 
+      then return $ Ctr cid []
+      else do
+        let aux = [loc + i | i <- [0..ari-1]]
+        fields <- fork [collapseDupsAt state reduceAt book i | i <- aux]
+        return $ Ctr cid fields
 
     MAT -> do
       let loc = termLoc term
       let len = u12v2X $ termLab term
-      let aux = if len == 0 then [] else [loc + 1 + i | i <- [0..len-1]]
       val0 <- collapseDupsAt state reduceAt book (loc + 0)
-      css0 <- forM aux $ \h -> do
-        bod <- collapseDupsAt state reduceAt book h
-        return $ ("#", [], bod) -- TODO: recover constructor and fields
-      return $ Mat val0 [] css0
+      if len == 0
+      then return $ Mat val0 [] []
+      else do
+        let aux = [loc + 1 + i | i <- [0..len-1]]
+        bods <- fork [collapseDupsAt state reduceAt book i | i <- aux]
+        return $ Mat val0 [] (map (\bod -> ("#", [], bod)) bods)
 
     W32 -> do
       let val = termLoc term
@@ -185,15 +392,17 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
     OPX -> do
       let loc = termLoc term
       let opr = toEnum (fromIntegral (termLab term))
-      nm00 <- collapseDupsAt state reduceAt book (loc + 0)
-      nm10 <- collapseDupsAt state reduceAt book (loc + 1)
+      [nm00, nm10] <- fork [
+        collapseDupsAt state reduceAt book (loc + 0),
+        collapseDupsAt state reduceAt book (loc + 1)]
       return $ Op2 opr nm00 nm10
 
     OPY -> do
       let loc = termLoc term
       let opr = toEnum (fromIntegral (termLab term))
-      nm00 <- collapseDupsAt state reduceAt book (loc + 0)
-      nm10 <- collapseDupsAt state reduceAt book (loc + 1)
+      [nm00, nm10] <- fork [
+        collapseDupsAt state reduceAt book (loc + 0),
+        collapseDupsAt state reduceAt book (loc + 1)]
       return $ Op2 opr nm00 nm10
 
     REF -> do
@@ -201,14 +410,20 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
       let lab = termLab term
       let fid = u12v2X lab
       let ari = u12v2Y lab
-      arg0 <- mapM (collapseDupsAt state reduceAt book) [loc + i | i <- [0..ari-1]]
-      let name = MS.findWithDefault "?" fid (idToName book)
-      return $ Ref name fid arg0
+      if ari == 0
+      then do
+        let name = MS.findWithDefault "?" fid (idToName book)
+        return $ Ref name fid []
+      else do
+        let aux = [loc + i | i <- [0..ari-1]]
+        args <- fork [collapseDupsAt state reduceAt book i | i <- aux]
+        let name = MS.findWithDefault "?" fid (idToName book)
+        return $ Ref name fid args
 
     tag -> do
       putStrLn ("unexpected-tag:" ++ show tag)
       return $ Var "?"
-      -- exitFailure
+
 
 -- Sup Collapser
 -- -------------

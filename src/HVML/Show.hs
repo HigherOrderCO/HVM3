@@ -233,7 +233,7 @@ dumpHeap = do
 
 heapToString :: ([(Word64, Term)], Word64) -> String
 heapToString (terms, itr) = 
-  "set_itr(0x" ++ padLeft (showHex itr) 9 '0' ++ ");\n" ++
+  "set_itr(tid, 0x" ++ padLeft (showHex itr) 9 '0' ++ ");\n" ++
   foldr (\(k,v) txt ->
     let addr = padLeft (showHex k) 9 '0'
         term = termToString v

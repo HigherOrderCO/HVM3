@@ -84,8 +84,9 @@ data TAG
   deriving (Eq, Show)
 
 type HVM = IO
+type TID = Word8
 
-type ReduceAt = Book -> Loc -> HVM Term
+type ReduceAt = Book -> TID -> Loc -> HVM Term
 
 -- C Functions
 -- -----------
@@ -97,7 +98,7 @@ foreign import ccall unsafe "Runtime.c hvm_free"
   hvmFree :: IO ()
 
 foreign import ccall unsafe "Runtime.c alloc_node"
-  allocNode :: Word64 -> IO Word64
+  allocNode :: TID -> Word64 -> IO Word64
 
 foreign import ccall unsafe "Runtime.c set"
   set :: Word64 -> Term -> IO ()
@@ -139,97 +140,94 @@ foreign import ccall unsafe "Runtime.c get_itr"
   getItr :: IO Word64
 
 foreign import ccall unsafe "Runtime.c inc_itr"
-  incItr :: IO Word64
-
-foreign import ccall unsafe "Runtime.c fresh"
-  fresh :: IO Word64
+  incItr :: TID -> Word64 -> IO Word64
 
 foreign import ccall unsafe "Runtime.c reduce"
-  reduceC :: Term -> IO Term
+  reduceC :: Word8 -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_let"
-  reduceLet :: Term -> Term -> IO Term
+  reduceLet :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_app_era"
-  reduceAppEra :: Term -> Term -> IO Term
+  reduceAppEra :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_app_lam"
-  reduceAppLam :: Term -> Term -> IO Term
+  reduceAppLam :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_app_sup"
-  reduceAppSup :: Term -> Term -> IO Term
+  reduceAppSup :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_app_ctr"
-  reduceAppCtr :: Term -> Term -> IO Term
+  reduceAppCtr :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_app_w32"
-  reduceAppW32 :: Term -> Term -> IO Term
+  reduceAppW32 :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_dup_era"
-  reduceDupEra :: Term -> Term -> IO Term
+  reduceDupEra :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_dup_lam"
-  reduceDupLam :: Term -> Term -> IO Term
+  reduceDupLam :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_dup_sup"
-  reduceDupSup :: Term -> Term -> IO Term
+  reduceDupSup :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_dup_ctr"
-  reduceDupCtr :: Term -> Term -> IO Term
+  reduceDupCtr :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_dup_w32"
-  reduceDupW32 :: Term -> Term -> IO Term
+  reduceDupW32 :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_dup_ref"
-  reduceDupRef :: Term -> Term -> IO Term
+  reduceDupRef :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_mat_era"
-  reduceMatEra :: Term -> Term -> IO Term
+  reduceMatEra :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_mat_lam"
-  reduceMatLam :: Term -> Term -> IO Term
+  reduceMatLam :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_mat_sup"
-  reduceMatSup :: Term -> Term -> IO Term
+  reduceMatSup :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_mat_ctr"
-  reduceMatCtr :: Term -> Term -> IO Term
+  reduceMatCtr :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_mat_w32"
-  reduceMatW32 :: Term -> Term -> IO Term
+  reduceMatW32 :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opx_era"
-  reduceOpxEra :: Term -> Term -> IO Term
+  reduceOpxEra :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opx_lam"
-  reduceOpxLam :: Term -> Term -> IO Term
+  reduceOpxLam :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opx_sup"
-  reduceOpxSup :: Term -> Term -> IO Term
+  reduceOpxSup :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opx_ctr"
-  reduceOpxCtr :: Term -> Term -> IO Term
+  reduceOpxCtr :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opx_w32"
-  reduceOpxW32 :: Term -> Term -> IO Term
+  reduceOpxW32 :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opy_era"
-  reduceOpyEra :: Term -> Term -> IO Term
+  reduceOpyEra :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opy_lam"
-  reduceOpyLam :: Term -> Term -> IO Term
+  reduceOpyLam :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opy_sup"
-  reduceOpySup :: Term -> Term -> IO Term
+  reduceOpySup :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opy_ctr"
-  reduceOpyCtr :: Term -> Term -> IO Term
+  reduceOpyCtr :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opy_w32"
-  reduceOpyW32 :: Term -> Term -> IO Term
+  reduceOpyW32 :: Word8 -> Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_ref_sup"
-  reduceRefSup :: Term -> Word64 -> IO Term
+  reduceRefSup :: Word8 -> Term -> Word64 -> IO Term
 
 foreign import ccall unsafe "Runtime.c hvm_define"
   hvmDefine :: Word64 -> FunPtr (IO Term) -> IO ()
@@ -335,15 +333,11 @@ _SUP_F_ = 0xFFE
 _LOG_F_ :: Lab
 _LOG_F_ = 0xFFD
 
-_FRESH_F_ :: Lab
-_FRESH_F_ = 0xFFC
-
 primitives :: [(String, Lab)]
 primitives = 
   [ ("SUP", _SUP_F_)
   , ("DUP", _DUP_F_)
   , ("LOG", _LOG_F_)
-  , ("FRESH", _FRESH_F_)
   ]
 
 -- Utils

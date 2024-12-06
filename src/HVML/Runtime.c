@@ -11,6 +11,7 @@ typedef uint8_t  Tag;
 typedef uint32_t Lab;
 typedef uint32_t Loc;
 typedef uint64_t Term;
+typedef uint8_t  u8;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
@@ -24,10 +25,9 @@ typedef struct {
   Term*  sbuf; // reduction stack buffer
   u64*   spos; // reduction stack position
   ATerm* heap; // global node buffer
-  u64*   size; // global node length
+  u64*   next; // next alloc index
   u64*   itrs; // interaction count
-  u64*   frsh; // fresh dup label count
-  Term (*book[4096])(Term); // functions
+  Term (*book[4096])(u8,Term); // functions
 } State;
 
 // Global State Value
@@ -35,9 +35,8 @@ static State HVM = {
   .sbuf = NULL,
   .spos = NULL,
   .heap = NULL,
-  .size = NULL,
+  .next = NULL,
   .itrs = NULL,
-  .frsh = NULL,
   .book = {NULL}
 };
 
@@ -93,23 +92,19 @@ static State HVM = {
 // ----
 
 Loc get_len() {
-  return *HVM.size;
+  u32 len = 0;
+  for (u32 i = 0; i < 256; ++i) {
+    len += HVM.next[i];
+  }
+  return len;
 }
 
 u64 get_itr() {
-  return *HVM.itrs;
-}
-
-u64 fresh() {
-  return (*HVM.frsh)++;
-}
-
-void set_len(Loc value) {
-  *HVM.size = value;
-}
-
-void set_itr(Loc value) {
-  *HVM.itrs = value;
+  u32 itr = 0;
+  for (u32 i = 0; i < 256; ++i) {
+    itr += HVM.itrs[i];
+  }
+  return itr;
 }
 
 // Terms
@@ -198,15 +193,15 @@ Term take(Loc loc) {
 // Allocation
 // ----------
 
-Loc alloc_node(Loc arity) {
-  u64 old = *HVM.size;
-  *HVM.size += arity;
-  return old;
+Loc alloc_node(u8 tid, Loc arity) {
+  u64 old = HVM.next[tid];
+  HVM.next[tid] += arity;
+  return old + tid * ((1ULL << 32) / 256);
 }
 
-Loc inc_itr() {
-  u64 old = *HVM.itrs;
-  *HVM.itrs += 1;
+Loc inc_itr(u8 tid, u64 amount) {
+  u64 old = HVM.itrs[tid];
+  HVM.itrs[tid] += amount;
   return old;
 }
 
@@ -246,7 +241,7 @@ void print_term_ln(Term term) {
   printf("\n");
 }
 
-void print_heap() {
+void print_heap(u8 tid) {
   Loc len = get_len();
   for (Loc i = 0; i < len; i++) {
     Term term = got(i);
@@ -267,8 +262,8 @@ void print_heap() {
 // ! &L{cx cy} = b
 // ...
 // &L{@foo(ax bx cx ...) @foo(ay by cy ...)}
-Term reduce_ref_sup(Term ref, u32 idx) {
-  inc_itr();
+Term reduce_ref_sup(u8 tid, Term ref, u32 idx) {
+  inc_itr(tid, 1);
   Loc ref_loc = term_loc(ref);
   Lab ref_lab = term_lab(ref);
   u64 fun_id = u12v2_x(ref_lab);
@@ -287,12 +282,12 @@ Term reduce_ref_sup(Term ref, u32 idx) {
   Term sup0 = got(sup_loc + 0);
   Term sup1 = got(sup_loc + 1);
   // Allocate space for new REF node arguments for the second branch
-  Loc ref1_loc = alloc_node(arity);
+  Loc ref1_loc = alloc_node(tid, arity);
   for (u64 i = 0; i < arity; ++i) {
     if (i != idx) {
       // Duplicate argument
       Term arg = got(ref_loc + i);
-      Loc dup_loc = alloc_node(2);
+      Loc dup_loc = alloc_node(tid, 2);
       set(dup_loc + 0, arg);
       set(dup_loc + 1, term_new(SUB, 0, 0));
       set(ref_loc + i, term_new(DP0, sup_lab, dup_loc));
@@ -315,11 +310,11 @@ Term reduce_ref_sup(Term ref, u32 idx) {
 // @foo(a b c ...)
 // -------------------- REF
 // book[foo](a b c ...)
-Term reduce_ref(Term ref) {
+Term reduce_ref(u8 tid, Term ref) {
   //printf("reduce_ref "); print_term(ref); printf("\n");
   //printf("call %d %p\n", term_loc(ref), HVM.book[term_loc(ref)]);
-  inc_itr();
-  return HVM.book[u12v2_x(term_lab(ref))](ref);
+  inc_itr(tid, 1);
+  return HVM.book[u12v2_x(term_lab(ref))](tid, ref);
 }
 
 // ! x = val
@@ -327,9 +322,9 @@ Term reduce_ref(Term ref) {
 // --------- LET
 // x <- val
 // bod
-Term reduce_let(Term let, Term val) {
+Term reduce_let(u8 tid, Term let, Term val) {
   //printf("reduce_let "); print_term(let); printf("\n");
-  inc_itr();
+  inc_itr(tid, 1);
   Loc let_loc = term_loc(let);
   Term bod    = got(let_loc + 1);
   sub(let_loc + 0, val);
@@ -339,9 +334,9 @@ Term reduce_let(Term let, Term val) {
 // (* a)
 // ----- APP-ERA
 // *
-Term reduce_app_era(Term app, Term era) {
+Term reduce_app_era(u8 tid, Term app, Term era) {
   //printf("reduce_app_era "); print_term(app); printf("\n");
-  inc_itr();
+  inc_itr(tid, 1);
   return era;
 }
 
@@ -349,9 +344,9 @@ Term reduce_app_era(Term app, Term era) {
 // ------------ APP-LAM
 // x <- a
 // body
-Term reduce_app_lam(Term app, Term lam) {
+Term reduce_app_lam(u8 tid, Term app, Term lam) {
   //printf("reduce_app_lam "); print_term(app); printf("\n");
-  inc_itr();
+  inc_itr(tid, 1);
   Loc app_loc = term_loc(app);
   Loc lam_loc = term_loc(lam);
   Term arg    = got(app_loc + 1);
@@ -364,21 +359,21 @@ Term reduce_app_lam(Term app, Term lam) {
 // ----------------- APP-SUP
 // ! &L{x0 x1} = c
 // &L{(a x0) (b x1)}
-Term reduce_app_sup(Term app, Term sup) {
+Term reduce_app_sup(u8 tid, Term app, Term sup) {
   //printf("reduce_app_sup "); print_term(app); printf("\n");
-  inc_itr();
+  inc_itr(tid, 1);
   Loc app_loc = term_loc(app);
   Loc sup_loc = term_loc(sup);
   Lab sup_lab = term_lab(sup);
   Term arg    = got(app_loc + 1);
   Term tm0    = got(sup_loc + 0);
   Term tm1    = got(sup_loc + 1);
-  Loc du0     = alloc_node(2);
-  //Loc su0     = alloc_node(2);
-  //Loc ap0     = alloc_node(2);
+  Loc du0     = alloc_node(tid, 2);
+  //Loc su0     = alloc_node(tid, 2);
+  //Loc ap0     = alloc_node(tid, 2);
   Loc ap0     = app_loc;
   Loc su0     = sup_loc;
-  Loc ap1     = alloc_node(2);
+  Loc ap1     = alloc_node(tid, 2);
   set(du0 + 0, arg);
   set(du0 + 1, term_new(SUB, 0, 0));
   set(ap0 + 0, tm0);
@@ -393,7 +388,7 @@ Term reduce_app_sup(Term app, Term sup) {
 // (#{x y z ...} a)
 // ---------------- APP-CTR
 // ⊥
-Term reduce_app_ctr(Term app, Term ctr) {
+Term reduce_app_ctr(u8 tid, Term app, Term ctr) {
   //printf("reduce_app_ctr "); print_term(app); printf("\n");
   printf("invalid:app-ctr");
   exit(0);
@@ -402,7 +397,7 @@ Term reduce_app_ctr(Term app, Term ctr) {
 // (123 a)
 // ------- APP-W32
 // ⊥
-Term reduce_app_w32(Term app, Term w32) {
+Term reduce_app_w32(u8 tid, Term app, Term w32) {
   //printf("reduce_app_w32 "); print_term(app); printf("\n");
   printf("invalid:app-w32");
   exit(0);
@@ -412,9 +407,9 @@ Term reduce_app_w32(Term app, Term w32) {
 // ------------- DUP-ERA
 // x <- *
 // y <- *
-Term reduce_dup_era(Term dup, Term era) {
+Term reduce_dup_era(u8 tid, Term dup, Term era) {
   //printf("reduce_dup_era "); print_term(dup); printf("\n");
-  inc_itr();
+  inc_itr(tid, 1);
   Loc dup_loc = term_loc(dup);
   Tag dup_num = term_tag(dup) == DP0 ? 0 : 1;
   sub(dup_loc + 0, era);
@@ -428,18 +423,18 @@ Term reduce_dup_era(Term dup, Term era) {
 // r <- λx0(f0)
 // s <- λx1(f1)
 // x <- &L{x0 x1}
-Term reduce_dup_lam(Term dup, Term lam) {
+Term reduce_dup_lam(u8 tid, Term dup, Term lam) {
   //printf("reduce_dup_lam "); print_term(dup); printf("\n");
-  inc_itr();
+  inc_itr(tid, 1);
   Loc dup_loc = term_loc(dup);
   Lab dup_lab = term_lab(dup);
   Tag dup_num = term_tag(dup) == DP0 ? 0 : 1;
   Loc lam_loc = term_loc(lam);
   Term bod    = got(lam_loc + 0);
-  Loc du0     = alloc_node(2);
-  Loc lm0     = alloc_node(1);
-  Loc lm1     = alloc_node(1);
-  Loc su0     = alloc_node(2);
+  Loc du0     = alloc_node(tid, 2);
+  Loc lm0     = alloc_node(tid, 1);
+  Loc lm1     = alloc_node(tid, 1);
+  Loc su0     = alloc_node(tid, 2);
   set(du0 + 0, bod);
   set(du0 + 1, term_new(SUB, 0, 0));
   //set(lm0 + 0, term_new(SUB, 0, 0));
@@ -464,9 +459,9 @@ Term reduce_dup_lam(Term dup, Term lam) {
 //   y <- &R{a1 b1}
 //   ! &L{a0 a1} = a
 //   ! &L{b0 b1} = b
-Term reduce_dup_sup(Term dup, Term sup) {
+Term reduce_dup_sup(u8 tid, Term dup, Term sup) {
   //printf("reduce_dup_sup %u %u | %llu ", term_lab(dup), term_lab(sup), *HVM.spos); print_term(dup); printf(" "); print_term(sup); printf("\n");
-  inc_itr();
+  inc_itr(tid, 1);
   Loc dup_loc = term_loc(dup);
   Lab dup_lab = term_lab(dup);
   Tag dup_num = term_tag(dup) == DP0 ? 0 : 1;
@@ -479,11 +474,11 @@ Term reduce_dup_sup(Term dup, Term sup) {
     sub(dup_loc + 1, tm1);
     return term_rem_bit(got(dup_loc + dup_num));
   } else {
-    Loc du0 = alloc_node(2);
-    Loc du1 = alloc_node(2);
-    //Loc su0 = alloc_node(2);
+    Loc du0 = alloc_node(tid, 2);
+    Loc du1 = alloc_node(tid, 2);
+    //Loc su0 = alloc_node(tid, 2);
     Loc su0 = sup_loc;
-    Loc su1 = alloc_node(2);
+    Loc su1 = alloc_node(tid, 2);
     Term tm0 = take(sup_loc + 0);
     Term tm1 = take(sup_loc + 1);
     set(du0 + 0, tm0);
@@ -508,20 +503,20 @@ Term reduce_dup_sup(Term dup, Term sup) {
 // ...
 // x <- #{a0 b0 c0 ...} 
 // y <- #{a1 b1 c1 ...}
-Term reduce_dup_ctr(Term dup, Term ctr) {
+Term reduce_dup_ctr(u8 tid, Term dup, Term ctr) {
   //printf("reduce_dup_ctr "); print_term(dup); printf("\n");
-  inc_itr();
+  inc_itr(tid, 1);
   Loc dup_loc = term_loc(dup);
   Lab dup_lab = term_lab(dup);
   Tag dup_num = term_tag(dup) == DP0 ? 0 : 1;
   Loc ctr_loc = term_loc(ctr);
   Lab ctr_lab = term_lab(ctr);
   u64 ctr_ari = u12v2_y(ctr_lab);
-  //Loc ctr0    = alloc_node(ctr_ari);
+  //Loc ctr0    = alloc_node(tid, ctr_ari);
   Loc ctr0    = ctr_loc;
-  Loc ctr1    = alloc_node(ctr_ari);
+  Loc ctr1    = alloc_node(tid, ctr_ari);
   for (u64 i = 0; i < ctr_ari; i++) {
-    Loc du0 = alloc_node(2);
+    Loc du0 = alloc_node(tid, 2);
     set(du0 + 0, got(ctr_loc + i));
     set(du0 + 1, term_new(SUB, 0, 0));
     set(ctr0 + i, term_new(DP0, dup_lab, du0));
@@ -536,9 +531,9 @@ Term reduce_dup_ctr(Term dup, Term ctr) {
 // --------------- DUP-W32
 // x <- 123
 // y <- 123
-Term reduce_dup_w32(Term dup, Term w32) {
+Term reduce_dup_w32(u8 tid, Term dup, Term w32) {
   //printf("reduce_dup_w32 "); print_term(dup); printf("\n");
-  inc_itr();
+  inc_itr(tid, 1);
   Loc dup_loc = term_loc(dup);
   Tag dup_num = term_tag(dup) == DP0 ? 0 : 1;
   sub(dup_loc + 0, w32);
@@ -554,9 +549,9 @@ Term reduce_dup_w32(Term dup, Term w32) {
 // ...
 // x <- @foo(a0 b0 c0 ...)
 // y <- @foo(a1 b1 c1 ...)
-Term reduce_dup_ref(Term dup, Term ref) {
+Term reduce_dup_ref(u8 tid, Term dup, Term ref) {
   //printf("reduce_dup_ref "); print_term(dup); printf("\n");
-  inc_itr();
+  inc_itr(tid, 1);
   Loc dup_loc = term_loc(dup);
   Lab dup_lab = term_lab(dup);
   Tag dup_num = term_tag(dup) == DP0 ? 0 : 1;
@@ -564,9 +559,9 @@ Term reduce_dup_ref(Term dup, Term ref) {
   Lab ref_lab = term_lab(ref);
   u64 ref_ari = u12v2_y(ref_lab);
   Loc ref0    = ref_loc;
-  Loc ref1    = alloc_node(1 + ref_ari);
+  Loc ref1    = alloc_node(tid, 1 + ref_ari);
   for (u64 i = 0; i < ref_ari; i++) {
-    Loc du0 = alloc_node(2);
+    Loc du0 = alloc_node(tid, 2);
     set(du0 + 0, got(ref_loc + i));
     set(du0 + 1, term_new(SUB, 0, 0));
     set(ref0 + i, term_new(DP0, dup_lab, du0));
@@ -580,16 +575,16 @@ Term reduce_dup_ref(Term dup, Term ref) {
 // ~ * {K0 K1 K2 ...} 
 // ------------------ MAT-ERA
 // *
-Term reduce_mat_era(Term mat, Term era) {
+Term reduce_mat_era(u8 tid, Term mat, Term era) {
   //printf("reduce_mat_era "); print_term(mat); printf("\n");
-  inc_itr();
+  inc_itr(tid, 1);
   return era;
 }
 
 // ~ λx(x) {K0 K1 K2 ...}
 // ---------------------- MAT-LAM
 // ⊥
-Term reduce_mat_lam(Term mat, Term lam) {
+Term reduce_mat_lam(u8 tid, Term mat, Term lam) {
   //printf("reduce_mat_lam "); print_term(mat); printf("\n");
   printf("invalid:mat-lam");
   exit(0);
@@ -603,9 +598,9 @@ Term reduce_mat_lam(Term mat, Term lam) {
 // ...
 // &L{ ~ x {K0a K1a K2a ...}
 //     ~ y {K0b K1b K2b ...} }
-Term reduce_mat_sup(Term mat, Term sup) {
+Term reduce_mat_sup(u8 tid, Term mat, Term sup) {
   //printf("reduce_mat_sup "); print_term(mat); printf("\n");
-  inc_itr();
+  inc_itr(tid, 1);
   Loc mat_loc = term_loc(mat);
   Loc sup_loc = term_loc(sup);
   Lab sup_lab = term_lab(sup);
@@ -613,15 +608,15 @@ Term reduce_mat_sup(Term mat, Term sup) {
   Term tm1    = got(sup_loc + 1);
   Lab mat_lab = term_lab(mat);
   u64 mat_len = u12v2_x(mat_lab);
-  Loc mat1    = alloc_node(1 + mat_len);
-  //Loc mat0    = alloc_node(1 + mat_len);
-  //Loc sup0    = alloc_node(2);
+  Loc mat1    = alloc_node(tid, 1 + mat_len);
+  //Loc mat0    = alloc_node(tid, 1 + mat_len);
+  //Loc sup0    = alloc_node(tid, 2);
   Loc mat0    = mat_loc;
   Loc sup0    = sup_loc;
   set(mat0 + 0, tm0);
   set(mat1 + 0, tm1);
   for (u64 i = 0; i < mat_len; i++) {
-    Loc du0 = alloc_node(2);
+    Loc du0 = alloc_node(tid, 2);
     set(du0 + 0, got(mat_loc + 1 + i));
     set(du0 + 1, term_new(SUB, 0, 0));
     set(mat0 + 1 + i, term_new(DP0, sup_lab, du0));
@@ -635,9 +630,9 @@ Term reduce_mat_sup(Term mat, Term sup) {
 // ~ #N{x y z ...} {K0 K1 K2 ...} 
 // ------------------------------ MAT-CTR
 // (((KN x) y) z ...)
-Term reduce_mat_ctr(Term mat, Term ctr) {
+Term reduce_mat_ctr(u8 tid, Term mat, Term ctr) {
   //printf("reduce_mat_ctr "); print_term(mat); printf("\n");
-  inc_itr();
+  inc_itr(tid, 1);
   Loc mat_loc = term_loc(mat);
   Lab mat_lab = term_lab(mat);
   // If-Let
@@ -650,7 +645,7 @@ Term reduce_mat_ctr(Term mat, Term ctr) {
     if (mat_ctr == ctr_num) {
       Term app = got(mat_loc + 1);
       for (u64 i = 0; i < ctr_ari; i++) {
-        Loc new_app = alloc_node(2);
+        Loc new_app = alloc_node(tid, 2);
         set(new_app + 0, app);
         set(new_app + 1, got(ctr_loc + i));
         app = term_new(APP, 0, new_app);
@@ -658,7 +653,7 @@ Term reduce_mat_ctr(Term mat, Term ctr) {
       return app;
     } else {
       Term app = got(mat_loc + 2);
-      Loc new_app = alloc_node(2);
+      Loc new_app = alloc_node(tid, 2);
       set(new_app + 0, app);
       set(new_app + 1, ctr);
       app = term_new(APP, 0, new_app);
@@ -672,7 +667,7 @@ Term reduce_mat_ctr(Term mat, Term ctr) {
     u64 ctr_ari = u12v2_y(ctr_lab);
     Term app = got(mat_loc + 1 + ctr_num);
     for (u64 i = 0; i < ctr_ari; i++) {
-      Loc new_app = alloc_node(2);
+      Loc new_app = alloc_node(tid, 2);
       set(new_app + 0, app);
       set(new_app + 1, got(ctr_loc + i));
       app = term_new(APP, 0, new_app);
@@ -685,9 +680,9 @@ Term reduce_mat_ctr(Term mat, Term ctr) {
 // ----------------------- MAT-W32
 // if n < N: Kn
 // else    : KN(num-N)
-Term reduce_mat_w32(Term mat, Term w32) {
+Term reduce_mat_w32(u8 tid, Term mat, Term w32) {
   //printf("reduce_mat_w32 "); print_term(mat); printf("\n");
-  inc_itr();
+  inc_itr(tid, 1);
   Lab mat_tag = term_tag(mat);
   Loc mat_loc = term_loc(mat);
   Lab mat_lab = term_lab(mat);
@@ -696,7 +691,7 @@ Term reduce_mat_w32(Term mat, Term w32) {
   if (w32_val < mat_len - 1) {
     return got(mat_loc + 1 + w32_val);
   } else {
-    Loc app = alloc_node(2);
+    Loc app = alloc_node(tid, 2);
     set(app + 0, got(mat_loc + mat_len));
     set(app + 1, term_new(W32, 0, w32_val - (mat_len - 1)));
     return term_new(APP, 0, app);
@@ -706,16 +701,16 @@ Term reduce_mat_w32(Term mat, Term w32) {
 // <op(* b)
 // -------- OPX-ERA
 // *
-Term reduce_opx_era(Term opx, Term era) {
+Term reduce_opx_era(u8 tid, Term opx, Term era) {
   //printf("reduce_opx_era "); print_term(opx); printf("\n");
-  inc_itr();
+  inc_itr(tid, 1);
   return era;
 }
 
 // <op(λx(B) y)
 // ------------ OPX-LAM
 // ⊥
-Term reduce_opx_lam(Term opx, Term lam) {
+Term reduce_opx_lam(u8 tid, Term opx, Term lam) {
   //printf("reduce_opx_lam "); print_term(opx); printf("\n");
   printf("invalid:opx-lam");
   exit(0);
@@ -725,21 +720,21 @@ Term reduce_opx_lam(Term opx, Term lam) {
 // ------------------------- OPX-SUP
 // ! &L{y0 y1} = y
 // &L{<op(x0 y0) <op(x1 y1)}
-Term reduce_opx_sup(Term opx, Term sup) {
+Term reduce_opx_sup(u8 tid, Term opx, Term sup) {
   //printf("reduce_opx_sup "); print_term(opx); printf("\n");
-  inc_itr();
+  inc_itr(tid, 1);
   Loc opx_loc = term_loc(opx);
   Loc sup_loc = term_loc(sup);
   Lab sup_lab = term_lab(sup);
   Term nmy    = got(opx_loc + 1);
   Term tm0    = got(sup_loc + 0);
   Term tm1    = got(sup_loc + 1);
-  Loc du0     = alloc_node(2);
-  //Loc op0     = alloc_node(2);
-  //Loc op1     = alloc_node(2);
+  Loc du0     = alloc_node(tid, 2);
+  //Loc op0     = alloc_node(tid, 2);
+  //Loc op1     = alloc_node(tid, 2);
   Loc op0     = opx_loc;
   Loc op1     = sup_loc;
-  Loc su0     = alloc_node(2);
+  Loc su0     = alloc_node(tid, 2);
   set(du0 + 0, nmy);
   set(du0 + 1, term_new(SUB, 0, 0));
   set(op0 + 0, tm0);
@@ -754,7 +749,7 @@ Term reduce_opx_sup(Term opx, Term sup) {
 // <op(#{x0 x1 x2...} y)
 // --------------------- OPX-CTR
 // ⊥
-Term reduce_opx_ctr(Term opx, Term ctr) {
+Term reduce_opx_ctr(u8 tid, Term opx, Term ctr) {
   //printf("reduce_opx_ctr "); print_term(opx); printf("\n");
   printf("invalid:opx-ctr");
   exit(0);
@@ -763,9 +758,9 @@ Term reduce_opx_ctr(Term opx, Term ctr) {
 // <op(x0 x1)
 // ---------- OPX-W32
 // <op(x0 x1)
-Term reduce_opx_w32(Term opx, Term w32) {
+Term reduce_opx_w32(u8 tid, Term opx, Term w32) {
   //printf("reduce_opx_w32 "); print_term(opx); printf("\n");
-  inc_itr();
+  inc_itr(tid, 1);
   Lab opx_lab = term_lab(opx);
   Lab opx_loc = term_loc(opx);
   set(opx_loc + 0, w32);
@@ -775,16 +770,16 @@ Term reduce_opx_w32(Term opx, Term w32) {
 // >op(a *)
 // -------- OPY-ERA
 // *
-Term reduce_opy_era(Term opy, Term era) {
+Term reduce_opy_era(u8 tid, Term opy, Term era) {
   //printf("reduce_opy_era "); print_term(opy); printf("\n");
-  inc_itr();
+  inc_itr(tid, 1);
   return era;
 }
 
 // >op(a λx(B))
 // ------------ OPY-LAM
 // *
-Term reduce_opy_lam(Term opy, Term era) {
+Term reduce_opy_lam(u8 tid, Term opy, Term era) {
   //printf("reduce_opy_lam "); print_term(opy); printf("\n");
   printf("invalid:opy-lam");
   exit(0);
@@ -793,20 +788,20 @@ Term reduce_opy_lam(Term opy, Term era) {
 // >op(a &L{x y})
 // --------------------- OPY-SUP
 // &L{>op(a x) >op(a y)}
-Term reduce_opy_sup(Term opy, Term sup) {
+Term reduce_opy_sup(u8 tid, Term opy, Term sup) {
   //printf("reduce_opy_sup "); print_term(opy); printf("\n");
-  inc_itr();
+  inc_itr(tid, 1);
   Loc opy_loc = term_loc(opy);
   Loc sup_loc = term_loc(sup);
   Lab sup_lab = term_lab(sup);
   Term nmx    = got(opy_loc + 0);
   Term tm0    = got(sup_loc + 0);
   Term tm1    = got(sup_loc + 1);
-  //Loc op0     = alloc_node(2);
-  //Loc op1     = alloc_node(2);
+  //Loc op0     = alloc_node(tid, 2);
+  //Loc op1     = alloc_node(tid, 2);
   Loc op0     = opy_loc;
   Loc op1     = sup_loc;
-  Loc su0     = alloc_node(2);
+  Loc su0     = alloc_node(tid, 2);
   set(op0 + 0, nmx);
   set(op0 + 1, tm0);
   set(op1 + 0, nmx);
@@ -819,7 +814,7 @@ Term reduce_opy_sup(Term opy, Term sup) {
 // >op(#{x y z ...} b)
 // ---------------------- OPY-CTR
 // ⊥
-Term reduce_opy_ctr(Term opy, Term ctr) {
+Term reduce_opy_ctr(u8 tid, Term opy, Term ctr) {
   //printf("reduce_opy_ctr "); print_term(opy); printf("\n");
   printf("invalid:opy-ctr");
   exit(0);
@@ -828,9 +823,9 @@ Term reduce_opy_ctr(Term opy, Term ctr) {
 // >op(x y)
 // --------- OPY-W32
 // x op y
-Term reduce_opy_w32(Term opy, Term w32) {
+Term reduce_opy_w32(u8 tid, Term opy, Term w32) {
   //printf("reduce_opy_w32 "); print_term(opy); printf("\n");
-  inc_itr();
+  inc_itr(tid, 1);
   Loc opy_loc = term_loc(opy);
   u32 t = term_tag(w32);
   u32 x = term_loc(got(opy_loc + 0));
@@ -858,11 +853,25 @@ Term reduce_opy_w32(Term opy, Term w32) {
   return term_new(t, 0, result);
 }
 
-Term reduce(Term term) {
+Term reduce(u8 tid, Term term) {
+  //if (term_lab(term) == 0x002000) {
+    //volatile u64 i = 0;
+    //volatile u64 L = 1 << 30;
+    //volatile u64 k = 0;
+    //printf("OXI"); print_term_ln(term); printf("\n");
+    //while (i < L) {
+        //k ^= i;
+        //i++;
+    //}
+    //printf("OK\n");
+    //return term_new(W32, 0, 7);
+  //}
+  printf(">> "); print_term_ln(term); printf("\n");
   if (term_tag(term) >= ERA) return term;
   Term next = term;
   u64  stop = *HVM.spos;
   u64* spos = HVM.spos;
+  u64* sbuf = HVM.sbuf + ((1ULL << 32) / 256 * tid);
   while (1) {
     //printf("NEXT "); print_term(term); printf("\n");
     //printf("PATH ");
@@ -879,11 +888,11 @@ Term reduce(Term term) {
       case LET: {
         switch (lab) {
           case LAZY: {
-            next = reduce_let(next, got(loc + 0));
+            next = reduce_let(tid, next, got(loc + 0));
             continue;
           }
           case STRI: {
-            HVM.sbuf[(*spos)++] = next;
+            sbuf[(*spos)++] = next;
             next = got(loc + 1);
             continue;
           }
@@ -894,29 +903,29 @@ Term reduce(Term term) {
         }
       }
       case APP: {
-        HVM.sbuf[(*spos)++] = next;
+        sbuf[(*spos)++] = next;
         next = got(loc + 0);
         continue;
       }
       case MAT: {
-        HVM.sbuf[(*spos)++] = next;
+        sbuf[(*spos)++] = next;
         next = got(loc + 0);
         continue;
       }
       case OPX: {
-        HVM.sbuf[(*spos)++] = next;
+        sbuf[(*spos)++] = next;
         next = got(loc + 0);
         continue;
       }
       case OPY: {
-        HVM.sbuf[(*spos)++] = next;
+        sbuf[(*spos)++] = next;
         next = got(loc + 1);
         continue;
       }
       case DP0: {
         Term sb0 = got(loc + 0);
         if (term_get_bit(sb0) == 0) {
-          HVM.sbuf[(*spos)++] = next;
+          sbuf[(*spos)++] = next;
           next = got(loc + 0);
           continue;
         } else {
@@ -927,7 +936,7 @@ Term reduce(Term term) {
       case DP1: {
         Term sb1 = got(loc + 1);
         if (term_get_bit(sb1) == 0) {
-          HVM.sbuf[(*spos)++] = next;
+          sbuf[(*spos)++] = next;
           next = got(loc + 0);
           continue;
         } else {
@@ -945,30 +954,30 @@ Term reduce(Term term) {
         }
       }
       case REF: {
-        next = reduce_ref(next); // TODO
+        next = reduce_ref(tid, next); // TODO
         continue;
       }
       default: {
         if ((*spos) == stop) {
           break;
         } else {
-          Term prev = HVM.sbuf[--(*spos)];
+          Term prev = sbuf[--(*spos)];
           Tag  ptag = term_tag(prev);
           Lab  plab = term_lab(prev);
           Loc  ploc = term_loc(prev);
           switch (ptag) {
             case LET: {
-              next = reduce_let(prev, next);
+              next = reduce_let(tid, prev, next);
               continue;
             }
             case APP: {
               switch (tag) {
-                case ERA: next = reduce_app_era(prev, next); continue;
-                case LAM: next = reduce_app_lam(prev, next); continue;
-                case SUP: next = reduce_app_sup(prev, next); continue;
-                case CTR: next = reduce_app_ctr(prev, next); continue;
-                case W32: next = reduce_app_w32(prev, next); continue;
-                case CHR: next = reduce_app_w32(prev, next); continue;
+                case ERA: next = reduce_app_era(tid, prev, next); continue;
+                case LAM: next = reduce_app_lam(tid, prev, next); continue;
+                case SUP: next = reduce_app_sup(tid, prev, next); continue;
+                case CTR: next = reduce_app_ctr(tid, prev, next); continue;
+                case W32: next = reduce_app_w32(tid, prev, next); continue;
+                case CHR: next = reduce_app_w32(tid, prev, next); continue;
                 default: break;
               }
               break;
@@ -976,46 +985,46 @@ Term reduce(Term term) {
             case DP0:
             case DP1: {
               switch (tag) {
-                case ERA: next = reduce_dup_era(prev, next); continue;
-                case LAM: next = reduce_dup_lam(prev, next); continue;
-                case SUP: next = reduce_dup_sup(prev, next); continue;
-                case CTR: next = reduce_dup_ctr(prev, next); continue;
-                case W32: next = reduce_dup_w32(prev, next); continue;
-                case CHR: next = reduce_dup_w32(prev, next); continue;
+                case ERA: next = reduce_dup_era(tid, prev, next); continue;
+                case LAM: next = reduce_dup_lam(tid, prev, next); continue;
+                case SUP: next = reduce_dup_sup(tid, prev, next); continue;
+                case CTR: next = reduce_dup_ctr(tid, prev, next); continue;
+                case W32: next = reduce_dup_w32(tid, prev, next); continue;
+                case CHR: next = reduce_dup_w32(tid, prev, next); continue;
                 default: break;
               }
               break;
             }
             case MAT: {
               switch (tag) {
-                case ERA: next = reduce_mat_era(prev, next); continue;
-                case LAM: next = reduce_mat_lam(prev, next); continue;
-                case SUP: next = reduce_mat_sup(prev, next); continue;
-                case CTR: next = reduce_mat_ctr(prev, next); continue;
-                case W32: next = reduce_mat_w32(prev, next); continue;
-                case CHR: next = reduce_mat_w32(prev, next); continue;
+                case ERA: next = reduce_mat_era(tid, prev, next); continue;
+                case LAM: next = reduce_mat_lam(tid, prev, next); continue;
+                case SUP: next = reduce_mat_sup(tid, prev, next); continue;
+                case CTR: next = reduce_mat_ctr(tid, prev, next); continue;
+                case W32: next = reduce_mat_w32(tid, prev, next); continue;
+                case CHR: next = reduce_mat_w32(tid, prev, next); continue;
                 default: break;
               }
             }
             case OPX: {
               switch (tag) {
-                case ERA: next = reduce_opx_era(prev, next); continue;
-                case LAM: next = reduce_opx_lam(prev, next); continue;
-                case SUP: next = reduce_opx_sup(prev, next); continue;
-                case CTR: next = reduce_opx_ctr(prev, next); continue;
-                case W32: next = reduce_opx_w32(prev, next); continue;
-                case CHR: next = reduce_opx_w32(prev, next); continue;
+                case ERA: next = reduce_opx_era(tid, prev, next); continue;
+                case LAM: next = reduce_opx_lam(tid, prev, next); continue;
+                case SUP: next = reduce_opx_sup(tid, prev, next); continue;
+                case CTR: next = reduce_opx_ctr(tid, prev, next); continue;
+                case W32: next = reduce_opx_w32(tid, prev, next); continue;
+                case CHR: next = reduce_opx_w32(tid, prev, next); continue;
                 default: break;
               }
             }
             case OPY: {
               switch (tag) {
-                case ERA: next = reduce_opy_era(prev, next); continue;
-                case LAM: next = reduce_opy_lam(prev, next); continue;
-                case SUP: next = reduce_opy_sup(prev, next); continue;
-                case CTR: next = reduce_opy_ctr(prev, next); continue;
-                case W32: next = reduce_opy_w32(prev, next); continue;
-                case CHR: next = reduce_opy_w32(prev, next); continue;
+                case ERA: next = reduce_opy_era(tid, prev, next); continue;
+                case LAM: next = reduce_opy_lam(tid, prev, next); continue;
+                case SUP: next = reduce_opy_sup(tid, prev, next); continue;
+                case CTR: next = reduce_opy_ctr(tid, prev, next); continue;
+                case W32: next = reduce_opy_w32(tid, prev, next); continue;
+                case CHR: next = reduce_opy_w32(tid, prev, next); continue;
                 default: break;
               }
             } 
@@ -1028,7 +1037,7 @@ Term reduce(Term term) {
     if ((*HVM.spos) == stop) {
       return next;
     } else {
-      Term host = HVM.sbuf[--(*HVM.spos)];
+      Term host = sbuf[--(*HVM.spos)];
       Tag  htag = term_tag(host);
       Lab  hlab = term_lab(host);
       Loc  hloc = term_loc(host);
@@ -1041,21 +1050,21 @@ Term reduce(Term term) {
         case OPY: set(hloc + 1, next); break;
       }
       *HVM.spos = stop;
-      return HVM.sbuf[stop];
+      return sbuf[stop];
     }
   }
   printf("retr: ERR\n");
   return 0;
 }
 
-Term reduce_at(Loc host) {
-  Term term = reduce(got(host));
+Term reduce_at(u8 tid, Loc host) {
+  Term term = reduce(tid, got(host));
   set(host, term);
   return term;
 }
 
 Term normal(Term term) {
-  Term wnf = reduce(term);
+  Term wnf = reduce(0, term);
   Tag tag = term_tag(wnf);
   Lab lab = term_lab(wnf);
   Loc loc = term_loc(wnf);
@@ -1120,15 +1129,15 @@ Term normal(Term term) {
 
 // Primitive: Dynamic Sup `@SUP(lab tm0 tm1)`
 // Allocates a new SUP node with given label.
-Term SUP_f(Term ref) {
+Term SUP_f(u8 tid, Term ref) {
   Loc ref_loc = term_loc(ref);
-  Term lab = reduce(got(ref_loc + 0));
+  Term lab = reduce(tid, got(ref_loc + 0));
   if (term_tag(lab) != W32) {
     printf("ERROR:non-numeric-sup-label\n");
   }
   Term tm0 = got(ref_loc + 1);
   Term tm1 = got(ref_loc + 2);
-  Loc  sup = alloc_node(2);
+  Loc  sup = alloc_node(tid, 2);
   Term ret = term_new(SUP, term_loc(lab), sup);
   set(sup + 0, tm0);
   set(sup + 1, tm1);
@@ -1137,15 +1146,15 @@ Term SUP_f(Term ref) {
 
 // Primitive: Dynamic Dup `@DUP(lab val λdp0λdp1(bod))`
 // Creates a DUP node with given label.
-Term DUP_f(Term ref) {
+Term DUP_f(u8 tid, Term ref) {
   Loc ref_loc = term_loc(ref);
-  Term lab = reduce(got(ref_loc + 0));
+  Term lab = reduce(tid, got(ref_loc + 0));
   if (term_tag(lab) != W32) {
     printf("ERROR:non-numeric-dup-label\n");
   }
   Term val = got(ref_loc + 1);
   Term bod = got(ref_loc + 2);
-  Loc dup = alloc_node(2);
+  Loc dup = alloc_node(tid, 2);
   set(dup + 0, val);
   set(dup + 1, term_new(SUB, 0, 0));
   Term bod_term = got(ref_loc + 2);
@@ -1157,26 +1166,26 @@ Term DUP_f(Term ref) {
       Term lam2_bod = got(lam2_loc + 0);
       sub(lam1_loc + 0, term_new(DP0, term_loc(lab), dup));
       sub(lam2_loc + 0, term_new(DP1, term_loc(lab), dup));
-      *HVM.itrs += 2;
+      inc_itr(tid, 2);
       return lam2_bod;
     }
   }
-  Loc app1 = alloc_node(2);
+  Loc app1 = alloc_node(tid, 2);
   set(app1 + 0, bod);
   set(app1 + 1, term_new(DP0, term_loc(lab), dup));
-  Loc app2 = alloc_node(2);
+  Loc app2 = alloc_node(tid, 2);
   set(app2 + 0, term_new(APP, 0, app1));
   set(app2 + 1, term_new(DP1, term_loc(lab), dup));
   return term_new(APP, 0, app2);
 
 }
 
-Term LOG_f(Term ref) {
+Term LOG_f(u8 tid, Term ref) {
   printf("TODO: LOG_f");
   exit(0);
 }
 
-Term FRESH_f(Term ref) {
+Term FRESH_f(u8 tid, Term ref) {
   printf("TODO: FRESH_f");
   exit(0);
 }
@@ -1187,15 +1196,16 @@ Term FRESH_f(Term ref) {
 void hvm_init() {
   // FIXME: use mmap instead
   HVM.sbuf  = malloc((1ULL << 32) * sizeof(Term));
-  HVM.spos  = malloc(sizeof(u64));
-  *HVM.spos = 0;
+  HVM.spos  = malloc(256 * sizeof(u64));
   HVM.heap  = malloc((1ULL << 32) * sizeof(ATerm));
-  HVM.size  = malloc(sizeof(u64));
-  HVM.itrs  = malloc(sizeof(u64));
-  *HVM.size = 1;
-  *HVM.itrs = 0;
-  HVM.frsh  = malloc(sizeof(u64));
-  *HVM.frsh = 0x20;
+  HVM.next  = malloc(256 * sizeof(u64));
+  HVM.itrs  = malloc(256 * sizeof(u64));
+  for (u32 i = 0; i < 256; ++i) {
+    HVM.spos[i] = 0;
+    HVM.next[i] = 0;
+    HVM.itrs[i] = 0;
+  }
+  HVM.next[0] = 1;
   HVM.book[SUP_F] = SUP_f;
   HVM.book[DUP_F] = DUP_f;
   HVM.book[LOG_F] = LOG_f;
@@ -1206,9 +1216,8 @@ void hvm_free() {
   free(HVM.sbuf);
   free(HVM.spos);
   free(HVM.heap);
-  free(HVM.size);
+  free(HVM.next);
   free(HVM.itrs);
-  free(HVM.frsh);
 }
 
 State* hvm_get_state() {
@@ -1219,15 +1228,14 @@ void hvm_set_state(State* hvm) {
   HVM.sbuf = hvm->sbuf;
   HVM.spos = hvm->spos;
   HVM.heap = hvm->heap;
-  HVM.size = hvm->size;
+  HVM.next = hvm->next;
   HVM.itrs = hvm->itrs;
-  HVM.frsh = hvm->frsh;
   for (int i = 0; i < 4096; i++) {
     HVM.book[i] = hvm->book[i];
   }
 }
 
-void hvm_define(u64 fid, Term (*func)()) {
+void hvm_define(u64 fid, Term (*func)(u8, Term)) {
   //printf("defined %llu %p\n", fid, func);
   HVM.book[fid] = func;
 }

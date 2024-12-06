@@ -13,14 +13,14 @@ import System.Exit
 import qualified Data.Map.Strict as MS
 
 reduceAt :: Bool -> ReduceAt
-reduceAt debug book host = do 
+reduceAt debug book tid host = do 
   term <- got host
   let tag = termTag term
   let lab = termLab term
   let loc = termLoc term
   when debug $ do
-    root <- doExtractCoreAt (const got) book 0
-    core <- doExtractCoreAt (const got) book host
+    root <- doExtractCoreAt (\ _ _ -> got) book 0
+    core <- doExtractCoreAt (\ _ _ -> got) book host
     putStrLn $ "reduce: " ++ termToString term
     -- putStrLn $ "---------------- CORE: "
     -- putStrLn $ coreToString core
@@ -31,117 +31,116 @@ reduceAt debug book host = do
       case modeT lab of
         LAZY -> do
           val <- got (loc + 0)
-          cont host (reduceLet term val)
+          cont host (reduceLet tid term val)
         STRI -> do
-          val <- reduceAt debug book (loc + 0)
-          cont host (reduceLet term val)
+          val <- reduceAt debug book tid (loc + 0)
+          cont host (reduceLet tid term val)
         PARA -> do
           error "TODO"
     APP -> do
-      fun <- reduceAt debug book (loc + 0)
+      fun <- reduceAt debug book tid (loc + 0)
       case tagT (termTag fun) of
-        ERA -> cont host (reduceAppEra term fun)
-        LAM -> cont host (reduceAppLam term fun)
-        SUP -> cont host (reduceAppSup term fun)
-        CTR -> cont host (reduceAppCtr term fun)
-        W32 -> cont host (reduceAppW32 term fun)
-        CHR -> cont host (reduceAppW32 term fun)
+        ERA -> cont host (reduceAppEra tid term fun)
+        LAM -> cont host (reduceAppLam tid term fun)
+        SUP -> cont host (reduceAppSup tid term fun)
+        CTR -> cont host (reduceAppCtr tid term fun)
+        W32 -> cont host (reduceAppW32 tid term fun)
+        CHR -> cont host (reduceAppW32 tid term fun)
         _   -> set (loc + 0) fun >> return term
     MAT -> do
-      val <- reduceAt debug book (loc + 0)
+      val <- reduceAt debug book tid (loc + 0)
       case tagT (termTag val) of
-        ERA -> cont host (reduceMatEra term val)
-        LAM -> cont host (reduceMatLam term val)
-        SUP -> cont host (reduceMatSup term val)
-        CTR -> cont host (reduceMatCtr term val)
-        W32 -> cont host (reduceMatW32 term val)
-        CHR -> cont host (reduceMatW32 term val)
+        ERA -> cont host (reduceMatEra tid term val)
+        LAM -> cont host (reduceMatLam tid term val)
+        SUP -> cont host (reduceMatSup tid term val)
+        CTR -> cont host (reduceMatCtr tid term val)
+        W32 -> cont host (reduceMatW32 tid term val)
+        CHR -> cont host (reduceMatW32 tid term val)
         _   -> set (loc + 0) val >> return term
     OPX -> do
-      val <- reduceAt debug book (loc + 0)
+      val <- reduceAt debug book tid (loc + 0)
       case tagT (termTag val) of
-        ERA -> cont host (reduceOpxEra term val)
-        LAM -> cont host (reduceOpxLam term val)
-        SUP -> cont host (reduceOpxSup term val)
-        CTR -> cont host (reduceOpxCtr term val)
-        W32 -> cont host (reduceOpxW32 term val)
-        CHR -> cont host (reduceOpxW32 term val)
+        ERA -> cont host (reduceOpxEra tid term val)
+        LAM -> cont host (reduceOpxLam tid term val)
+        SUP -> cont host (reduceOpxSup tid term val)
+        CTR -> cont host (reduceOpxCtr tid term val)
+        W32 -> cont host (reduceOpxW32 tid term val)
+        CHR -> cont host (reduceOpxW32 tid term val)
         _   -> set (loc + 0) val >> return term
     OPY -> do
-      val <- reduceAt debug book (loc + 1)
+      val <- reduceAt debug book tid (loc + 1)
       case tagT (termTag val) of
-        ERA -> cont host (reduceOpyEra term val)
-        LAM -> cont host (reduceOpyLam term val)
-        SUP -> cont host (reduceOpySup term val)
-        CTR -> cont host (reduceOpyCtr term val)
-        W32 -> cont host (reduceOpyW32 term val)
-        CHR -> cont host (reduceOpyW32 term val)
+        ERA -> cont host (reduceOpyEra tid term val)
+        LAM -> cont host (reduceOpyLam tid term val)
+        SUP -> cont host (reduceOpySup tid term val)
+        CTR -> cont host (reduceOpyCtr tid term val)
+        W32 -> cont host (reduceOpyW32 tid term val)
+        CHR -> cont host (reduceOpyW32 tid term val)
         _   -> set (loc + 1) val >> return term
     DP0 -> do
       sb0 <- got (loc + 0)
       if termGetBit sb0 == 0
         then do
-          val <- reduceAt debug book (loc + 0)
+          val <- reduceAt debug book tid (loc + 0)
           case tagT (termTag val) of
-            ERA -> cont host (reduceDupEra term val)
-            LAM -> cont host (reduceDupLam term val)
-            SUP -> cont host (reduceDupSup term val)
-            CTR -> cont host (reduceDupCtr term val)
-            W32 -> cont host (reduceDupW32 term val)
-            CHR -> cont host (reduceDupW32 term val)
+            ERA -> cont host (reduceDupEra tid term val)
+            LAM -> cont host (reduceDupLam tid term val)
+            SUP -> cont host (reduceDupSup tid term val)
+            CTR -> cont host (reduceDupCtr tid term val)
+            W32 -> cont host (reduceDupW32 tid term val)
+            CHR -> cont host (reduceDupW32 tid term val)
             _   -> set (loc + 0) val >> return term
         else do
           set host (termRemBit sb0)
-          reduceAt debug book host
+          reduceAt debug book tid host
     DP1 -> do
       sb1 <- got (loc + 1)
       if termGetBit sb1 == 0
         then do
-          val <- reduceAt debug book (loc + 0)
+          val <- reduceAt debug book tid (loc + 0)
           case tagT (termTag val) of
-            ERA -> cont host (reduceDupEra term val)
-            LAM -> cont host (reduceDupLam term val)
-            SUP -> cont host (reduceDupSup term val)
-            CTR -> cont host (reduceDupCtr term val)
-            W32 -> cont host (reduceDupW32 term val)
-            CHR -> cont host (reduceDupW32 term val)
+            ERA -> cont host (reduceDupEra tid term val)
+            LAM -> cont host (reduceDupLam tid term val)
+            SUP -> cont host (reduceDupSup tid term val)
+            CTR -> cont host (reduceDupCtr tid term val)
+            W32 -> cont host (reduceDupW32 tid term val)
+            CHR -> cont host (reduceDupW32 tid term val)
             _   -> set (loc + 0) val >> return term
         else do
           set host (termRemBit sb1)
-          reduceAt debug book host
+          reduceAt debug book tid host
     VAR -> do
       sub <- got (loc + 0)
       if termGetBit sub == 0
         then return term
         else do
           set host (termRemBit sub)
-          reduceAt debug book host
+          reduceAt debug book tid host
     REF -> do
-      reduceRefAt book host
-      reduceAt debug book host
+      reduceRefAt book tid host
+      reduceAt debug book tid host
     otherwise -> do
       return term
   where
     cont host action = do
       ret <- action
       set host ret
-      reduceAt debug book host
+      reduceAt debug book tid host
 
-reduceRefAt :: Book -> Loc -> HVM Term
-reduceRefAt book host = do
+reduceRefAt :: Book -> TID -> Loc -> HVM Term
+reduceRefAt book tid host = do
   term <- got host
   let lab = termLab term
   let loc = termLoc term
   let fid = u12v2X lab
   let ari = u12v2Y lab
   case fid of
-    x | x == _DUP_F_ -> reduceRefAt_DupF book host loc ari
-    x | x == _SUP_F_ -> reduceRefAt_SupF book host loc ari
-    x | x == _LOG_F_ -> reduceRefAt_LogF book host loc ari
-    x | x == _FRESH_F_ -> reduceRefAt_FreshF book host loc ari
+    x | x == _DUP_F_ -> reduceRefAt_DupF book tid host loc ari
+    x | x == _SUP_F_ -> reduceRefAt_SupF book tid host loc ari
+    x | x == _LOG_F_ -> reduceRefAt_LogF book tid host loc ari
     oterwise -> case MS.lookup fid (idToFunc book) of
       Just ((copy, args), core) -> do
-        incItr
+        incItr tid 1
         when (length args /= fromIntegral ari) $ do
           putStrLn $ "RUNTIME_ERROR: arity mismatch on call to '@" ++ mget (idToName book) fid ++ "'."
           exitFailure
@@ -150,9 +149,9 @@ reduceRefAt book host = do
           else forM (zip [0..] args) $ \(i, (strict, _)) -> do
             term <- got (loc + i)
             if strict
-              then reduceAt False book (loc + i)
+              then reduceAt False book tid (loc + i)
               else return term
-        doInjectCoreAt book core host $ zip (map snd args) argTerms
+        doInjectCoreAt book core tid host $ zip (map snd args) argTerms
         -- TODO: I disabled Fast Copy Optimization on interpreted mode because I
         -- don't think it is relevant here. We use it for speed, to trigger the
         -- hot paths on compiled functions, which don't happen when interpreted.
@@ -180,16 +179,16 @@ reduceRefAt book host = do
         return term
 
 -- Primitive: Dynamic Dup `@DUP(lab val λdp0λdp1(bod))`
-reduceRefAt_DupF :: Book -> Loc -> Loc -> Word64 -> HVM Term  
-reduceRefAt_DupF book host loc ari = do
-  incItr
+reduceRefAt_DupF :: Book -> TID -> Loc -> Loc -> Word64 -> HVM Term  
+reduceRefAt_DupF book tid host loc ari = do
+  incItr tid 1
   when (ari /= 3) $ do
     putStrLn $ "RUNTIME_ERROR: arity mismatch on call to '@DUP'."
     exitFailure
-  lab <- reduceAt False book (loc + 0)
+  lab <- reduceAt False book tid (loc + 0)
   val <- got (loc + 1)
   bod <- got (loc + 2)
-  dup <- allocNode 2
+  dup <- allocNode tid 2
   case tagT (termTag lab) of
     W32 -> do
       when (termLoc lab >= 0x1000000) $ do
@@ -198,33 +197,33 @@ reduceRefAt_DupF book host loc ari = do
       set (dup + 0) val
       set (dup + 1) (termNew _SUB_ 0 0)
       -- Create first APP node for (APP bod DP0)
-      app1 <- allocNode 2
+      app1 <- allocNode tid 2
       set (app1 + 0) bod
       set (app1 + 1) (termNew _DP0_ (termLoc lab) dup)
       -- Create second APP node for (APP (APP bod DP0) DP1)
-      app2 <- allocNode 2
+      app2 <- allocNode tid 2
       set (app2 + 0) (termNew _APP_ 0 app1)
       set (app2 + 1) (termNew _DP1_ (termLoc lab) dup)
       let ret = termNew _APP_ 0 app2
       set host ret
       return ret
     _ -> do
-      core <- doExtractCoreAt (\ x -> got) book (loc + 0)
+      core <- doExtractCoreAt (\ _ _ -> got) book (loc + 0)
       putStrLn $ "RUNTIME_ERROR: dynamic DUP without numeric label: " ++ termToString lab
       putStrLn $ coreToString (doLiftDups core)
       exitFailure
 
 -- Primitive: Dynamic Sup `@SUP(lab tm0 tm1)`
-reduceRefAt_SupF :: Book -> Loc -> Loc -> Word64 -> HVM Term
-reduceRefAt_SupF book host loc ari = do
-  incItr
+reduceRefAt_SupF :: Book -> TID -> Loc -> Loc -> Word64 -> HVM Term
+reduceRefAt_SupF book tid host loc ari = do
+  incItr tid 1
   when (ari /= 3) $ do
     putStrLn $ "RUNTIME_ERROR: arity mismatch on call to '@SUP'."
     exitFailure
-  lab <- reduceAt False book (loc + 0)
+  lab <- reduceAt False book tid (loc + 0)
   tm0 <- got (loc + 1)
   tm1 <- got (loc + 2)
-  sup <- allocNode 2
+  sup <- allocNode tid 2
   case tagT (termTag lab) of
     W32 -> do
       when (termLoc lab >= 0x1000000) $ do
@@ -239,13 +238,13 @@ reduceRefAt_SupF book host loc ari = do
 -- Primitive: Logger `@LOG(msg)`
 -- Will extract the term and log it. 
 -- Returns 0.
-reduceRefAt_LogF :: Book -> Loc -> Loc -> Word64 -> HVM Term
-reduceRefAt_LogF book host loc ari = do
-  incItr
+reduceRefAt_LogF :: Book -> TID -> Loc -> Loc -> Word64 -> HVM Term
+reduceRefAt_LogF book tid host loc ari = do
+  incItr tid 1
   when (ari /= 1) $ do
     putStrLn $ "RUNTIME_ERROR: arity mismatch on call to '@LOG'."
     exitFailure
-  msg <- doExtractCoreAt (const got) book (loc + 0)
+  msg <- doExtractCoreAt (\ _ _ -> got) book (loc + 0)
   putStrLn $ coreToString (doLiftDups msg)
   -- msgs <- doCollapseFlatAt (const got) book (loc + 0)
   -- forM_ msgs $ \msg -> do
@@ -254,23 +253,10 @@ reduceRefAt_LogF book host loc ari = do
   set host ret
   return ret
 
--- Primitive: Fresh `@FRESH`
--- Returns a fresh dup label.
-reduceRefAt_FreshF :: Book -> Loc -> Loc -> Word64 -> HVM Term
-reduceRefAt_FreshF book host loc ari = do
-  incItr
-  when (ari /= 0) $ do
-    putStrLn $ "RUNTIME_ERROR: arity mismatch on call to '@Fresh'."
-    exitFailure
-  num <- fresh
-  let ret = termNew _W32_ 0 num
-  set host ret
-  return ret
-
 reduceCAt :: Bool -> ReduceAt
-reduceCAt = \ _ _ host -> do
+reduceCAt = \ _ _ _ host -> do
   term <- got host
-  whnf <- reduceC term
+  whnf <- reduceC 0 term
   set host whnf
   return $ whnf
 

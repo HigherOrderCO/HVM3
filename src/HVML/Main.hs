@@ -46,6 +46,23 @@ data RunMode
   | Search
   deriving Eq
 
+-- busy 0 = 0
+-- busy n = busy (n-1)
+
+-- a = busy (2^28)
+-- b = busy (2^28+1)
+-- c = busy (2^28+2)
+-- d = busy (2^28+3)
+
+-- main :: IO ()
+-- main = do
+  -- start <- getCurrentTime
+  -- print $ a `par` b `par` c `par` d `pseq` (a,b,c,d)
+  -- print $ (a,b,c,d)
+  -- end <- getCurrentTime
+  -- let diff = diffUTCTime end start
+  -- printf "Time: %.2f seconds\n" (realToFrac diff :: Double)
+
 main :: IO ()
 main = do
   args <- getArgs
@@ -128,8 +145,8 @@ cliRun filePath debug compiled mode showStats = do
     exitWith (ExitFailure 1)
 
   -- Normalize main
-  init <- getCPUTime
-  root <- doInjectCoreAt book (Ref "main" (mget (nameToId book) "main") []) 0 []
+  init <- getCurrentTime
+  root <- doInjectCoreAt book (Ref "main" (mget (nameToId book) "main") []) 0 0 []
   rxAt <- if compiled
     then return (reduceCAt debug)
     else return (reduceAt debug)
@@ -152,13 +169,14 @@ cliRun filePath debug compiled mode showStats = do
     putStrLn ""
 
   -- Prints total time
-  end <- getCPUTime
-
+  end <- getCurrentTime
+  
   -- Show stats
   when showStats $ do
     itrs <- getItr
     size <- getLen
-    let time = fromIntegral (end - init) / (10^12) :: Double
+    let diff = diffUTCTime end init
+    let time = realToFrac diff :: Double
     let mips = (fromIntegral itrs / 1000000.0) / time
     printf "WORK: %llu interactions\n" itrs
     printf "TIME: %.7f seconds\n" time
