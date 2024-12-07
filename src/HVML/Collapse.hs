@@ -86,152 +86,13 @@ instance Monad Collapse where
 -- Dup Collapser
 -- -------------
 
-collapseDupsAt :: IM.IntMap [Int] -> ReduceAt -> Book -> Loc -> HVM Core
-collapseDupsAt paths reduceAt book host = unsafeInterleaveIO $ do
-  -- putStrLn $ "coll : " ++ show host
-  -- gott <- got host
-  -- putStrLn $ "coll : " ++ showHex host ++ " " ++ termToString gott
-  term <- reduceAt book 0 host
-  -- putStrLn $ "done : " ++ showHex host ++ " " ++ termToString term
-  case tagT (termTag term) of
-    ERA -> do
-      return Era
-
-    LET -> do
-      let loc = termLoc term
-      let mode = modeT (termLab term)
-      name <- return $ "$" ++ show (loc + 0)
-      val0 <- collapseDupsAt paths reduceAt book (loc + 1)
-      bod0 <- collapseDupsAt paths reduceAt book (loc + 2)
-      return $ Let mode name val0 bod0
-
-    LAM -> do
-      let loc = termLoc term
-      name <- return $ "$" ++ show (loc + 0)
-      bod0 <- collapseDupsAt paths reduceAt book (loc + 0)
-      return $ Lam name bod0
-
-    APP -> do
-      let loc = termLoc term
-      fun0 <- collapseDupsAt paths reduceAt book (loc + 0)
-      arg0 <- collapseDupsAt paths reduceAt book (loc + 1)
-      return $ App fun0 arg0
-
-    SUP -> do
-      let loc = termLoc term
-      let lab = termLab term
-      case IM.lookup (fromIntegral lab) paths of
-        Just (p:ps) -> do
-          let newPaths = IM.insert (fromIntegral lab) ps paths
-          collapseDupsAt (newPaths) reduceAt book (loc + fromIntegral p)
-        _ -> do
-          tm00 <- collapseDupsAt paths reduceAt book (loc + 0)
-          tm11 <- collapseDupsAt paths reduceAt book (loc + 1)
-          return $ Sup lab tm00 tm11
-
-    VAR -> do
-      let loc = termLoc term
-      sub <- got loc
-      if termGetBit sub /= 0
-      then do
-        set (loc + 0) (termRemBit sub)
-        collapseDupsAt paths reduceAt book (loc + 0)
-      else do
-        name <- return $ "$" ++ show loc
-        return $ Var name
-
-    DP0 -> do
-      let loc = termLoc term
-      let lab = termLab term
-      sb0 <- got (loc+0)
-      if termGetBit sb0 /= 0
-      then do
-        set (loc + 0) (termRemBit sb0)
-        collapseDupsAt paths reduceAt book (loc + 0)
-      else do
-        let newPaths = IM.alter (Just . maybe [0] (0:)) (fromIntegral lab) paths
-        collapseDupsAt (newPaths) reduceAt book (loc + 0)
-
-    DP1 -> do
-      let loc = termLoc term
-      let lab = termLab term
-      sb1 <- got (loc+1)
-      if termGetBit sb1 /= 0
-      then do
-        set (loc + 1) (termRemBit sb1)
-        collapseDupsAt paths reduceAt book (loc + 1)
-      else do
-        let newPaths = IM.alter (Just . maybe [1] (1:)) (fromIntegral lab) paths
-        collapseDupsAt (newPaths) reduceAt book (loc + 0)
-
-    CTR -> do
-      let loc = termLoc term
-      let lab = termLab term
-      let cid = u12v2X lab
-      let ari = u12v2Y lab
-      let aux = if ari == 0 then [] else [loc + i | i <- [0..ari-1]]
-      fds0 <- forM aux (collapseDupsAt paths reduceAt book)
-      return $ Ctr cid fds0
-    
-    MAT -> do
-      let loc = termLoc term
-      let len = u12v2X $ termLab term
-      let aux = if len == 0 then [] else [loc + 1 + i | i <- [0..len-1]]
-      val0 <- collapseDupsAt paths reduceAt book (loc + 0)
-      css0 <- forM aux $ \h -> do
-        bod <- collapseDupsAt paths reduceAt book h
-        return $ ("#", [], bod) -- TODO: recover constructor and fields
-      return $ Mat val0 [] css0
-
-    W32 -> do
-      let val = termLoc term
-      return $ U32 (fromIntegral val)
-
-    CHR -> do
-      let val = termLoc term
-      return $ Chr (chr (fromIntegral val))
-
-    OPX -> do
-      let loc = termLoc term
-      let opr = toEnum (fromIntegral (termLab term))
-      nm00 <- collapseDupsAt paths reduceAt book (loc + 0)
-      nm10 <- collapseDupsAt paths reduceAt book (loc + 1)
-      return $ Op2 opr nm00 nm10
-
-    OPY -> do
-      let loc = termLoc term
-      let opr = toEnum (fromIntegral (termLab term))
-      nm00 <- collapseDupsAt paths reduceAt book (loc + 0)
-      nm10 <- collapseDupsAt paths reduceAt book (loc + 1)
-      return $ Op2 opr nm00 nm10
-
-    REF -> do
-      let loc = termLoc term
-      let lab = termLab term
-      let fid = u12v2X lab
-      let ari = u12v2Y lab
-      arg0 <- mapM (collapseDupsAt paths reduceAt book) [loc + i | i <- [0..ari-1]]
-      let name = MS.findWithDefault "?" fid (idToName book)
-      return $ Ref name fid arg0
-
-    tag -> do
-      putStrLn ("unexpected-tag:" ++ show tag)
-      return $ Var "?"
-      -- exitFailure
-
-doCollapseAt :: ReduceAt -> Book -> Loc -> HVM (Collapse Core)
-doCollapseAt reduceAt book host = do
-  core <- collapseDupsAt IM.empty reduceAt book host
-  return $ collapseSups book core
-
--- collapseDupsAt :: IM.IntMap [Int] -> ReduceAt -> Book -> TID -> Word64 -> Loc -> HVM Core
--- collapseDupsAt paths reduceAt book tid cc host = unsafeInterleaveIO $ do
-  -- -- putStrLn $ "[" ++ show tid ++ "]coll : " ++ show host
+-- collapseDupsAt :: IM.IntMap [Int] -> ReduceAt -> Book -> Loc -> HVM Core
+-- collapseDupsAt paths reduceAt book host = unsafeInterleaveIO $ do
+  -- -- putStrLn $ "coll : " ++ show host
   -- -- gott <- got host
-  -- -- putStrLn $ "[" ++ show tid ++ "]done : " ++ showHex host ++ " " ++ termToString gott
-  -- term <- reduceAt book (tid * 16) host
+  -- -- putStrLn $ "coll : " ++ showHex host ++ " " ++ termToString gott
+  -- term <- reduceAt book 0 host
   -- -- putStrLn $ "done : " ++ showHex host ++ " " ++ termToString term
-
   -- case tagT (termTag term) of
     -- ERA -> do
       -- return Era
@@ -240,20 +101,20 @@ doCollapseAt reduceAt book host = do
       -- let loc = termLoc term
       -- let mode = modeT (termLab term)
       -- name <- return $ "$" ++ show (loc + 0)
-      -- val0 <- collapseDupsAt paths reduceAt book tid cc (loc + 1)
-      -- bod0 <- collapseDupsAt paths reduceAt book tid cc (loc + 2)
+      -- val0 <- collapseDupsAt paths reduceAt book (loc + 1)
+      -- bod0 <- collapseDupsAt paths reduceAt book (loc + 2)
       -- return $ Let mode name val0 bod0
 
     -- LAM -> do
       -- let loc = termLoc term
       -- name <- return $ "$" ++ show (loc + 0)
-      -- bod0 <- collapseDupsAt paths reduceAt book tid cc (loc + 0)
+      -- bod0 <- collapseDupsAt paths reduceAt book (loc + 0)
       -- return $ Lam name bod0
 
     -- APP -> do
       -- let loc = termLoc term
-      -- fun0 <- collapseDupsAt paths reduceAt book tid cc (loc + 0)
-      -- arg0 <- collapseDupsAt paths reduceAt book tid cc (loc + 1)
+      -- fun0 <- collapseDupsAt paths reduceAt book (loc + 0)
+      -- arg0 <- collapseDupsAt paths reduceAt book (loc + 1)
       -- return $ App fun0 arg0
 
     -- SUP -> do
@@ -262,31 +123,11 @@ doCollapseAt reduceAt book host = do
       -- case IM.lookup (fromIntegral lab) paths of
         -- Just (p:ps) -> do
           -- let newPaths = IM.insert (fromIntegral lab) ps paths
-          -- collapseDupsAt newPaths reduceAt book tid cc (loc + fromIntegral p)
-        -- _ -> if cc > 1
-          -- then do
-            -- let cc' = cc `div` 2
-            -- let tid' = tid + fromIntegral cc'
-            -- print $ "forking: " ++ show tid ++ " " ++ show tid'
-            -- left <- newEmptyMVar
-            -- right <- newEmptyMVar
-            -- _ <- forkIO $ do
-              -- print "A0"
-              -- !tm0 <- collapseDupsAt paths reduceAt book tid cc' (loc + 0)
-              -- print "A1"
-              -- putMVar left tm0
-            -- _ <- forkIO $ do
-              -- print "B0"
-              -- !tm1 <- collapseDupsAt paths reduceAt book tid' cc' (loc + 1)
-              -- print "B1"
-              -- putMVar right tm1
-            -- tm00 <- takeMVar left
-            -- tm11 <- takeMVar right
-            -- return $ Sup lab tm00 tm11
-          -- else do
-            -- tm00 <- collapseDupsAt paths reduceAt book tid cc (loc + 0)
-            -- tm11 <- collapseDupsAt paths reduceAt book tid cc (loc + 1)
-            -- return $ Sup lab tm00 tm11
+          -- collapseDupsAt (newPaths) reduceAt book (loc + fromIntegral p)
+        -- _ -> do
+          -- tm00 <- collapseDupsAt paths reduceAt book (loc + 0)
+          -- tm11 <- collapseDupsAt paths reduceAt book (loc + 1)
+          -- return $ Sup lab tm00 tm11
 
     -- VAR -> do
       -- let loc = termLoc term
@@ -294,7 +135,7 @@ doCollapseAt reduceAt book host = do
       -- if termGetBit sub /= 0
       -- then do
         -- set (loc + 0) (termRemBit sub)
-        -- collapseDupsAt paths reduceAt book tid cc (loc + 0)
+        -- collapseDupsAt paths reduceAt book (loc + 0)
       -- else do
         -- name <- return $ "$" ++ show loc
         -- return $ Var name
@@ -306,10 +147,10 @@ doCollapseAt reduceAt book host = do
       -- if termGetBit sb0 /= 0
       -- then do
         -- set (loc + 0) (termRemBit sb0)
-        -- collapseDupsAt paths reduceAt book tid cc (loc + 0)
+        -- collapseDupsAt paths reduceAt book (loc + 0)
       -- else do
         -- let newPaths = IM.alter (Just . maybe [0] (0:)) (fromIntegral lab) paths
-        -- collapseDupsAt newPaths reduceAt book tid cc (loc + 0)
+        -- collapseDupsAt (newPaths) reduceAt book (loc + 0)
 
     -- DP1 -> do
       -- let loc = termLoc term
@@ -318,10 +159,10 @@ doCollapseAt reduceAt book host = do
       -- if termGetBit sb1 /= 0
       -- then do
         -- set (loc + 1) (termRemBit sb1)
-        -- collapseDupsAt paths reduceAt book tid cc (loc + 1)
+        -- collapseDupsAt paths reduceAt book (loc + 1)
       -- else do
         -- let newPaths = IM.alter (Just . maybe [1] (1:)) (fromIntegral lab) paths
-        -- collapseDupsAt newPaths reduceAt book tid cc (loc + 0)
+        -- collapseDupsAt (newPaths) reduceAt book (loc + 0)
 
     -- CTR -> do
       -- let loc = termLoc term
@@ -329,17 +170,17 @@ doCollapseAt reduceAt book host = do
       -- let cid = u12v2X lab
       -- let ari = u12v2Y lab
       -- let aux = if ari == 0 then [] else [loc + i | i <- [0..ari-1]]
-      -- fds0 <- forM aux (collapseDupsAt paths reduceAt book tid cc)
+      -- fds0 <- forM aux (collapseDupsAt paths reduceAt book)
       -- return $ Ctr cid fds0
     
     -- MAT -> do
       -- let loc = termLoc term
       -- let len = u12v2X $ termLab term
       -- let aux = if len == 0 then [] else [loc + 1 + i | i <- [0..len-1]]
-      -- val0 <- collapseDupsAt paths reduceAt book tid cc (loc + 0)
+      -- val0 <- collapseDupsAt paths reduceAt book (loc + 0)
       -- css0 <- forM aux $ \h -> do
-        -- bod <- collapseDupsAt paths reduceAt book tid cc h
-        -- return $ ("#", [], bod)
+        -- bod <- collapseDupsAt paths reduceAt book h
+        -- return $ ("#", [], bod) -- TODO: recover constructor and fields
       -- return $ Mat val0 [] css0
 
     -- W32 -> do
@@ -353,15 +194,15 @@ doCollapseAt reduceAt book host = do
     -- OPX -> do
       -- let loc = termLoc term
       -- let opr = toEnum (fromIntegral (termLab term))
-      -- nm00 <- collapseDupsAt paths reduceAt book tid cc (loc + 0)
-      -- nm10 <- collapseDupsAt paths reduceAt book tid cc (loc + 1)
+      -- nm00 <- collapseDupsAt paths reduceAt book (loc + 0)
+      -- nm10 <- collapseDupsAt paths reduceAt book (loc + 1)
       -- return $ Op2 opr nm00 nm10
 
     -- OPY -> do
       -- let loc = termLoc term
       -- let opr = toEnum (fromIntegral (termLab term))
-      -- nm00 <- collapseDupsAt paths reduceAt book tid cc (loc + 0)
-      -- nm10 <- collapseDupsAt paths reduceAt book tid cc (loc + 1)
+      -- nm00 <- collapseDupsAt paths reduceAt book (loc + 0)
+      -- nm10 <- collapseDupsAt paths reduceAt book (loc + 1)
       -- return $ Op2 opr nm00 nm10
 
     -- REF -> do
@@ -369,18 +210,208 @@ doCollapseAt reduceAt book host = do
       -- let lab = termLab term
       -- let fid = u12v2X lab
       -- let ari = u12v2Y lab
-      -- arg0 <- mapM (collapseDupsAt paths reduceAt book tid cc) [loc + i | i <- [0..ari-1]]
+      -- arg0 <- mapM (collapseDupsAt paths reduceAt book) [loc + i | i <- [0..ari-1]]
       -- let name = MS.findWithDefault "?" fid (idToName book)
       -- return $ Ref name fid arg0
 
     -- tag -> do
       -- putStrLn ("unexpected-tag:" ++ show tag)
       -- return $ Var "?"
+      -- -- exitFailure
 
 -- doCollapseAt :: ReduceAt -> Book -> Loc -> HVM (Collapse Core)
 -- doCollapseAt reduceAt book host = do
-  -- core <- collapseDupsAt IM.empty reduceAt book 0 16 host
+  -- core <- collapseDupsAt IM.empty reduceAt book host
   -- return $ collapseSups book core
+
+
+
+
+
+collapseDupsAt :: IM.IntMap [Int] -> ReduceAt -> Book -> TID -> Word64 -> Loc -> HVM Core
+collapseDupsAt paths reduceAt book tid cc host = unsafeInterleaveIO $ do
+  -- putStrLn $ "[" ++ show tid ++ "]coll : " ++ show host
+  -- gott <- got host
+  -- putStrLn $ "[" ++ show tid ++ "]done : " ++ showHex host ++ " " ++ termToString gott
+  term <- reduceAt book tid host
+  -- putStrLn $ "done : " ++ showHex host ++ " " ++ termToString term
+
+  case tagT (termTag term) of
+    ERA -> do
+      return Era
+
+    LET -> do
+      let loc = termLoc term
+      let mode = modeT (termLab term)
+      name <- return $ "$" ++ show (loc + 0)
+      val0 <- collapseDupsAt paths reduceAt book tid cc (loc + 1)
+      bod0 <- collapseDupsAt paths reduceAt book tid cc (loc + 2)
+      return $ Let mode name val0 bod0
+
+    LAM -> do
+      let loc = termLoc term
+      name <- return $ "$" ++ show (loc + 0)
+      bod0 <- collapseDupsAt paths reduceAt book tid cc (loc + 0)
+      return $ Lam name bod0
+
+    APP -> do
+      let loc = termLoc term
+      fun0 <- collapseDupsAt paths reduceAt book tid cc (loc + 0)
+      arg0 <- collapseDupsAt paths reduceAt book tid cc (loc + 1)
+      return $ App fun0 arg0
+
+    SUP -> do
+      let loc = termLoc term
+      let lab = termLab term
+      case IM.lookup (fromIntegral lab) paths of
+        Just (p:ps) -> do
+          let newPaths = IM.insert (fromIntegral lab) ps paths
+          collapseDupsAt newPaths reduceAt book tid cc (loc + fromIntegral p)
+        _ -> if cc > 1
+          then do
+            let cc' = cc `div` 2
+            let tid' = tid + fromIntegral cc'
+            -- print $ "forking: " ++ show tid ++ " " ++ show tid'
+            left <- newEmptyMVar
+            right <- newEmptyMVar
+            _ <- forkIO $ do
+              -- print "A0"
+              !tm0 <- collapseDupsAt paths reduceAt book tid cc' (loc + 0)
+              -- print "A1"
+              putMVar left tm0
+            _ <- forkIO $ do
+              -- print "B0"
+              !tm1 <- collapseDupsAt paths reduceAt book tid' cc' (loc + 1)
+              -- print "B1"
+              putMVar right tm1
+            tm00 <- takeMVar left
+            tm11 <- takeMVar right
+            return $ Sup lab tm00 tm11
+          else do
+            tm00 <- collapseDupsAt paths reduceAt book tid cc (loc + 0)
+            tm11 <- collapseDupsAt paths reduceAt book tid cc (loc + 1)
+            return $ Sup lab tm00 tm11
+
+    -- SUP -> do
+      -- let loc = termLoc term
+      -- let lab = termLab term
+      -- case IM.lookup (fromIntegral lab) paths of
+        -- Just (p:ps) -> do
+          -- let newPaths = IM.insert (fromIntegral lab) ps paths
+          -- collapseDupsAt newPaths reduceAt book tid cc (loc + fromIntegral p)
+        -- Nothing -> do
+          -- -- tm00 <- collapseDupsAt paths reduceAt book tid cc (loc + 0)
+          -- -- tm11 <- collapseDupsAt paths reduceAt book tid cc (loc + 1)
+          -- -- TODO: FIX THE LINES ABOVE. SPLIT THE TID and divide the CC
+          -- tm00 <- collapseDupsAt paths reduceAt book tid (cc `div` 2) (loc + 0)
+          -- tm11 <- collapseDupsAt paths reduceAt book (tid + fromIntegral (cc `div` 2)) (cc `div` 2) (loc + 1)
+          -- return $ Sup lab tm00 tm11
+
+    VAR -> do
+      let loc = termLoc term
+      sub <- got loc
+      if termGetBit sub /= 0
+      then do
+        set (loc + 0) (termRemBit sub)
+        collapseDupsAt paths reduceAt book tid cc (loc + 0)
+      else do
+        name <- return $ "$" ++ show loc
+        return $ Var name
+
+    DP0 -> do
+      let loc = termLoc term
+      let lab = termLab term
+      sb0 <- got (loc+0)
+      if termGetBit sb0 /= 0
+      then do
+        set (loc + 0) (termRemBit sb0)
+        collapseDupsAt paths reduceAt book tid cc (loc + 0)
+      else do
+        let newPaths = IM.alter (Just . maybe [0] (0:)) (fromIntegral lab) paths
+        collapseDupsAt newPaths reduceAt book tid cc (loc + 0)
+
+    DP1 -> do
+      let loc = termLoc term
+      let lab = termLab term
+      sb1 <- got (loc+1)
+      if termGetBit sb1 /= 0
+      then do
+        set (loc + 1) (termRemBit sb1)
+        collapseDupsAt paths reduceAt book tid cc (loc + 1)
+      else do
+        let newPaths = IM.alter (Just . maybe [1] (1:)) (fromIntegral lab) paths
+        collapseDupsAt newPaths reduceAt book tid cc (loc + 0)
+
+    CTR -> do
+      let loc = termLoc term
+      let lab = termLab term
+      let cid = u12v2X lab
+      let ari = u12v2Y lab
+      let aux = if ari == 0 then [] else [loc + i | i <- [0..ari-1]]
+      fds0 <- forM aux (collapseDupsAt paths reduceAt book tid cc)
+      return $ Ctr cid fds0
+    
+    MAT -> do
+      let loc = termLoc term
+      let len = u12v2X $ termLab term
+      let aux = if len == 0 then [] else [loc + 1 + i | i <- [0..len-1]]
+      val0 <- collapseDupsAt paths reduceAt book tid cc (loc + 0)
+      css0 <- forM aux $ \h -> do
+        bod <- collapseDupsAt paths reduceAt book tid cc h
+        return $ ("#", [], bod)
+      return $ Mat val0 [] css0
+
+    W32 -> do
+      let val = termLoc term
+      return $ U32 (fromIntegral val)
+
+    CHR -> do
+      let val = termLoc term
+      return $ Chr (chr (fromIntegral val))
+
+    OPX -> do
+      let loc = termLoc term
+      let opr = toEnum (fromIntegral (termLab term))
+      nm00 <- collapseDupsAt paths reduceAt book tid cc (loc + 0)
+      nm10 <- collapseDupsAt paths reduceAt book tid cc (loc + 1)
+      return $ Op2 opr nm00 nm10
+
+    OPY -> do
+      let loc = termLoc term
+      let opr = toEnum (fromIntegral (termLab term))
+      nm00 <- collapseDupsAt paths reduceAt book tid cc (loc + 0)
+      nm10 <- collapseDupsAt paths reduceAt book tid cc (loc + 1)
+      return $ Op2 opr nm00 nm10
+
+    REF -> do
+      let loc = termLoc term
+      let lab = termLab term
+      let fid = u12v2X lab
+      let ari = u12v2Y lab
+      arg0 <- mapM (collapseDupsAt paths reduceAt book tid cc) [loc + i | i <- [0..ari-1]]
+      let name = MS.findWithDefault "?" fid (idToName book)
+      return $ Ref name fid arg0
+
+    tag -> do
+      putStrLn ("unexpected-tag:" ++ show tag)
+      return $ Var "?"
+
+doCollapseAt :: ReduceAt -> Book -> Loc -> HVM (Collapse Core)
+doCollapseAt reduceAt book host = do
+  core <- collapseDupsAt IM.empty reduceAt book 0 16 host
+  return $ collapseSups book core
+
+
+
+
+
+
+
+
+
+
+
+
 
 -- Sup Collapser
 -- -------------
@@ -505,3 +536,31 @@ doCollapseFlatAt :: ReduceAt -> Book -> Loc -> HVM [Core]
 doCollapseFlatAt reduceAt book host = do
   coll <- doCollapseAt reduceAt book host
   return $ flatten coll
+
+
+
+
+
+
+
+
+
+-- (C (C {a b} {c d}) (C {e f} {g h}))
+-- -----------------------------------------
+-- {(C (C a c) (C e g)) (C (C b d) (C f h))}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
