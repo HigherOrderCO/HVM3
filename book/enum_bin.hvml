@@ -72,8 +72,8 @@ data Pair { #Pair{fst snd} }
 
 // Decrements a Bin
 @dec(a) = ~a{
-  #O{p}: #O{@dec(p)}
-  #I{p}: #I{p}
+  #O{p}: #I{@dec(p)}
+  #I{p}: #O{p}
   #E: #E
 }
 
