@@ -88,7 +88,8 @@ static State HVM = {
 #define STRI 0x1
 #define PARA 0x2
 
-#define VOID 0x00000000000000
+#define VOID 0x0000000000000000
+#define LOCK 0xFFFFFFFFFFFFFFFA
 
 // Heap
 // ----
@@ -181,8 +182,8 @@ Term got(Loc loc) {
 }
 
 u64 race(Loc loc) {
-  Term got = swap(loc, 0xFFFFFFFF);
-  if (got == 0xFFFFFFFF) {
+  Term got = swap(loc, LOCK);
+  if (got == LOCK) {
     printf("RACE\n");
     return 1;
   }
@@ -929,181 +930,192 @@ Term reduce(u8 tid, Term term) {
     //printf("\n");
     if (next == 0) {
       printf("VISH\n");
+      while (*spos > stop) {
+        next = got(term_loc(sbuf[--(*spos)]) + 0);
+        
+      for (u32 i = stop; i < *spos; ++i) {
+        print_term(sbuf[i]);
+        printf(" -- ");
+        Term oxi = got(term_loc(sbuf[i]) + 0);
+        print_term(oxi);
+        printf(" %016llx \n", oxi);
+      }
+      printf("---------------\n");
+      //if ((*spos) != stop) {
+        //printf("VISH\n");
+        //exit(0);
+      //}
+      //next = sbuf[--(*spos)];
     }
     Tag tag = term_tag(next);
     Lab lab = term_lab(next);
     Loc loc = term_loc(next);
-    if (next != 0) {
-      switch (tag) {
-        case LET: {
-          switch (lab) {
-            case LAZY: {
-              next = reduce_let(tid, next, got(loc + 0));
-              continue;
-            }
-            case STRI: {
-              sbuf[(*spos)++] = next;
-              next = got(loc + 1);
-              continue;
-            }
-            case PARA: {
-              printf("TODO\n");
-              continue;
-            }
+    switch (tag) {
+      case LET: {
+        switch (lab) {
+          case LAZY: {
+            next = reduce_let(tid, next, got(loc + 0));
+            continue;
           }
-        }
-        case APP: {
-          sbuf[(*spos)++] = next;
-          next = got(loc + 0);
-          continue;
-        }
-        case MAT: {
-          sbuf[(*spos)++] = next;
-          next = got(loc + 0);
-          continue;
-        }
-        case OPX: {
-          sbuf[(*spos)++] = next;
-          next = got(loc + 0);
-          continue;
-        }
-        case OPY: {
-          sbuf[(*spos)++] = next;
-          next = got(loc + 1);
-          continue;
-        }
-        case DP0: {
-          Term sb0 = got(loc + 0);
-          if (term_get_bit(sb0) == 0) {
+          case STRI: {
             sbuf[(*spos)++] = next;
-            next = got(loc + 0);
-            continue;
-          } else {
-            next = term_rem_bit(sb0);
+            next = got(loc + 1);
             continue;
           }
-        }
-        case DP1: {
-          Term sb1 = got(loc + 1);
-          if (term_get_bit(sb1) == 0) {
-            sbuf[(*spos)++] = next;
-            next = got(loc + 0);
+          case PARA: {
+            printf("TODO\n");
             continue;
-          } else {
-            next = term_rem_bit(sb1);
-            continue;
-          }
-        }
-        case VAR: {
-          Term sub = got(loc);
-          if (term_get_bit(sub) == 0) {
-            break;
-          } else {
-            next = term_rem_bit(sub);
-            continue;
-          }
-        }
-        case REF: {
-          next = reduce_ref(tid, next); // TODO
-          continue;
-        }
-        default: {
-          if ((*spos) == stop) {
-            break;
-          } else {
-            Term prev = sbuf[--(*spos)];
-            Tag  ptag = term_tag(prev);
-            Lab  plab = term_lab(prev);
-            Loc  ploc = term_loc(prev);
-
-            //Loc lock_loc;
-            //switch (term_tag(prev)) {
-              //case APP: lock_loc = term_loc(prev + 0); break;
-              //case DP0: lock_loc = term_loc(prev + 0); break;
-              //case DP1: lock_loc = term_loc(prev + 0); break;
-              //case MAT: lock_loc = term_loc(prev + 0); break;
-              //case OPX: lock_loc = term_loc(prev + 0); break;
-              //case OPY: lock_loc = term_loc(prev + 1); break;
-            //}
-            //Term locked = swap(lock_loc, 0xFFFFFFFF);
-            //if (locked == 0xFFFFFFFF) {
-              //printf("RACE\n");
-            //}
-
-            switch (ptag) {
-              case LET: {
-                next = reduce_let(tid, prev, next);
-                continue;
-              }
-              case APP: {
-                switch (tag) {
-                  case ERA: next = reduce_app_era(tid, prev, next); continue;
-                  case LAM: next = reduce_app_lam(tid, prev, next); continue;
-                  case SUP: next = reduce_app_sup(tid, prev, next); continue;
-                  case CTR: next = reduce_app_ctr(tid, prev, next); continue;
-                  case W32: next = reduce_app_w32(tid, prev, next); continue;
-                  case CHR: next = reduce_app_w32(tid, prev, next); continue;
-                  default: break;
-                }
-                break;
-              }
-              case DP0:
-              case DP1: {
-                switch (tag) {
-                  case ERA: next = reduce_dup_era(tid, prev, next); continue;
-                  case LAM: next = reduce_dup_lam(tid, prev, next); continue;
-                  case SUP: next = reduce_dup_sup(tid, prev, next); continue;
-                  case CTR: next = reduce_dup_ctr(tid, prev, next); continue;
-                  case W32: next = reduce_dup_w32(tid, prev, next); continue;
-                  case CHR: next = reduce_dup_w32(tid, prev, next); continue;
-                  default: break;
-                }
-                break;
-              }
-              case MAT: {
-                switch (tag) {
-                  case ERA: next = reduce_mat_era(tid, prev, next); continue;
-                  case LAM: next = reduce_mat_lam(tid, prev, next); continue;
-                  case SUP: next = reduce_mat_sup(tid, prev, next); continue;
-                  case CTR: next = reduce_mat_ctr(tid, prev, next); continue;
-                  case W32: next = reduce_mat_w32(tid, prev, next); continue;
-                  case CHR: next = reduce_mat_w32(tid, prev, next); continue;
-                  default: break;
-                }
-              }
-              case OPX: {
-                switch (tag) {
-                  case ERA: next = reduce_opx_era(tid, prev, next); continue;
-                  case LAM: next = reduce_opx_lam(tid, prev, next); continue;
-                  case SUP: next = reduce_opx_sup(tid, prev, next); continue;
-                  case CTR: next = reduce_opx_ctr(tid, prev, next); continue;
-                  case W32: next = reduce_opx_w32(tid, prev, next); continue;
-                  case CHR: next = reduce_opx_w32(tid, prev, next); continue;
-                  default: break;
-                }
-              }
-              case OPY: {
-                switch (tag) {
-                  case ERA: next = reduce_opy_era(tid, prev, next); continue;
-                  case LAM: next = reduce_opy_lam(tid, prev, next); continue;
-                  case SUP: next = reduce_opy_sup(tid, prev, next); continue;
-                  case CTR: next = reduce_opy_ctr(tid, prev, next); continue;
-                  case W32: next = reduce_opy_w32(tid, prev, next); continue;
-                  case CHR: next = reduce_opy_w32(tid, prev, next); continue;
-                  default: break;
-                }
-              } 
-              default: break;
-            }
-            break;
           }
         }
       }
+      case APP: {
+        sbuf[(*spos)++] = next;
+        next = got(loc + 0);
+        continue;
+      }
+      case MAT: {
+        sbuf[(*spos)++] = next;
+        next = got(loc + 0);
+        continue;
+      }
+      case OPX: {
+        sbuf[(*spos)++] = next;
+        next = got(loc + 0);
+        continue;
+      }
+      case OPY: {
+        sbuf[(*spos)++] = next;
+        next = got(loc + 1);
+        continue;
+      }
+      case DP0: {
+        Term sb0 = got(loc + 0);
+        if (term_get_bit(sb0) == 0) {
+          sbuf[(*spos)++] = next;
+          next = got(loc + 0);
+          continue;
+        } else {
+          next = term_rem_bit(sb0);
+          continue;
+        }
+      }
+      case DP1: {
+        Term sb1 = got(loc + 1);
+        if (term_get_bit(sb1) == 0) {
+          sbuf[(*spos)++] = next;
+          next = got(loc + 0);
+          continue;
+        } else {
+          next = term_rem_bit(sb1);
+          continue;
+        }
+      }
+      case VAR: {
+        Term sub = got(loc);
+        if (term_get_bit(sub) == 0) {
+          break;
+        } else {
+          next = term_rem_bit(sub);
+          continue;
+        }
+      }
+      case REF: {
+        next = reduce_ref(tid, next); // TODO
+        continue;
+      }
+      default: {
+        if ((*spos) == stop) {
+          break;
+        } else {
+          Term prev = sbuf[--(*spos)];
+          Tag  ptag = term_tag(prev);
+          Lab  plab = term_lab(prev);
+          Loc  ploc = term_loc(prev);
+
+          //Loc lock_loc;
+          //switch (term_tag(prev)) {
+            //case APP: lock_loc = term_loc(prev + 0); break;
+            //case DP0: lock_loc = term_loc(prev + 0); break;
+            //case DP1: lock_loc = term_loc(prev + 0); break;
+            //case MAT: lock_loc = term_loc(prev + 0); break;
+            //case OPX: lock_loc = term_loc(prev + 0); break;
+            //case OPY: lock_loc = term_loc(prev + 1); break;
+          //}
+          //Term locked = swap(lock_loc, 0xFFFFFFFF);
+          //if (locked == 0xFFFFFFFF) {
+            //printf("RACE\n");
+          //}
+
+          switch (ptag) {
+            case LET: {
+              next = reduce_let(tid, prev, next);
+              continue;
+            }
+            case APP: {
+              switch (tag) {
+                case ERA: next = reduce_app_era(tid, prev, next); continue;
+                case LAM: next = reduce_app_lam(tid, prev, next); continue;
+                case SUP: next = reduce_app_sup(tid, prev, next); continue;
+                case CTR: next = reduce_app_ctr(tid, prev, next); continue;
+                case W32: next = reduce_app_w32(tid, prev, next); continue;
+                case CHR: next = reduce_app_w32(tid, prev, next); continue;
+                default: break;
+              }
+              break;
+            }
+            case DP0:
+            case DP1: {
+              switch (tag) {
+                case ERA: next = reduce_dup_era(tid, prev, next); continue;
+                case LAM: next = reduce_dup_lam(tid, prev, next); continue;
+                case SUP: next = reduce_dup_sup(tid, prev, next); continue;
+                case CTR: next = reduce_dup_ctr(tid, prev, next); continue;
+                case W32: next = reduce_dup_w32(tid, prev, next); continue;
+                case CHR: next = reduce_dup_w32(tid, prev, next); continue;
+                default: break;
+              }
+              break;
+            }
+            case MAT: {
+              switch (tag) {
+                case ERA: next = reduce_mat_era(tid, prev, next); continue;
+                case LAM: next = reduce_mat_lam(tid, prev, next); continue;
+                case SUP: next = reduce_mat_sup(tid, prev, next); continue;
+                case CTR: next = reduce_mat_ctr(tid, prev, next); continue;
+                case W32: next = reduce_mat_w32(tid, prev, next); continue;
+                case CHR: next = reduce_mat_w32(tid, prev, next); continue;
+                default: break;
+              }
+            }
+            case OPX: {
+              switch (tag) {
+                case ERA: next = reduce_opx_era(tid, prev, next); continue;
+                case LAM: next = reduce_opx_lam(tid, prev, next); continue;
+                case SUP: next = reduce_opx_sup(tid, prev, next); continue;
+                case CTR: next = reduce_opx_ctr(tid, prev, next); continue;
+                case W32: next = reduce_opx_w32(tid, prev, next); continue;
+                case CHR: next = reduce_opx_w32(tid, prev, next); continue;
+                default: break;
+              }
+            }
+            case OPY: {
+              switch (tag) {
+                case ERA: next = reduce_opy_era(tid, prev, next); continue;
+                case LAM: next = reduce_opy_lam(tid, prev, next); continue;
+                case SUP: next = reduce_opy_sup(tid, prev, next); continue;
+                case CTR: next = reduce_opy_ctr(tid, prev, next); continue;
+                case W32: next = reduce_opy_w32(tid, prev, next); continue;
+                case CHR: next = reduce_opy_w32(tid, prev, next); continue;
+                default: break;
+              }
+            } 
+            default: break;
+          }
+          break;
+        }
+      }
     }
-    if (next == 0) {
-      *spos = stop;
-      return reduce(tid, term);
-    } else if ((*spos) == stop) {
+    if ((*spos) == stop) {
       return next;
     } else {
       if (next != 0) {
