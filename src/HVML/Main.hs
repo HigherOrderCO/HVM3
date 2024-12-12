@@ -131,7 +131,7 @@ cliRun filePath debug compiled mode showStats = do
     
     -- Register compiled functions
     forM_ (MS.keys (idToFunc book)) $ \ fid -> do
-      funPtr <- dlsym bookLib (mget (idToName book) fid ++ "_f")
+      funPtr <- dlsym bookLib (mget (idToName book) fid ++ "_t")
       hvmDefine fid funPtr
 
     -- Link compiled state
@@ -191,7 +191,7 @@ cliRun filePath debug compiled mode showStats = do
 genMain :: Book -> String
 genMain book =
   let mainFid = mget (nameToId book) "main"
-      registerFuncs = unlines ["  hvm_define(" ++ show fid ++ ", " ++ mget (idToName book) fid ++ "_f);" | fid <- MS.keys (idToFunc book)]
+      registerFuncs = unlines ["  hvm_define(" ++ show fid ++ ", " ++ mget (idToName book) fid ++ "_t);" | fid <- MS.keys (idToFunc book)]
   in unlines
     [ "int main() {"
     , "  hvm_init();"
