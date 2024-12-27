@@ -1185,17 +1185,47 @@ Term FRESH_f(Term ref) {
 // --------------
 
 void hvm_init() {
-  // FIXME: use mmap instead
-  HVM.sbuf  = malloc((1ULL << 32) * sizeof(Term));
-  HVM.spos  = malloc(sizeof(u64));
+  // Allocate memory using mmap
+  HVM.sbuf  = mmap(NULL, (1ULL << 32) * sizeof(Term), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (HVM.sbuf == MAP_FAILED) {
+    perror("mmap failed for sbuf");
+    exit(EXIT_FAILURE);
+  }
+
+  HVM.spos  = mmap(NULL, sizeof(u64), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (HVM.spos == MAP_FAILED) {
+    perror("mmap failed for spos");
+    exit(EXIT_FAILURE);
+  }
   *HVM.spos = 0;
-  HVM.heap  = malloc((1ULL << 32) * sizeof(ATerm));
-  HVM.size  = malloc(sizeof(u64));
-  HVM.itrs  = malloc(sizeof(u64));
+
+  HVM.heap  = mmap(NULL, (1ULL << 32) * sizeof(ATerm), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (HVM.heap == MAP_FAILED) {
+    perror("mmap failed for heap");
+    exit(EXIT_FAILURE);
+  }
+
+  HVM.size  = mmap(NULL, sizeof(u64), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (HVM.size == MAP_FAILED) {
+    perror("mmap failed for size");
+    exit(EXIT_FAILURE);
+  }
   *HVM.size = 1;
+
+  HVM.itrs  = mmap(NULL, sizeof(u64), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (HVM.itrs == MAP_FAILED) {
+    perror("mmap failed for itrs");
+    exit(EXIT_FAILURE);
+  }
   *HVM.itrs = 0;
-  HVM.frsh  = malloc(sizeof(u64));
+
+  HVM.frsh  = mmap(NULL, sizeof(u64), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (HVM.frsh == MAP_FAILED) {
+    perror("mmap failed for frsh");
+    exit(EXIT_FAILURE);
+  }
   *HVM.frsh = 0x20;
+
   HVM.book[SUP_F] = SUP_f;
   HVM.book[DUP_F] = DUP_f;
   HVM.book[LOG_F] = LOG_f;
@@ -1203,12 +1233,25 @@ void hvm_init() {
 }
 
 void hvm_free() {
-  free(HVM.sbuf);
-  free(HVM.spos);
-  free(HVM.heap);
-  free(HVM.size);
-  free(HVM.itrs);
-  free(HVM.frsh);
+  // Free memory using munmap
+  if (munmap(HVM.sbuf, (1ULL << 32) * sizeof(Term)) == -1) {
+    perror("munmap failed for sbuf");
+  }
+  if (munmap(HVM.spos, sizeof(u64)) == -1) {
+    perror("munmap failed for spos");
+  }
+  if (munmap(HVM.heap, (1ULL << 32) * sizeof(ATerm)) == -1) {
+    perror("munmap failed for heap");
+  }
+  if (munmap(HVM.size, sizeof(u64)) == -1) {
+    perror("munmap failed for size");
+  }
+  if (munmap(HVM.itrs, sizeof(u64)) == -1) {
+    perror("munmap failed for itrs");
+  }
+  if (munmap(HVM.frsh, sizeof(u64)) == -1) {
+    perror("munmap failed for frsh");
+  }
 }
 
 State* hvm_get_state() {
