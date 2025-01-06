@@ -38,22 +38,19 @@ runtime_c = $(embedStringFile "./src/HVML/Runtime.c")
 -- Main
 -- ----
 
+data InputSource = FromFile FilePath | FromString String
+
 data RunMode
   = Normalize
   | Collapse
   | Search
   deriving Eq
 
-data InputType
-  = FileInput FilePath
-  | StringInput String
-  deriving Eq
-
 main :: IO ()
 main = do
   args <- getArgs
   result <- case args of
-    ("run" : input : args) -> do
+    ("run" : file : args) -> do
       let compiled = "-c" `elem` args
       let collapse = "-C" `elem` args
       let search   = "-S" `elem` args
@@ -62,10 +59,18 @@ main = do
       let mode | collapse  = Collapse
                | search    = Search
                | otherwise = Normalize
-      let inputType = if head input == '(' 
-                     then StringInput input
-                     else FileInput input
-      cliRun inputType debug compiled mode stats
+      cliRun (FromFile file) debug compiled mode stats
+    ("eval" : expr : args) -> do
+      let compiled = "-c" `elem` args
+      let collapse = "-C" `elem` args
+      let search   = "-S" `elem` args
+      let stats    = "-s" `elem` args
+      let debug    = "-d" `elem` args
+      let mode | collapse  = Collapse
+               | search    = Search
+               | otherwise = Normalize
+      let code = "@main = " ++ expr
+      cliRun (FromString code) debug compiled mode stats
     ["help"] -> printHelp
     _ -> printHelp
   case result of
@@ -78,9 +83,9 @@ main = do
 printHelp :: IO (Either String ())
 printHelp = do
   putStrLn "HVM-Lazy usage:"
-  putStrLn "  hvml help                  # Shows this help message"
-  putStrLn "  hvml run <file>            # Evals main from file"
-  putStrLn "  hvml run \"(expression)\"    # Evals expression directly"
+  putStrLn "  hvml help           # Shows this help message"
+  putStrLn "  hvml run <file>     # Evals main from file"
+  putStrLn "  hvml eval <expr>    # Evals expression directly"
   putStrLn "    -t # Returns the type (experimental)"
   putStrLn "    -c # Runs with compiled mode (fast)"
   putStrLn "    -C # Collapse the result to a list of λ-Terms"
@@ -92,22 +97,17 @@ printHelp = do
 -- CLI Commands
 -- ------------
 
-cliRun :: InputType -> Bool -> Bool -> RunMode -> Bool -> IO (Either String ())
+cliRun :: InputSource -> Bool -> Bool -> RunMode -> Bool -> IO (Either String ())
 cliRun input debug compiled mode showStats = do
-  -- Initialize the HVM
   hvmInit
-  
-  -- Get the code either from file or wrap the string input
   code <- case input of
-    FileInput path -> readFile path
-    StringInput expr -> return $ wrapExpression expr
-    
+    FromFile path -> readFile path
+    FromString str -> return str
   book <- doParseBook code
-  
+
   -- Create the C file content
   let funcs = map (\ (fid, _) -> compile book fid) (MS.toList (fidToFun book))
   let mainC = unlines $ [runtime_c] ++ funcs ++ [genMain book]
-  
   -- Set constructor arities, case length and ADT ids
   forM_ (MS.toList (cidToAri book)) $ \ (cid, ari) -> do
     hvmSetCari cid (fromIntegral ari)
@@ -117,7 +117,6 @@ cliRun input debug compiled mode showStats = do
     hvmSetCadt cid (fromIntegral adt)
   forM_ (MS.toList (fidToFun book)) $ \ (fid, ((_, args), _)) -> do
     hvmSetFari fid (fromIntegral $ length args)
-    
   -- Compile to native
   when compiled $ do
     -- Write the C file
@@ -137,12 +136,9 @@ cliRun input debug compiled mode showStats = do
     hvmSetState <- dlsym bookLib "hvm_set_state"
     callFFI hvmSetState retVoid [argPtr hvmGotState]
   -- Abort when main isn't present
-    
-  -- Check for main
   when (not $ MS.member "main" (namToFid book)) $ do
     putStrLn "Error: 'main' not found."
     exitWith (ExitFailure 1)
-    
   -- Normalize main
   init <- getCPUTime
   root <- doInjectCoreAt book (Ref "main" (mget (namToFid book) "main") []) 0 []
@@ -155,8 +151,6 @@ cliRun input debug compiled mode showStats = do
       core <- doExtractCoreAt rxAt book 0
       return [(doLiftDups core)]
   -- Print all collapsed results
-      
-  -- Print results based on mode
   when (mode == Collapse) $ do
     forM_ vals $ \ term -> do
       putStrLn $ showCore term
@@ -181,11 +175,6 @@ cliRun input debug compiled mode showStats = do
   -- Finalize
   hvmFree
   return $ Right ()
-
-wrapExpression :: String -> String
-wrapExpression expr = unlines
-  [ "@main = " ++ expr
-  ]
 
 genMain :: Book -> String
 genMain book =
