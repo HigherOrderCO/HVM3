@@ -91,7 +91,7 @@ parseCore = do
 
     '&' -> do
       consume "&"
-      name <- parseName
+      name <- string "*" <|> parseName
       next <- optionMaybe $ try $ char '{'
       case next of
         Just _ -> do
@@ -99,6 +99,8 @@ parseCore = do
           tm1 <- parseCore
           consume "}"
           if null name then do
+            return $ Sup 0 tm0 tm1
+          else if name == "*" then do
             num <- genFreshLabel
             return $ Sup num tm0 tm1
           else case reads name of
@@ -114,10 +116,9 @@ parseCore = do
       skip
       next <- lookAhead anyChar
       case next of
-
         '&' -> do
           consume "&"
-          nam <- parseName
+          nam <- string "*" <|> parseName
           consume "{"
           dp0 <- parseName1
           dp1 <- parseName1
@@ -126,6 +127,8 @@ parseCore = do
           val <- parseCore
           bod <- parseCore
           if null nam then do
+            return $ Dup 0 dp0 dp1 val bod
+          else if nam == "*" then do
             num <- genFreshLabel
             return $ Dup num dp0 dp1 val bod
           else case reads nam of
