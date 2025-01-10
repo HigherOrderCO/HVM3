@@ -1,5 +1,15 @@
 import Prelude.hvml
 
+// data Maybe {
+  // #None
+  // #Some{value}
+// }
+
+// data List {
+  // #Nil
+  // #Cons{head tail}
+// }
+
 // Map<K, V> = [Entry<K, V>]
 data Entry {
   #Entry{key val}
@@ -25,171 +35,6 @@ data Entry {
   }
 
 @main =
-  ! &0{m _} = @map_swap([] "foo" 123)
-  m
-
-// del :: Map<K, V> -> K -> (Map<K, V>, Maybe<V>)
-// @map_take(map k) =
-//   ~map !k !v {
-//     #Nil: &0{[] #None}
-//     #Cons{e es}: ~e { #Entry{ek ev}:
-//       ! &{k1 k2} = k
-//       ! &{ek1 ek2} = ek
-
-//       ~(== k1 ek1) !es !ev {
-//         0:
-//           ! &0{new_es old_v} = @map_take(es k2 v)
-//           &0{#Cons{#Entry{ek2 ev} new_es} old_v}
-
-//         _: &0{es #Some{ev}}
-//       }
-//     }
-//   }
-
-// data Node<A> { Node{key:U32 val:Maybe<A> child:Tree<A>} }
-// Tree<A> = [Node<A>]
-// data Node {
-//   #Node{key val child}
-// }
-
-// Creates a new tree given a key and a single value.
-// new :: String -> A -> Tree<A>
-// @tree_new(key val) =
-//   ~key {
-//     #Nil: #Nil
-//     #Cons{k ey}: ~ey !k !val {
-//       #Nil: [#Node{k #Some{val} []}]
-//       #Cons{e y}: [#Node{k #None @tree_new(#Cons{e y} val)}]
-//     }
-//   }
-
-// _swap :: Tree -> Char -> String -> Maybe<U32> -> (Tree, Maybe<U32>)
-// a helper that can assume that the key is not null
-// @_tree_swap(tree k ey val) =
-//   ~tree !val {
-//     #Nil: &{@tree_new(tree val) #None}
-
-//     #Cons{n ns}: ~n { #Node{n_k n_v n_c}:
-//       ! &*{n_k1 n_k2} = n_k
-//       ! &*{k1 k2} = k
-//       @if((== k1 n_k)
-//         &{ #Cons{#Node{k2 n_v @tree_swap()}} }
-//         &{ #Cons{#Node{n_k2 n_v n_c} @tree_swap()}}
-//       )
-//     }
-//   }
-
-// swap :: Tree -> String -> Maybe<U32> -> (Tree, Maybe<U32>)
-// @tree_swap(tree key val) =
-//   ~key !tree {
-//     #Nil: &{tree #None}
-//     #Cons{k ey}: @_tree_swap(tree k ey val)
-//   }
-
-@main =
   ! m = []
-  ! &{m _} = @map_swap(m "foo" 123)
-  // ! &{m _} = @map_swap(m "bar" 456)
-  // ! &{m _} = @map_swap(m "bar" 768)
-  // ! &{m _} = @map_take(m "foo")
+  ! &0{m _} = @map_swap(m "foo" 123)
   m
-
-// data Node<A> { Node{key:U32 val:Maybe<A> child:Tree<A>} }
-// Tree<A> = [Node<A>]
-
-// ! t = []
-// ! t = @set(t "foo" 123)
-// ! t = @set(t "bar" 456)
-// ! t = @set(t "fog" 789)
-// t
-
-// [
-  // Node{'f' #None [
-    // Node{'o' #None [
-      // Node{'g' #Some(789) []}
-      // Node{'o' #Some(123) []}
-    // ]}
-  // ]},
-  // Node{'b' #None [
-    // Node{'a' #None [
-      // Node{'r' #Some(456) []}
-    // ]}
-  // ]}
-// ]
-
-
-// Tree: [Node]
-// #Node{key val child}
-// @swap(tree:Tree<A> key:String val:A) → &{Tree<A> Maybe<A>}
-
-// @main =
-  // ! t = []
-  // ! t = @set(t "foo" 123)
-  // ! t = @set(t "bar" 456)
-  // ! t = @set(t "fog" 789)
-  // t
-
-// @is_null(k) = ~k{
-//   #Nil: 1
-//   #Cons{h t}: 0
-// }
-
-// @is_null_ret(k v) = ~k {
-//   #Nil: #Some{v}
-//   #Cons{h t}: #None
-// }
-
-// @swap(tree key val) = ~key !tree {
-//   #Nil: &{tree #None}
-//   #Cons{k ks}:
-//     ~tree !k !ks !val {
-//       #Nil:
-//         !&*{ks ks0}=ks
-//         !newVal = @if(@is_null(ks0) val #None)
-
-//         !&*{newVal newVal0}=newVal
-
-//         !&{rest _} = @swap(#Nil ks newVal0)
-
-//         &{[#Node{k newVal rest}] #None}
-
-//       #Cons{node ns}: ~node {
-//         #Node{nKey nVal nChild}:
-//           !&*{nKey nKey0}=nKey
-//           !&*{nKey nKey1}=nKey
-//           !&*{nKey nKey2}=nKey
-//           !&*{nVal nVal0}=nVal
-//           !&*{ks ks0}=ks
-//           !&*{ks ks1}=ks
-//           !&*{k k0}=k
-//           !&*{k k1}=k
-//           !&*{val val0}=val
-//           !&*{ns ns0}=ns
-//           !&*{nChild nChild0}=nChild
-
-//           ~(== nKey k) !ns !ks !val !nKey0 !nVal !nChild {
-//             0: ~(< nKey2 k0) !k1 !ks !val !nVal !nChild !nKey0 !ns {
-//                 0: 
-//                   !&{new oldVal} = @swap(#Nil #Cons{k1 ks} val)
-//                   &{@concat(new #Cons{#Node{nKey0 nVal nChild} ns}) oldVal}
-//                 p: 
-//                   !&{rest oldVal} = @swap(ns #Cons{k1 ks} val)
-//                   &{#Cons{#Node{nKey0 nVal nChild} rest} oldVal}
-//                }
-//             p: @if(
-//                 @is_null(ks0)
-
-//                 &{#Node{nKey0 #Some{val} #Cons{nChild ns}} nVal0}
-              
-//                 !&{newChild oldVal} = @swap(nChild0 ks val0)
-//                 &{#Node{nKey1 nVal #Cons{newChild ns0}} oldVal}
-//                ) 
-//           }
-//       }
-//     }
-// }
-
-// @main = 
-  // !&{t _}=@swap(#Nil "b" 1)
-  // @swap(#Nil "b" 1) 
-  // @swap(#Nil "ab" 2)
