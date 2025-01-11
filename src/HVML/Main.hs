@@ -39,6 +39,8 @@ runtime_c = $(embedStringFile "./src/HVML/Runtime.c")
 -- Main
 -- ----
 
+data InputSource = FromFile FilePath | FromString String
+
 data RunMode
   = Normalize
   | Collapse
@@ -58,7 +60,18 @@ main = do
       let mode | collapse  = Collapse
                | search    = Search
                | otherwise = Normalize
-      cliRun file debug compiled mode stats
+      cliRun (FromFile file) debug compiled mode stats
+    ("eval" : expr : args) -> do
+      let compiled = "-c" `elem` args
+      let collapse = "-C" `elem` args
+      let search   = "-S" `elem` args
+      let stats    = "-s" `elem` args
+      let debug    = "-d" `elem` args
+      let mode | collapse  = Collapse
+               | search    = Search
+               | otherwise = Normalize
+      let code = "@main = " ++ expr
+      cliRun (FromString code) debug compiled mode stats
     ["help"] -> printHelp
     _ -> printHelp
   case result of
@@ -71,8 +84,9 @@ main = do
 printHelp :: IO (Either String ())
 printHelp = do
   putStrLn "HVM-Lazy usage:"
-  putStrLn "  hvml help       # Shows this help message"
-  putStrLn "  hvml run <file> # Evals main"
+  putStrLn "  hvml help           # Shows this help message"
+  putStrLn "  hvml run <file>     # Evals main from file"
+  putStrLn "  hvml eval <expr>    # Evals expression directly"
   putStrLn "    -t # Returns the type (experimental)"
   putStrLn "    -c # Runs with compiled mode (fast)"
   putStrLn "    -C # Collapse the result to a list of λ-Terms"
@@ -84,13 +98,14 @@ printHelp = do
 -- CLI Commands
 -- ------------
 
-cliRun :: FilePath -> Bool -> Bool -> RunMode -> Bool -> IO (Either String ())
-cliRun filePath debug compiled mode showStats = do
-  -- Initialize the HVM
+cliRun :: InputSource -> Bool -> Bool -> RunMode -> Bool -> IO (Either String ())
+cliRun input debug compiled mode showStats = do
   hvmInit
-  -- TASK: instead of parsing a core term out of the file, lets parse a Book.
-  code <- readFile filePath
+  code <- case input of
+    FromFile path -> readFile path
+    FromString str -> return str
   book <- doParseBook code
+
   -- Create the C file content
   let decls = compileHeaders book
   let funcs = map (\ (fid, _) -> compile book fid) (MS.toList (fidToFun book))
