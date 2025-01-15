@@ -35,13 +35,13 @@ injectCore _ (Var nam) loc = do
   case MS.lookup nam argsMap of
     Just term -> do
       let count = MS.findWithDefault 0 nam usageCounts
-      when (count >= 1) $ lift $ error ("Variable " ++ nam ++ " used more than once")
+      when (count >= 1) $ lift $ error ("Variable " ++ nam ++ " used more than once (affine violation)")
       modify $ \s -> s { usageCounts = MS.insert nam (count + 1) usageCounts }
       lift $ set loc term
       when (head nam /= '&') $ modify $ \s -> s { args = MS.delete nam (args s) }
     Nothing -> do
       let count = MS.findWithDefault 0 nam usageCounts
-      when (count >= 1) $ lift $ error ("Variable " ++ nam ++ " used more than once")
+      when (count >= 1) $ lift $ error ("Variable " ++ nam ++ " used more than once (affine violation)")
       modify $ \s -> s { vars = (nam, loc) : vars s, usageCounts = MS.insert nam (count + 1) usageCounts }
 
 injectCore book (Let mod nam val bod) loc = do
