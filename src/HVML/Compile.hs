@@ -21,6 +21,7 @@ data CompileState = CompileState
   , tabs :: Int
   , bins :: MS.Map String String  -- var_name => binder_host
   , vars :: [(String, String)]    -- [(var_name, var_host)]
+  , usageCounts :: MS.Map String Int  -- var_name => usage count
   , code :: [String]
   }
 
@@ -48,7 +49,7 @@ compileWith cmp book fid =
   let copy   = fst (fst (mget (fidToFun book) fid)) in
   let args   = snd (fst (mget (fidToFun book) fid)) in
   let core   = snd (mget (fidToFun book) fid) in
-  let state  = CompileState 0 0 MS.empty [] [] in
+  let state  = CompileState 0 0 MS.empty [] MS.empty [] in
   let result = runState (cmp book fid core copy args) state in
   unlines $ reverse $ code (snd result)
 
@@ -62,7 +63,7 @@ tabDec :: Compile ()
 tabDec = modify $ \st -> st { tabs = tabs st - 1 }
 
 bind :: String -> String -> Compile ()
-bind var host = modify $ \st -> st { bins = MS.insert var host (bins st) }
+bind var host = do modify $ \st -> st { bins = MS.insert var host (bins st) , usageCounts = MS.insert var 0 (usageCounts st) }
 
 fresh :: String -> Compile String
 fresh name = do
@@ -85,18 +86,25 @@ compileFull book fid core copy args = do
     bind argName argTerm
   result <- compileFullCore book fid core "root"
   st <- get
-  forM_ (vars st) $ \ (var,host) -> do
-    let varTerm = MS.findWithDefault "" var (bins st)
-    emit $ "set(" ++ host ++ ", " ++ varTerm ++ ");"
+  -- Check for unbound variables and fail at compile time
+  forM_ (vars st) $ \ (var, host) -> do
+    binsMap <- gets bins
+    case MS.lookup var binsMap of
+      Just varTerm -> emit $ "set(" ++ host ++ ", " ++ varTerm ++ ");"
+      Nothing -> error $ "Compile error: Unbound variable '" ++ var ++ "'"
   emit $ "return " ++ result ++ ";"
   tabDec
   emit "}"
 
 compileFullVar :: String -> String -> Compile String
-compileFullVar var host = do
-  bins <- gets bins
-  case MS.lookup var bins of
+compileFullVar var host =  do
+  binsMap <- gets bins
+  usageCountsMap <- gets usageCounts
+  case MS.lookup var binsMap of
     Just entry -> do
+      let count = MS.findWithDefault 0 var usageCountsMap
+      when (count >= 1) $ error $ "Compile error: Variable '" ++ var ++ "' used more than once (affine violation)"
+      modify $ \s -> s { usageCounts = MS.insert var (count + 1) usageCountsMap }
       return entry
     Nothing -> do
       modify $ \s -> s { vars = (var, host) : vars s }
@@ -682,12 +690,17 @@ compileFastCore book fid (Ref rNam rFid rArg) reuse = do
     sequence_ [emit $ "set(" ++ refNam ++ " + " ++ show i ++ ", " ++ argT ++ ");" | (i,argT) <- zip [0..] argsT]
     return $ "term_new(REF, " ++ show rFid ++ ", " ++ refNam ++ ")"
 
+
 -- Compiles a variable in fast mode
 compileFastVar :: String -> Compile String
 compileFastVar var = do
-  bins <- gets bins
-  case MS.lookup var bins of
+  binsMap <- gets bins
+  usageCountsMap <- gets usageCounts
+  case MS.lookup var binsMap of
     Just entry -> do
+      let count = MS.findWithDefault 0 var usageCountsMap
+      when (count >= 1) $ error $ "Compile error: Variable '" ++ var ++ "' used more than once (affine violation)"
+      modify $ \s -> s { usageCounts = MS.insert var (count + 1) usageCountsMap }
       return entry
     Nothing -> do
       return "<ERR>"
