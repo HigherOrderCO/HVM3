@@ -16,12 +16,13 @@ import qualified Data.Map.Strict as MS
 type InjectM a = StateT InjectState HVM a
 
 data InjectState = InjectState
-  { args :: MS.Map String Term -- maps var names to binder locations
-  , vars :: [(String, Loc)]    -- list of (var name, usage location) pairs
+  { args :: MS.Map String Term          -- maps var names to binder locations
+  , vars :: [(String, Loc)]             -- list of (var name, usage location) pairs
+  , usageCounts :: MS.Map String Int    -- maps var names to usage counts
   }
 
 emptyState :: InjectState
-emptyState = InjectState MS.empty []
+emptyState = InjectState MS.empty [] MS.empty
 
 injectCore :: Book -> Core -> Loc -> InjectM ()
 
@@ -30,17 +31,22 @@ injectCore _ Era loc = do
 
 injectCore _ (Var nam) loc = do
   argsMap <- gets args
+  usageCounts <- gets usageCounts
   case MS.lookup nam argsMap of
     Just term -> do
+      let count = MS.findWithDefault 0 nam usageCounts
+      when (count >= 1) $ lift $ error ("Variable " ++ nam ++ " used more than once")
+      modify $ \s -> s { usageCounts = MS.insert nam (count + 1) usageCounts }
       lift $ set loc term
-      when (head nam /= '&') $ do
-        modify $ \s -> s { args = MS.delete nam (args s) }
+      when (head nam /= '&') $ modify $ \s -> s { args = MS.delete nam (args s) }
     Nothing -> do
-      modify $ \s -> s { vars = (nam, loc) : vars s }
+      let count = MS.findWithDefault 0 nam usageCounts
+      when (count >= 1) $ lift $ error ("Variable " ++ nam ++ " used more than once")
+      modify $ \s -> s { vars = (nam, loc) : vars s, usageCounts = MS.insert nam (count + 1) usageCounts }
 
 injectCore book (Let mod nam val bod) loc = do
   let_node <- lift $ allocNode 2
-  modify $ \s -> s { args = MS.insert nam (termNew _VAR_ 0 (let_node + 0)) (args s) }
+  modify $ \s -> s { args = MS.insert nam (termNew _VAR_ 0 (let_node + 0)) (args s), usageCounts = MS.insert nam 0 (usageCounts s) }
   injectCore book val (let_node + 0)
   injectCore book bod (let_node + 1)
   lift $ set loc (termNew _LET_ (fromIntegral $ fromEnum mod) let_node)
@@ -48,7 +54,7 @@ injectCore book (Let mod nam val bod) loc = do
 injectCore book (Lam vr0 bod) loc = do
   lam <- lift $ allocNode 1
   -- lift $ set (lam + 0) (termNew _SUB_ 0 0)
-  modify $ \s -> s { args = MS.insert vr0 (termNew _VAR_ 0 (lam + 0)) (args s) }
+  modify $ \s -> s { args = MS.insert vr0 (termNew _VAR_ 0 (lam + 0)) (args s), usageCounts = MS.insert vr0 0 (usageCounts s) }
   injectCore book bod (lam + 0)
   lift $ set loc (termNew _LAM_ 0 lam)
 
@@ -70,7 +76,9 @@ injectCore book (Dup lab dp0 dp1 val bod) loc = do
   lift $ set (dup + 1) (termNew _SUB_ 0 0)
   modify $ \s -> s 
     { args = MS.insert dp0 (termNew _DP0_ lab dup) 
-           $ MS.insert dp1 (termNew _DP1_ lab dup) (args s) 
+          $ MS.insert dp1 (termNew _DP1_ lab dup) (args s)
+    , usageCounts = MS.insert dp0 0 
+                  $ MS.insert dp1 0 (usageCounts s)
     }
   injectCore book val (dup + 0)
   injectCore book bod loc
