@@ -99,7 +99,7 @@ compileFullVar var host = do
   bins <- gets bins
   case MS.lookup var bins of
     Just entry -> do
-      modify $ \s -> s { bins = MS.delete var bins }
+      when (head var /= '&') $ modify $ \s -> s { bins = MS.delete var bins }
       return entry
     Nothing -> do
       modify $ \s -> s { vars = (var, host) : vars s }
@@ -691,7 +691,7 @@ compileFastVar var = do
   bins <- gets bins
   case MS.lookup var bins of
     Just entry -> do
-      modify $ \s -> s { bins = MS.delete var bins }
+      -- when (head var /= '&') $ modify $ \s -> s { bins = MS.delete var bins }
       return entry
     Nothing -> do
       return "<ERR>"

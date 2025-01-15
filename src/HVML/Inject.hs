@@ -32,13 +32,13 @@ injectCore _ Era loc = do
 injectCore _ (Var nam) loc = do
   argsMap <- gets args
   usageCounts <- gets usageCounts
+
   case MS.lookup nam argsMap of
     Just term -> do
       let count = MS.findWithDefault 0 nam usageCounts
-      when (count >= 1) $ lift $ error ("Variable " ++ nam ++ " used more than once (affine violation)")
-      modify $ \s -> s { usageCounts = MS.insert nam (count + 1) usageCounts }
+      when (count >= 1) $ lift $ error ("Variable " ++ nam ++ " used more than once (affine violation) in term")
       lift $ set loc term
-      when (head nam /= '&') $ modify $ \s -> s { args = MS.delete nam (args s) }
+      when (head nam /= '&') $ modify $ \s -> s { args = MS.delete nam (args s) , usageCounts = MS.insert nam (count + 1) usageCounts }
     Nothing -> do
       let count = MS.findWithDefault 0 nam usageCounts
       when (count >= 1) $ lift $ error ("Variable " ++ nam ++ " used more than once (affine violation)")
