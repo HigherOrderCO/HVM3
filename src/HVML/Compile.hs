@@ -5,6 +5,7 @@ module HVML.Compile where
 
 import Control.Monad (forM_, forM, foldM, when)
 import Control.Monad.State
+import Control.Parallel.Strategies (par, rpar, runEval)
 import Data.Bits (shiftL, (.|.))
 import Data.List
 import Data.Word
@@ -418,10 +419,17 @@ compileFastBody book fid term@(Let mode var val bod) ctx stop itr reuse = do
           valNam <- fresh "val" 
           emit $ "Term " ++ valNam ++ " = reduce(" ++ valT ++ ");"
           bind var valNam
-    PARA -> do -- TODO: implement parallel evaluation
+    PARA -> do
+      -- Parallel evaluation Use `par` to evaluate `valT` in parallel
+      let parallelEval = runEval $ do
+            valRes <- rpar (reduce valT)  -- run reduction in parallel
+            return valRes
+
       valNam <- fresh "val"
-      emit $ "Term " ++ valNam ++ " = reduce(" ++ valT ++ ");"
+      result <- parallelEval
+      emit $ "Term " ++ valNam ++ " = " ++ result
       bind var valNam
+
   compileFastBody book fid bod ctx stop itr reuse
 
 compileFastBody book fid term@(Ref fNam fFid fArg) ctx stop itr reuse | fFid == fid = do
@@ -484,10 +492,17 @@ compileFastCore book fid (Let mode var val bod) reuse = do
       emit $ "itrs += 1;"
       emit $ "Term " ++ valNam ++ " = reduce(" ++ valT ++ ");"
       bind var valNam
-    PARA -> do -- TODO: implement parallel evaluation
+    PARA -> do
       valNam <- fresh "val"
-      emit $ "Term " ++ valNam ++ " = reduce(" ++ valT ++ ");"
+      -- Use rpar
+      let parallelEval = runEval $ do
+            result <- rpar (emit $ "Term " ++ valNam ++ " = reduce(" ++ valT ++ ");")
+            return result
+      -- Exe the para
+      parallelEval
+      -- Bind the result
       bind var valNam
+
   compileFastCore book fid bod reuse
 
 compileFastCore book fid (Var name) reuse = do
