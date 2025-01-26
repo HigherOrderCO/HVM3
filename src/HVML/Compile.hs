@@ -296,7 +296,7 @@ compileFastBody book fid term@(Mat val mov css) ctx stop@False itr reuse = do
         emit $ "default: {"
         tabInc
         preNam <- fresh "pre"
-        emit $ "Term " ++ preNam ++ " = " ++ "term_new(W32, 0, "++numNam++" - "++show (length css - 1)++");"
+        emit $ "Term " ++ preNam ++ " = " ++ "term_new(W32, 0, "++numNam++");"
         forM_ fds $ \ fd -> do
           bind fd preNam
         forM_ mov $ \ (key,val) -> do
