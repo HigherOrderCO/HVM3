@@ -1,0 +1,38 @@
+name: Haskell CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up GHC 2024
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.10.1'  
+          cabal-version: '3.12'  
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cabal/store
+          key: ${{ runner.os }}-cabal-${{ hashFiles('**/*.cabal') }}
+          restore-keys: |
+            ${{ runner.os }}-cabal-
+
+      - name: Build the project
+        run: cabal build
+
+      - name: Run Interpreted Benchmarks
+        run: cabal run hvml -- run ./book/bench_count.hvml
+
+      - name: Run Compiled Benchmarks
+        run: cabal run hvml -- run ./book/bench_count.hvml -c
