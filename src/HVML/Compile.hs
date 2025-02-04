@@ -77,6 +77,7 @@ compileFull :: Book -> Word64 -> Core -> Bool -> [(Bool,String)] -> Compile ()
 compileFull book fid core copy args = do
   emit $ "Term " ++ mget (fidToNam book) fid ++ "_t(Term ref) {"
   tabInc
+  emit $ "HVM.stats->red_reft[" ++ show fid ++ "] += 1;"
   forM_ (zip [0..] args) $ \(i, arg) -> do
     argVar <- fresh "arg"
     if fst arg
@@ -221,6 +222,7 @@ compileFast :: Book -> Word64 -> Core -> Bool -> [(Bool,String)] -> Compile ()
 compileFast book fid core copy args = do
   emit $ "Term " ++ mget (fidToNam book) fid ++ "_f(Term ref) {"
   tabInc
+  emit $ "HVM.stats->red_reff[" ++ show fid ++ "] += 1;"
   emit "u64 itrs = 0;"
   args <- forM (zip [0..] args) $ \ (i, (strict, arg)) -> do
     argNam <- fresh "arg"

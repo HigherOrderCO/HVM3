@@ -58,8 +58,9 @@ main = do
       let stats         = "-s" `elem` flags
       let debug         = "-d" `elem` flags
       let hideQuotes    = "-Q" `elem` flags
+      let verbose       = "-v" `elem` flags
       let mode          = case collapseFlag of { Just n -> Collapse n ; Nothing -> Normalize }
-      cliRun file debug compiled mode stats hideQuotes sArgs
+      cliRun file debug compiled mode stats hideQuotes verbose sArgs
     ["help"] -> printHelp
     _ -> printHelp
   case result of
@@ -88,17 +89,19 @@ printHelp = do
   putStrLn "    -s  # Show statistics"
   putStrLn "    -d  # Print execution steps (debug mode)"
   putStrLn "    -Q  # Hide quotes in output"
+  putStrLn "    -v  # Verbose mode (print additional debug info)"
   return $ Right ()
 
 -- CLI Commands
 -- ------------
 
-cliRun :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> [String] -> IO (Either String ())
-cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
+cliRun :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> Bool -> [String] -> IO (Either String ())
+cliRun filePath debug compiled mode showStats hideQuotes verbose strArgs = do
   -- Initialize the HVM
   hvmInit
   code <- readFile' filePath
   book <- doParseBook filePath code
+  when verbose $ printBookIds book
   -- Set constructor arities, case length and ADT ids
   forM_ (MS.toList (cidToAri book)) $ \ (cid, ari) -> do
     hvmSetCari cid (fromIntegral ari)
@@ -189,6 +192,7 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
     printf "TIME: %.7f seconds\n" time
     printf "SIZE: %llu nodes\n" size
     printf "PERF: %.3f MIPS\n" mips
+    when verbose $ printStats book
     return ()
   -- Finalize
   hvmFree
@@ -219,3 +223,15 @@ removeQuotes :: String -> String
 removeQuotes s = case s of
   '"':rest -> init rest  -- Remove first and last quote if present
   _        -> s          -- Otherwise return as-is
+
+
+printBookIds :: Book -> IO ()
+printBookIds book = do
+  putStrLn "Book IDs:"
+  putStrLn "fidToNam:"
+  forM_ (MS.toList $ fidToNam book) $ \(fid, name) -> do
+    putStrLn $ "  " ++ show fid ++ " = " ++ name
+  
+  putStrLn "cidToADT:"
+  forM_ (MS.toList $ cidToADT book) $ \(cid, adt) -> do
+    putStrLn $ "  " ++ mget (cidToCtr book) cid ++ " = " ++ show adt

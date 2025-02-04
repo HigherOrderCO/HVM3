@@ -4,6 +4,10 @@ import Data.Map.Strict as MS
 import Data.Word
 import Foreign.Ptr
 
+import Foreign.C.String (CString, peekCString)
+import Data.List (isPrefixOf, tails, uncons)
+import Data.Char (isDigit)
+
 -- Core Types
 -- ----------
 
@@ -106,6 +110,40 @@ type ReduceAt = Book -> Loc -> Bool -> HVM Term
 -- C Functions
 -- -----------
 
+foreign import ccall unsafe "Runtime.c print_stats"
+  c_printStats :: IO CString
+
+printStats :: Book -> IO ()
+printStats book = do
+  cstr <- c_printStats
+  rawStats <- peekCString cstr
+  putStrLn $ replaceIds book rawStats
+  where
+    replaceIds :: Book -> String -> String
+    replaceIds book = unlines . Prelude.map (replaceLine book) . lines
+
+    replaceLine :: Book -> String -> String
+    replaceLine book line = 
+      let line' =
+            if isPrefixOf "fid_" line 
+            then let line' = Prelude.drop 4 line
+                     (numStr, rest) = span isDigit line'
+                     fid = read numStr :: Word64
+                     name = MS.findWithDefault ("fid_" ++ show fid) fid (fidToNam book)
+                 in name ++ rest
+            else line in
+      let line'' = 
+            if isPrefixOf "cid_" line'
+            then let line'' = Prelude.drop 4 line'
+                     (numStr, rest) = span isDigit line''
+                     cid = read numStr :: Word64
+                     name = MS.findWithDefault ("cid_" ++ show cid) cid (cidToCtr book)
+                 in name ++ rest
+            else line' in
+      case uncons line'' of
+        Just (h, t) ->
+          h : (replaceLine book t)
+        Nothing -> ""
 foreign import ccall unsafe "Runtime.c hvm_init"
   hvmInit :: IO ()
 foreign import ccall unsafe "Runtime.c hvm_free"
