@@ -573,7 +573,9 @@ genFreshLabel = do
   st <- getState
   let lbl = freshLabel st
   putState st { freshLabel = lbl + 1 }
-  return $ lbl + 0x800000
+  when (lbl > 0x7FFF) $ do
+    error "Label overflow: generated label would be too large"
+  return $ lbl + 0x8000
 
 -- Adjusting
 -- ---------
