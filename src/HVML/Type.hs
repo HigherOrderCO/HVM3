@@ -309,13 +309,13 @@ modeT mode = error $ "unknown mode: " ++ show mode
 
 -- Primitive Functions
 _DUP_F_ :: Lab
-_DUP_F_ = 0xFFF
+_DUP_F_ = 0xFFFF
 
 _SUP_F_ :: Lab
-_SUP_F_ = 0xFFE
+_SUP_F_ = 0xFFFE
 
 _LOG_F_ :: Lab
-_LOG_F_ = 0xFFD
+_LOG_F_ = 0xFFFD
 
 primitives :: [(String, Lab)]
 primitives =

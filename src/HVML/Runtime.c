@@ -9,8 +9,8 @@
 #include <time.h>
 
 typedef uint8_t  Tag;
-typedef uint32_t Lab;
-typedef uint32_t Loc;
+typedef uint16_t Lab;
+typedef uint64_t Loc;
 typedef uint64_t Term;
 typedef uint16_t u16;
 typedef uint32_t u32;
@@ -87,9 +87,9 @@ static State HVM = {
 #define OP_LSH 0x0E
 #define OP_RSH 0x0F
 
-#define DUP_F 0xFFF
-#define SUP_F 0xFFE
-#define LOG_F 0xFFD
+#define DUP_F 0xFFFF
+#define SUP_F 0xFFFE
+#define LOG_F 0xFFFD
 
 #define LAZY 0x0
 #define STRI 0x1
@@ -126,7 +126,7 @@ void set_itr(Loc value) {
 Term term_new(Tag tag, Lab lab, Loc loc) {
   Term tag_enc = tag;
   Term lab_enc = ((Term)lab) << 8;
-  Term loc_enc = ((Term)loc) << 32;
+  Term loc_enc = ((Term)loc) << 24;
   return tag_enc | lab_enc | loc_enc;
 }
 
@@ -135,11 +135,11 @@ Tag term_tag(Term x) {
 }
 
 Lab term_lab(Term x) {
-  return (x >> 8) & 0xFFFFFF;
+  return (x >> 8) & 0xFFFF;
 }
 
 Loc term_loc(Term x) {
-  return (x >> 32) & 0xFFFFFFFF;
+  return (x >> 24) & 0xFFFFFFFFFF;
 }
 
 Tag term_get_bit(Term x) {
@@ -152,22 +152,6 @@ Term term_set_bit(Term term) {
 
 Term term_rem_bit(Term term) {
   return term & ~(1ULL << 7);
-
-}
-
-// u12v2
-// -----
-
-u64 u12v2_new(u64 x, u64 y) {
-  return (y << 12) | x;
-}
-
-u64 u12v2_x(u64 u12v2) {
-  return u12v2 & 0xFFF;
-}
-
-u64 u12v2_y(u64 u12v2) {
-  return u12v2 >> 12;
 }
 
 // Atomics
@@ -176,7 +160,7 @@ u64 u12v2_y(u64 u12v2) {
 Term swap(Loc loc, Term term) {
   Term val = atomic_exchange_explicit(&HVM.heap[loc], term, memory_order_relaxed);
   if (val == 0) {
-    printf("SWAP 0 at %x\n", loc);
+    printf("SWAP 0 at %llx\n", loc);
     exit(0);
   }
   return val;
@@ -185,7 +169,7 @@ Term swap(Loc loc, Term term) {
 Term got(Loc loc) {
   Term val = atomic_load_explicit(&HVM.heap[loc], memory_order_relaxed);
   if (val == 0) {
-    printf("GOT 0 at %x\n", loc);
+    printf("GOT 0 at %llx\n", loc);
     exit(0);
   }
   return val;
@@ -248,7 +232,7 @@ void print_tag(Tag tag) {
 void print_term(Term term) {
   printf("term_new(");
   print_tag(term_tag(term));
-  printf(",0x%06x,0x%09x)", term_lab(term), term_loc(term));
+  printf(",0x%06x,0x%09llx)", term_lab(term), term_loc(term));
 }
 
 void print_term_ln(Term term) {
@@ -261,7 +245,7 @@ void print_heap() {
   for (Loc i = 0; i < len; i++) {
     Term term = got(i);
     if (term != 0) {
-      printf("set(0x%09x, ", i);
+      printf("set(0x%09llx, ", i);
       print_term(term);
       printf(");\n");
     }
@@ -328,7 +312,7 @@ Term reduce_ref(Term ref) {
   //printf("reduce_ref "); print_term(ref); printf("\n");
   //printf("call %d %p\n", term_loc(ref), HVM.book[term_loc(ref)]);
   inc_itr();
-  return HVM.book[u12v2_x(term_lab(ref))](ref);
+  return HVM.book[term_lab(ref)](ref);
 }
 
 // ! x = val
@@ -682,7 +666,6 @@ Term reduce_mat_ctr(Term mat, Term ctr) {
     Lab ctr_lab = term_lab(ctr);
     u64 ctr_num = ctr_lab;
     u64 ctr_ari = HVM.cari[ctr_num];
-    u64 adt_id  = HVM.cadt[ctr_num];
     u64 mat_ctr = mat_lab;
     u64 cse_idx = ctr_num - mat_ctr;
     Term app = got(mat_loc + 1 + cse_idx);
@@ -703,7 +686,6 @@ Term reduce_mat_ctr(Term mat, Term ctr) {
 Term reduce_mat_w32(Term mat, Term w32) {
   //printf("reduce_mat_w32 "); print_term(mat); printf("\n");
   inc_itr();
-  Lab mat_tag = term_tag(mat);
   Loc mat_loc = term_loc(mat);
   Lab mat_lab = term_lab(mat);
   u64 mat_len = mat_lab;
@@ -776,12 +758,12 @@ Term reduce_opx_ctr(Term opx, Term ctr) {
 
 // <op(x0 x1)
 // ---------- OPX-W32
-// <op(x0 x1)
+// >op(x0 x1)
 Term reduce_opx_w32(Term opx, Term w32) {
   //printf("reduce_opx_w32 "); print_term(opx); printf("\n");
   inc_itr();
   Lab opx_lab = term_lab(opx);
-  Lab opx_loc = term_loc(opx);
+  Loc opx_loc = term_loc(opx);
   set(opx_loc + 0, w32);
   return term_new(OPY, opx_lab, opx_loc);
 }
@@ -867,7 +849,10 @@ Term reduce_opy_w32(Term opy, Term w32) {
     case OP_XOR: result = x ^ y; break;
     case OP_LSH: result = x << y; break;
     case OP_RSH: result = x >> y; break;
-    default: result = 0;
+    default: {
+      printf("invalid:opy-w32");
+      exit(0);
+    }
   }
   return term_new(t, 0, result);
 }
@@ -908,6 +893,10 @@ Term reduce(Term term) {
           case PARA: {
             printf("TODO\n");
             continue;
+          }
+          default: {
+            printf("invalid:let");
+            exit(0);
           }
         }
       }
@@ -1177,13 +1166,17 @@ Term normal(Term term) {
 Term SUP_f(Term ref) {
   Loc ref_loc = term_loc(ref);
   Term lab = reduce(got(ref_loc + 0));
+  Term lab_val = term_loc(lab);
   if (term_tag(lab) != W32) {
     printf("ERROR:non-numeric-sup-label\n");
+  }
+  if (lab_val > 0x7FFF) {
+    printf("ERROR:sup-label-too-large\n");
   }
   Term tm0 = got(ref_loc + 1);
   Term tm1 = got(ref_loc + 2);
   Loc  sup = alloc_node(2);
-  Term ret = term_new(SUP, term_loc(lab), sup);
+  Term ret = term_new(SUP, lab_val, sup);
   set(sup + 0, tm0);
   set(sup + 1, tm1);
   return ret;
@@ -1194,8 +1187,12 @@ Term SUP_f(Term ref) {
 Term DUP_f(Term ref) {
   Loc ref_loc = term_loc(ref);
   Term lab = reduce(got(ref_loc + 0));
+  Term lab_val = term_loc(lab);
   if (term_tag(lab) != W32) {
     printf("ERROR:non-numeric-dup-label\n");
+  }
+  if (lab_val > 0x7FFF) {
+    printf("ERROR:dup-label-too-large\n");
   }
   Term val = got(ref_loc + 1);
   Term bod = got(ref_loc + 2);
@@ -1208,20 +1205,19 @@ Term DUP_f(Term ref) {
     if (term_tag(lam1_bod) == LAM) {
       Loc lam2_loc = term_loc(lam1_bod);
       Term lam2_bod = got(lam2_loc + 0);
-      sub(lam1_loc + 0, term_new(DP0, term_loc(lab), dup));
-      sub(lam2_loc + 0, term_new(DP1, term_loc(lab), dup));
+      sub(lam1_loc + 0, term_new(DP0, lab_val, dup));
+      sub(lam2_loc + 0, term_new(DP1, lab_val, dup));
       *HVM.itrs += 2;
       return lam2_bod;
     }
   }
   Loc app1 = alloc_node(2);
   set(app1 + 0, bod);
-  set(app1 + 1, term_new(DP0, term_loc(lab), dup));
+  set(app1 + 1, term_new(DP0, lab_val, dup));
   Loc app2 = alloc_node(2);
   set(app2 + 0, term_new(APP, 0, app1));
-  set(app2 + 1, term_new(DP1, term_loc(lab), dup));
+  set(app2 + 1, term_new(DP1, lab_val, dup));
   return term_new(APP, 0, app2);
-
 }
 
 Term LOG_f(Term ref) {
@@ -1234,15 +1230,19 @@ Term LOG_f(Term ref) {
 
 void hvm_init() {
   // FIXME: use mmap instead
-  HVM.sbuf  = malloc((1ULL << 32) * sizeof(Term));
-  HVM.spos  = malloc(sizeof(u64));
+  HVM.sbuf = malloc((1ULL << 40) * sizeof(Term));
+  HVM.heap = malloc((1ULL << 40) * sizeof(ATerm));
+  HVM.spos = malloc(sizeof(u64));
+  HVM.size = malloc(sizeof(u64));
+  HVM.itrs = malloc(sizeof(u64));
+  HVM.frsh = malloc(sizeof(u64));
+  if (!HVM.sbuf || !HVM.heap || !HVM.spos || !HVM.size || !HVM.itrs || !HVM.frsh) {
+    printf("hvm_init alloc failed");
+    exit(1);
+  }
   *HVM.spos = 0;
-  HVM.heap  = malloc((1ULL << 32) * sizeof(ATerm));
-  HVM.size  = malloc(sizeof(u64));
-  HVM.itrs  = malloc(sizeof(u64));
   *HVM.size = 1;
   *HVM.itrs = 0;
-  HVM.frsh  = malloc(sizeof(u64));
   *HVM.frsh = 0x20;
   HVM.book[SUP_F] = SUP_f;
   HVM.book[DUP_F] = DUP_f;

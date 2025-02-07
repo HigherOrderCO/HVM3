@@ -20,3 +20,4 @@ cabal.sandbox.config
 tmp/
 TIMES/
 .main*
+.build/
