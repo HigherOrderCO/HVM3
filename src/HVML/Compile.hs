@@ -80,7 +80,7 @@ compileFull book fid core copy args = do
   forM_ (zip [0..] args) $ \(i, arg) -> do
     let argName = snd arg
     let argTerm = if fst arg
-          then "reduce_at(term_loc(ref) + " ++ show i ++ ")"
+          then "reduce_at(term_loc(ref) + " ++ show i ++ ", 0)"
           else "got(term_loc(ref) + " ++ show i ++ ")"
     bind argName argTerm
   result <- compileFullCore book fid core "root"
@@ -223,7 +223,7 @@ compileFast book fid core copy args = do
   args <- forM (zip [0..] args) $ \ (i, (strict, arg)) -> do
     argNam <- fresh "arg"
     if strict then do
-      emit $ "Term " ++ argNam ++ " = reduce_at(term_loc(ref) + " ++ show i ++ ");"
+      emit $ "Term " ++ argNam ++ " = reduce_at(term_loc(ref) + " ++ show i ++ ", 0);"
     else do
       emit $ "Term " ++ argNam ++ " = got(term_loc(ref) + " ++ show i ++ ");"
     if copy && strict then do
@@ -410,15 +410,15 @@ compileFastBody book fid term@(Let mode var val bod) ctx stop itr reuse = do
       case val of
         Ref _ rFid _ -> do
           valNam <- fresh "val"
-          emit $ "Term " ++ valNam ++ " = reduce(" ++ mget (fidToNam book) rFid ++ "_f(" ++ valT ++ "));"
+          emit $ "Term " ++ valNam ++ " = reduce(" ++ mget (fidToNam book) rFid ++ "_f(" ++ valT ++ "), 0);"
           bind var valNam
         _ -> do
           valNam <- fresh "val" 
-          emit $ "Term " ++ valNam ++ " = reduce(" ++ valT ++ ");"
+          emit $ "Term " ++ valNam ++ " = reduce(" ++ valT ++ ", 0);"
           bind var valNam
     PARA -> do -- TODO: implement parallel evaluation
       valNam <- fresh "val"
-      emit $ "Term " ++ valNam ++ " = reduce(" ++ valT ++ ");"
+      emit $ "Term " ++ valNam ++ " = reduce(" ++ valT ++ ", 0);"
       bind var valNam
   compileFastBody book fid bod ctx stop itr reuse
 
@@ -480,11 +480,11 @@ compileFastCore book fid (Let mode var val bod) reuse = do
     STRI -> do
       valNam <- fresh "val"
       emit $ "itrs += 1;"
-      emit $ "Term " ++ valNam ++ " = reduce(" ++ valT ++ ");"
+      emit $ "Term " ++ valNam ++ " = reduce(" ++ valT ++ ", 0);"
       bind var valNam
     PARA -> do -- TODO: implement parallel evaluation
       valNam <- fresh "val"
-      emit $ "Term " ++ valNam ++ " = reduce(" ++ valT ++ ");"
+      emit $ "Term " ++ valNam ++ " = reduce(" ++ valT ++ ", 0);"
       bind var valNam
   compileFastCore book fid bod reuse
 
@@ -637,7 +637,7 @@ compileFastCore book fid (Ref rNam rFid rArg) reuse = do
     labNam <- fresh "lab"
     supLoc <- compileFastAlloc 2 reuse
     labT <- compileFastCore book fid lab reuse
-    emit $ "Term " ++ labNam ++ " = reduce(" ++ labT ++ ");"
+    emit $ "Term " ++ labNam ++ " = reduce(" ++ labT ++ ", 0);"
     emit $ "if (term_tag(" ++ labNam ++ ") != W32) {"
     emit $ "  printf(\"ERROR:non-numeric-sup-label\\n\");"
     emit $ "}"
@@ -656,7 +656,7 @@ compileFastCore book fid (Ref rNam rFid rArg) reuse = do
     labNam <- fresh "lab"
     dupLoc <- compileFastAlloc 1 reuse
     labT <- compileFastCore book fid lab reuse
-    emit $ "Term " ++ labNam ++ " = reduce(" ++ labT ++ ");"
+    emit $ "Term " ++ labNam ++ " = reduce(" ++ labT ++ ", 0);"
     emit $ "if (term_tag(" ++ labNam ++ ") != W32) {"
     emit $ "  printf(\"ERROR:non-numeric-sup-label\\n\");"
     emit $ "}"

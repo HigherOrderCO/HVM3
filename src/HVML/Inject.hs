@@ -47,7 +47,7 @@ injectCore book (Let mod nam val bod) loc = do
 
 injectCore book (Lam vr0 bod) loc = do
   lam <- lift $ allocNode 1
-  -- lift $ set (lam + 0) (termNew _SUB_ 0 0)
+  -- lift $ set (lam + 0) (termNew 0 0 0)
   modify $ \s -> s { args = MS.insert vr0 (termNew _VAR_ 0 (lam + 0)) (args s) }
   injectCore book bod (lam + 0)
   lift $ set loc (termNew _LAM_ 0 lam)
