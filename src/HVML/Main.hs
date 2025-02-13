@@ -10,11 +10,11 @@ import Control.Monad (guard, when, forM_)
 import Control.Monad.Trans.Maybe (runMaybeT, MaybeT(..))
 import Data.FileEmbed
 import Data.List (partition, isPrefixOf, take, find)
-import Data.Time.Clock
 import Data.Word
 import Foreign.C.Types
 import Foreign.LibFFI
 import Foreign.LibFFI.Types
+import GHC.Clock
 import GHC.Conc
 import HVML.Collapse
 import HVML.Compile
@@ -24,7 +24,6 @@ import HVML.Parse
 import HVML.Reduce
 import HVML.Show
 import HVML.Type
-import System.CPUTime
 import System.Environment (getArgs)
 import System.Exit (exitWith, ExitCode(ExitSuccess, ExitFailure))
 import System.IO
@@ -151,7 +150,7 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
               ++ " arguments, found " ++ show (length strArgs)
     exitWith (ExitFailure 1)
   -- Normalize main
-  init <- getCPUTime
+  init <- getMonotonicTimeNSec
   -- Convert string arguments to Core terms and inject them at runtime
   let args = map (\str -> foldr (\c acc -> Ctr "#Cons" [Chr c, acc]) (Ctr "#Nil" []) str) strArgs
   root <- doInjectCoreAt book (Ref "main" (mget (namToFid book) "main") args) 0 []
@@ -181,12 +180,12 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
                    else showCore (head vals)
       putStrLn output
   -- Prints total time
-  end <- getCPUTime
+  end <- getMonotonicTimeNSec
   -- Show stats
   when showStats $ do
     itrs <- getItr
     size <- getLen
-    let time = fromIntegral (end - init) / (10^12) :: Double
+    let time = fromIntegral (end - init) / (10^9) :: Double
     let mips = (fromIntegral itrs / 1000000.0) / time
     printf "WORK: %llu interactions\n" itrs
     printf "TIME: %.7f seconds\n" time
