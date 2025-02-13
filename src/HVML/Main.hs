@@ -36,11 +36,6 @@ import Data.IORef
 import qualified Data.Map.Strict as MS
 import Text.Read (readMaybe)
 
-import System.IO
-import Data.Bits ((.&.))
-
-import Debug.Trace
-
 runtime_c :: String
 runtime_c = $(embedStringFile "./src/HVML/Runtime.c")
 
@@ -100,7 +95,6 @@ printHelp = do
 
 cliRun :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> [String] -> IO (Either String ())
 cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
-  hSetBuffering stdout NoBuffering
   -- Initialize the HVM
   hvmInit
   code <- readFile' filePath
@@ -193,7 +187,7 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
     let mips = (fromIntegral itrs / 1000000.0) / time
     printf "WORK: %llu interactions\n" itrs
     printf "TIME: %.7f seconds\n" time
-    printf "SIZE: %llu nodes\n" (size .&. 0x7FFFFFFFFF)
+    printf "SIZE: %llu nodes\n" size
     printf "PERF: %.3f MIPS\n" mips
     return ()
   -- Finalize

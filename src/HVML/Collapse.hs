@@ -89,22 +89,22 @@ collapseDupsAt state@(paths) reduceAt book host = do
       let loc = termLoc term
       let mode = modeT (termLab term)
       name <- return $ "$" ++ show (loc + 0)
-      spos <- rpush term 2
-      val0 <- collapseDupsStack state reduceAt book spos 1
-      bod0 <- collapseDupsStack state reduceAt book spos 2
+      ridx <- rpush term 2
+      val0 <- collapseDupsAtLazy state reduceAt book ridx 1
+      bod0 <- collapseDupsAtLazy state reduceAt book ridx 2
       return $ Let mode name val0 bod0
 
     LAM -> do
       let loc = termLoc term
       name <- return $ "$" ++ show (loc + 0)
-      spos <- rpush term 1
-      bod0 <- collapseDupsStack state reduceAt book spos 0
+      ridx <- rpush term 1
+      bod0 <- collapseDupsAtLazy state reduceAt book ridx 0
       return $ Lam name bod0
 
     APP -> do
-      spos <- rpush term 2
-      fun0 <- collapseDupsStack state reduceAt book spos 1
-      arg0 <- collapseDupsStack state reduceAt book spos 2
+      ridx <- rpush term 2
+      fun0 <- collapseDupsAtLazy state reduceAt book ridx 1
+      arg0 <- collapseDupsAtLazy state reduceAt book ridx 2
       return $ App fun0 arg0
 
     SUP -> do
@@ -115,9 +115,9 @@ collapseDupsAt state@(paths) reduceAt book host = do
           let newPaths = IM.insert (fromIntegral lab) ps paths
           collapseDupsAt (newPaths) reduceAt book (loc + fromIntegral p)
         _ -> do
-          spos <- rpush term 2
-          tm00 <- collapseDupsStack state reduceAt book spos 0
-          tm11 <- collapseDupsStack state reduceAt book spos 1
+          ridx <- rpush term 2
+          tm00 <- collapseDupsAtLazy state reduceAt book ridx 0
+          tm11 <- collapseDupsAtLazy state reduceAt book ridx 1
           return $ Sup lab tm00 tm11
 
     VAR -> do
@@ -162,8 +162,8 @@ collapseDupsAt state@(paths) reduceAt book host = do
       let nam = MS.findWithDefault "?" cid (cidToCtr book)
       let ari = mget (cidToAri book) cid
       let aux = if ari == 0 then [] else [0 .. ari-1]
-      spos <- rpush term (fromIntegral ari)
-      fds0 <- forM aux (collapseDupsStack state reduceAt book spos)
+      ridx <- rpush term (fromIntegral ari)
+      fds0 <- forM aux (collapseDupsAtLazy state reduceAt book ridx)
       return $ Ctr nam fds0
 
     MAT -> do
@@ -171,33 +171,33 @@ collapseDupsAt state@(paths) reduceAt book host = do
       let lab = termLab term
       let cid = lab
       let len = fromIntegral $ mget (cidToLen book) cid
-      spos <- rpush term (1 + len)
-      val0 <- collapseDupsStack state reduceAt book spos 0
+      ridx <- rpush term (1 + len)
+      val0 <- collapseDupsAtLazy state reduceAt book ridx 0
       css0 <- forM [0..len-1] $ \i -> do
         let ctr = mget (cidToCtr book) (cid + i)
         let ari = fromIntegral $ mget (cidToAri book) (cid + i)
         let fds = if ari == 0 then [] else ["$" ++ show (loc + 1 + j) | j <- [0..ari-1]]
-        bod0 <- collapseDupsStack state reduceAt book spos (1 + i)
+        bod0 <- collapseDupsAtLazy state reduceAt book ridx (1 + i)
         return (ctr, fds, bod0)
       return $ Mat val0 [] css0
 
     IFL -> do
       let loc = termLoc term
       let lab = termLab term
-      spos <- rpush term 3
-      val0 <- collapseDupsStack state reduceAt book spos 0
-      cs00 <- collapseDupsStack state reduceAt book spos 1
-      cs10 <- collapseDupsStack state reduceAt book spos 2
+      ridx <- rpush term 3
+      val0 <- collapseDupsAtLazy state reduceAt book ridx 0
+      cs00 <- collapseDupsAtLazy state reduceAt book ridx 1
+      cs10 <- collapseDupsAtLazy state reduceAt book ridx 2
       return $ Mat val0 [] [(mget (cidToCtr book) lab, [], cs00), ("_", [], cs10)]
 
     SWI -> do
       let loc = termLoc term
       let lab = termLab term
       let len = fromIntegral $ mget (cidToLen book) lab
-      spos <- rpush term (1 + len)
-      val0 <- collapseDupsStack state reduceAt book spos 0
+      ridx <- rpush term (1 + len)
+      val0 <- collapseDupsAtLazy state reduceAt book ridx 0
       css0 <- forM [0..len-1] $ \i -> do
-        bod0 <- collapseDupsStack state reduceAt book spos (1 + i)
+        bod0 <- collapseDupsAtLazy state reduceAt book ridx (1 + i)
         return (show i, [], bod0)
       return $ Mat val0 [] css0
 
@@ -212,17 +212,17 @@ collapseDupsAt state@(paths) reduceAt book host = do
     OPX -> do
       let loc = termLoc term
       let opr = toEnum (fromIntegral (termLab term))
-      spos <- rpush term 2
-      nm00 <- collapseDupsStack state reduceAt book spos 0
-      nm10 <- collapseDupsStack state reduceAt book spos 1
+      ridx <- rpush term 2
+      nm00 <- collapseDupsAtLazy state reduceAt book ridx 0
+      nm10 <- collapseDupsAtLazy state reduceAt book ridx 1
       return $ Op2 opr nm00 nm10
 
     OPY -> do
       let loc = termLoc term
       let opr = toEnum (fromIntegral (termLab term))
-      spos <- rpush term 2
-      nm00 <- collapseDupsStack state reduceAt book spos 0
-      nm10 <- collapseDupsStack state reduceAt book spos 1
+      ridx <- rpush term 2
+      nm00 <- collapseDupsAtLazy state reduceAt book ridx 0
+      nm10 <- collapseDupsAtLazy state reduceAt book ridx 1
       return $ Op2 opr nm00 nm10
 
     REF -> do
@@ -230,8 +230,8 @@ collapseDupsAt state@(paths) reduceAt book host = do
       let lab = termLab term
       let fid = lab
       let ari = funArity book fid
-      spos <- rpush term (fromIntegral ari)
-      arg0 <- forM [0..ari-1] (collapseDupsStack state reduceAt book spos)
+      ridx <- rpush term (fromIntegral ari)
+      arg0 <- forM [0..ari-1] (collapseDupsAtLazy state reduceAt book ridx)
       let name = MS.findWithDefault "?" fid (fidToNam book)
       return $ Ref name fid arg0
 
@@ -240,8 +240,8 @@ collapseDupsAt state@(paths) reduceAt book host = do
       -- exitFailure
 
   where
-    collapseDupsStack state reduceAt book spos off = unsafeInterleaveIO $ do
-      base <- rtake spos
+    collapseDupsAtLazy state reduceAt book ridx off = unsafeInterleaveIO $ do
+      base <- rtake ridx -- get GC-safe location
       collapseDupsAt state reduceAt book ((termLoc base) + off)
 
 -- Sup Collapser

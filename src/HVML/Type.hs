@@ -225,9 +225,6 @@ foreign import ccall unsafe "Runtime.c hvm_set_cadt"
 foreign import ccall unsafe "Runtime.c hvm_set_fari"
   hvmSetFari :: Word64 -> Word16 -> IO ()
 
-foreign import ccall unsafe "Runtime.c print_term"
-  printTerm :: Word64 -> IO ()
-
 -- Constants
 -- ---------
 

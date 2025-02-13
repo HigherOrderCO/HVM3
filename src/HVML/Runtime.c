@@ -7,20 +7,16 @@
 #include <stdlib.h>
 #include <sys/mman.h>
 #include <time.h>
-#include <string.h>
 
 typedef uint8_t  Tag;
 typedef uint16_t Lab;
 typedef uint64_t Loc;
 typedef uint64_t Term;
-typedef uint8_t  u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 typedef _Atomic(Term) ATerm;
 typedef struct{Term term; u16 cnt;} Rloc;
-
-void print_term(Term term);
 
 // Runtime Types
 // -------------
@@ -177,7 +173,7 @@ Term term_set_loc(Term x, Loc loc) {
   return (x & 0x0000000000FFFFFF) | (loc << 24);
 }
 
-u8 loc_is_old(Loc loc) {
+_Bool loc_is_old(Loc loc) {
   return (loc >= (*HVM.osiz & 0x8000000000)) && (loc < *HVM.osiz);
 }
 
@@ -386,7 +382,7 @@ void print_tag(Tag tag) {
     case CHR: printf("CHR"); break;
     case OPX: printf("OPX"); break;
     case OPY: printf("OPY"); break;
-    default : printf("\?\?\?(%x)", tag); break;
+    default : printf("???"); break;
   }
 }
 
@@ -397,8 +393,17 @@ void print_term(Term term) {
 }
 
 void print_heap() {
-  Loc len = get_len();
-  for (Loc i = 0; i < len; i++) {
+  Loc obas = *HVM.osiz & 0x8000000000;
+  Loc nbas = *HVM.nsiz & 0x8000000000;
+  for (Loc i = obas; i < *HVM.osiz; i++) {
+    Term term = got(i);
+    if (term != 0) {
+      printf("set(0x%010llx, ", i);
+      print_term(term);
+      printf(");\n");
+    }
+  }
+  for (Loc i = nbas; i < *HVM.nsiz; i++) {
     Term term = got(i);
     if (term != 0) {
       printf("set(0x%010llx, ", i);
@@ -1011,7 +1016,7 @@ Term reduce_opy_w32(Term opy, Term w32) {
   return term_new(t, 0, result);
 }
 
-Term reduce(Term term, u8 gc) {
+Term reduce(Term term, _Bool gc) {
   if (term_tag(term) >= ERA) return term;
   Term next = term;
   u64  stop = *HVM.spos;
@@ -1025,14 +1030,6 @@ Term reduce(Term term, u8 gc) {
         collect_major();
       }
       next = spop();
-    }
-
-    if (term_tag(next) == SUB) {
-      printf("SUB in reduce next: ");
-      print_term(next);
-      printf("\n");
-      fflush(stdout);
-      exit(1);
     }
 
     //printf("NEXT "); print_term(term); printf("\n");
@@ -1057,7 +1054,6 @@ Term reduce(Term term, u8 gc) {
           }
           case STRI: {
             spush(next);
-            // HVM.sbuf[(*spos)++] = next;
             next = got(loc + 0);
             continue;
           }
@@ -1074,7 +1070,6 @@ Term reduce(Term term, u8 gc) {
 
       case APP: {
         spush(next);
-        // HVM.sbuf[(*spos)++] = next;
         next = got(loc + 0);
         continue;
       }
@@ -1083,21 +1078,18 @@ Term reduce(Term term, u8 gc) {
       case IFL:
       case SWI: {
         spush(next);
-        // HVM.sbuf[(*spos)++] = next;
         next = got(loc + 0);
         continue;
       }
 
       case OPX: {
         spush(next);
-        // HVM.sbuf[(*spos)++] = next;
         next = got(loc + 0);
         continue;
       }
 
       case OPY: {
         spush(next);
-        // HVM.sbuf[(*spos)++] = next;
         next = got(loc + 1);
         continue;
       }
@@ -1106,7 +1098,6 @@ Term reduce(Term term, u8 gc) {
         Term sb0 = got(loc + 0);
         if (term_get_bit(sb0) == 0) {
           spush(next);
-          // HVM.sbuf[(*spos)++] = next;
           next = got(loc + 0);
           continue;
         } else {
@@ -1119,7 +1110,6 @@ Term reduce(Term term, u8 gc) {
         Term sb1 = got(loc + 0);
         if (term_get_bit(sb1) == 0) {
           spush(next);
-          // HVM.sbuf[(*spos)++] = next;
           next = got(loc + 0);
           continue;
         } else {
@@ -1141,11 +1131,6 @@ Term reduce(Term term, u8 gc) {
       case REF: {
         next = reduce_ref(next); // TODO
         continue;
-      }
-
-      case SUB: {
-        printf("ERROR: SUB in reduce\n");
-        exit(1);
       }
 
       default: {
@@ -1229,11 +1214,6 @@ Term reduce(Term term, u8 gc) {
               }
             }
 
-            case SUB: {
-              printf("ERROR: SUB in reduce 2\n");
-              exit(1);
-            }
-
             default: break;
           }
           break;
@@ -1245,7 +1225,6 @@ Term reduce(Term term, u8 gc) {
       return next;
     } else {
       Term host = spop();
-      // Term host = HVM.sbuf[--(*HVM.spos)];
       Tag  htag = term_tag(host);
       Lab  hlab = term_lab(host);
       Loc  hloc = term_loc(host);
@@ -1269,7 +1248,7 @@ Term reduce(Term term, u8 gc) {
   return 0;
 }
 
-Term reduce_at(Loc host, u8 gc) {
+Term reduce_at(Loc host, _Bool gc) {
   spush(host);
   Term term = reduce(got(host), gc);
   host = spop();
