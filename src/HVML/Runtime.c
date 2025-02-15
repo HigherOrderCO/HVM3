@@ -1094,26 +1094,15 @@ Term reduce(Term term, _Bool gc) {
         continue;
       }
 
-      case DP0: {
-        Term sb0 = got(loc + 0);
-        if (term_get_bit(sb0) == 0) {
-          spush(next);
-          next = got(loc + 0);
-          continue;
-        } else {
-          next = term_rem_bit(sb0);
-          continue;
-        }
-      }
-
+      case DP0:
       case DP1: {
-        Term sb1 = got(loc + 0);
-        if (term_get_bit(sb1) == 0) {
+        Term sub = got(loc + 0);
+        if (term_get_bit(sub) == 0) {
           spush(next);
-          next = got(loc + 0);
+          next = sub;
           continue;
         } else {
-          next = term_rem_bit(sb1);
+          next = term_rem_bit(sub);
           continue;
         }
       }
