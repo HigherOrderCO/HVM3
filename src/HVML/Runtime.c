@@ -530,11 +530,11 @@ Term reduce_app_sup(Term app, Term sup) {
   Loc du0     = alloc_node(1);
   //Loc su0     = alloc_node(2);
   //Loc ap0     = alloc_node(2);
-  Loc ap0     = app_loc;
-  Loc su0     = sup_loc;
+  Loc ap0     = sup_loc;
+  Loc su0     = app_loc;
   Loc ap1     = alloc_node(2);
   set(du0 + 0, arg);
-  set(ap0 + 0, tm0);
+  //set(ap0 + 0, tm0);
   set(ap0 + 1, term_new(DP0, sup_lab, du0));
   set(ap1 + 0, tm1);
   set(ap1 + 1, term_new(DP1, sup_lab, du0));
@@ -633,15 +633,16 @@ Term reduce_dup_sup(Term dup, Term sup) {
       return term_rem_bit(tm1);
     }
   } else {
-    Loc du0 = alloc_node(1);
-    Loc du1 = alloc_node(1);
-    //Loc su0 = alloc_node(2);
-    Loc su0 = sup_loc;
+    //Loc du0 = alloc_node(1);
+    //Loc du1 = alloc_node(1);
+    Loc du0 = sup_loc + 0;
+    Loc du1 = sup_loc + 1;
+    Loc su0 = alloc_node(2);
     Loc su1 = alloc_node(2);
-    Term tm0 = take(sup_loc + 0);
-    Term tm1 = take(sup_loc + 1);
-    set(du0 + 0, tm0);
-    set(du1 + 0, tm1);
+    //Term tm0 = got(sup_loc + 0);
+    //Term tm1 = got(sup_loc + 1);
+    //set(du0 + 0, tm0);
+    //set(du1 + 0, tm1);
     set(su0 + 0, term_new(DP0, dup_lab, du0));
     set(su0 + 1, term_new(DP0, dup_lab, du1));
     set(su1 + 0, term_new(DP1, dup_lab, du0));
@@ -805,7 +806,7 @@ Term reduce_mat_ctr(Term mat, Term ctr) {
     if (mat_ctr == ctr_num) {
       Term app = got(mat_loc + 1);
       for (u64 i = 0; i < ctr_ari; i++) {
-        Loc new_app = alloc_node(2);
+        Loc new_app = i == 0 ? mat_loc : alloc_node(2);
         set(new_app + 0, app);
         set(new_app + 1, got(ctr_loc + i));
         app = term_new(APP, 0, new_app);
@@ -813,7 +814,7 @@ Term reduce_mat_ctr(Term mat, Term ctr) {
       return app;
     } else {
       Term app = got(mat_loc + 2);
-      Loc new_app = alloc_node(2);
+      Loc new_app = mat_loc;
       set(new_app + 0, app);
       set(new_app + 1, ctr);
       app = term_new(APP, 0, new_app);
@@ -829,7 +830,7 @@ Term reduce_mat_ctr(Term mat, Term ctr) {
     u64 cse_idx = ctr_num - mat_ctr;
     Term app = got(mat_loc + 1 + cse_idx);
     for (u64 i = 0; i < ctr_ari; i++) {
-      Loc new_app = alloc_node(2);
+      Loc new_app = i == 0 ? mat_loc : alloc_node(2);
       set(new_app + 0, app);
       set(new_app + 1, got(ctr_loc + i));
       app = term_new(APP, 0, new_app);
@@ -852,8 +853,9 @@ Term reduce_mat_w32(Term mat, Term w32) {
   if (w32_val < mat_len - 1) {
     return got(mat_loc + 1 + w32_val);
   } else {
-    Loc app = alloc_node(2);
-    set(app + 0, got(mat_loc + mat_len));
+    Term fn = got(mat_loc + mat_len);
+    Loc app = mat_loc;
+    set(app + 0, fn);
     set(app + 1, term_new(W32, 0, w32_val - (mat_len - 1)));
     return term_new(APP, 0, app);
   }
@@ -962,10 +964,10 @@ Term reduce_opy_sup(Term opy, Term sup) {
   Loc op0     = opy_loc;
   Loc op1     = sup_loc;
   Loc su0     = alloc_node(2);
-  set(op0 + 0, nmx);
+  // set(op0 + 0, nmx);
   set(op0 + 1, tm0);
   set(op1 + 0, nmx);
-  set(op1 + 1, tm1);
+  // set(op1 + 1, tm1);
   set(su0 + 0, term_new(OPY, term_lab(opy), op0));
   set(su0 + 1, term_new(OPY, term_lab(opy), op1));
   return term_new(SUP, sup_lab, su0);
