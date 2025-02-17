@@ -103,8 +103,8 @@ collapseDupsAt state@(paths) reduceAt book host = do
 
     APP -> do
       ridx <- rpush term 2
-      fun0 <- collapseDupsAtLazy state reduceAt book ridx 1
-      arg0 <- collapseDupsAtLazy state reduceAt book ridx 2
+      fun0 <- collapseDupsAtLazy state reduceAt book ridx 0
+      arg0 <- collapseDupsAtLazy state reduceAt book ridx 1
       return $ App fun0 arg0
 
     SUP -> do

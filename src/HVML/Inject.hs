@@ -74,6 +74,8 @@ injectCore book (Dup lab dp0 dp1 val bod) loc = do
 
 injectCore book (Ref nam fid arg) loc = do
   let ari = funArity book fid
+  when (ari /= fromIntegral (length arg)) $ do
+    error $ "Arity mismatch on term: " ++ showCore (Ref nam fid arg) ++ ". Expected " ++ show ari ++ ", got " ++ show (length arg) ++ "."
   ref <- lift $ allocNode (fromIntegral ari)
   sequence_ [injectCore book x (ref + i) | (i,x) <- zip [0..] arg]
   lift $ set loc (termNew _REF_ fid ref)

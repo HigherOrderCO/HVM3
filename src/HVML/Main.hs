@@ -99,10 +99,6 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
   hvmInit
   code <- readFile' filePath
   book <- doParseBook filePath code
-  -- Create the C file content
-  let decls = compileHeaders book
-  let funcs = map (\ (fid, _) -> compile book fid) (MS.toList (fidToFun book))
-  let mainC = unlines $ [runtime_c] ++ [decls] ++ funcs ++ [genMain book]
   -- Set constructor arities, case length and ADT ids
   forM_ (MS.toList (cidToAri book)) $ \ (cid, ari) -> do
     hvmSetCari cid (fromIntegral ari)
@@ -114,6 +110,10 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
     hvmSetFari fid (fromIntegral $ length args)
   -- Compile to native
   when compiled $ do
+    -- Create the C file content
+    let decls = compileHeaders book
+    let funcs = map (\ (fid, _) -> compile book fid) (MS.toList (fidToFun book))
+    let mainC = unlines $ [runtime_c] ++ [decls] ++ funcs ++ [genMain book]
     -- Try to use a cached .so file
     callCommand "mkdir -p .build"
     let fName = last $ words $ map (\c -> if c == '/' then ' ' else c) filePath

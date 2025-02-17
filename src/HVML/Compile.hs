@@ -203,7 +203,8 @@ compileFullCore book fid (Op2 opr nu0 nu1) host = do
   emit $ "set(" ++ opxNam ++ " + 1, " ++ nu1T ++ ");"
   return $ "term_new(OPX, " ++ show (fromEnum opr) ++ ", " ++ opxNam ++ ")"
 
-compileFullCore book fid (Ref rNam rFid rArg) host = do
+compileFullCore book fid t@(Ref rNam rFid rArg) host = do
+  checkRefAri book t
   refNam <- fresh "ref"
   let arity = length rArg
   emit $ "Loc " ++ refNam ++ " = alloc_node(" ++ show arity ++ ");"
@@ -376,8 +377,8 @@ compileFastBody book fid term@(Mat val mov css) ctx stop@False itr reuse = do
 compileFastBody book fid term@(Dup lab dp0 dp1 val bod) ctx stop itr reuse = do
   valT <- compileFastCore book fid val reuse
   valNam <- fresh "val"
-  dp0Nam <- fresh "dp0"
-  dp1Nam <- fresh "dp1"
+  dp0Nam <- fresh "dpA"
+  dp1Nam <- fresh "dpB"
   emit $ "Term " ++ valNam ++ " = (" ++ valT ++ ");"
   emit $ "Term " ++ dp0Nam ++ ";"
   emit $ "Term " ++ dp1Nam ++ ";"
@@ -408,7 +409,8 @@ compileFastBody book fid term@(Let mode var val bod) ctx stop itr reuse = do
       bind var valT
     STRI -> do
       case val of
-        Ref _ rFid _ -> do
+        t@(Ref _ rFid _) -> do
+          checkRefAri book t
           valNam <- fresh "val"
           emit $ "Term " ++ valNam ++ " = reduce(" ++ mget (fidToNam book) rFid ++ "_f(" ++ valT ++ "), 0);"
           bind var valNam
@@ -423,6 +425,7 @@ compileFastBody book fid term@(Let mode var val bod) ctx stop itr reuse = do
   compileFastBody book fid bod ctx stop itr reuse
 
 compileFastBody book fid term@(Ref fNam fFid fArg) ctx stop itr reuse | fFid == fid = do
+  checkRefAri book term
   forM_ (zip fArg ctx) $ \ (arg, ctxVar) -> do
     argT <- compileFastCore book fid arg reuse
     emit $ "" ++ ctxVar ++ " = " ++ argT ++ ";"
@@ -523,8 +526,8 @@ compileFastCore book fid (Sup lab tm0 tm1) reuse = do
 
 compileFastCore book fid (Dup lab dp0 dp1 val bod) reuse = do
   dupNam <- fresh "dup"
-  dp0Nam <- fresh "dp0"
-  dp1Nam <- fresh "dp1"
+  dp0Nam <- fresh "dpA"
+  dp1Nam <- fresh "dpB"
   valNam <- fresh "val"
   valT   <- compileFastCore book fid val reuse
   emit $ "Term " ++ valNam ++ " = (" ++ valT ++ ");"
@@ -628,7 +631,8 @@ compileFastCore book fid (Op2 opr nu0 nu1) reuse = do
   emit $ "}"
   return $ retNam
 
-compileFastCore book fid (Ref rNam rFid rArg) reuse = do
+compileFastCore book fid t@(Ref rNam rFid rArg) reuse = do
+  checkRefAri book t
 
   -- Inline Dynamic SUP
   if rNam == "SUP" then do
@@ -694,3 +698,10 @@ compileSlow book fid core copy args = do
   emit $ "Term " ++ mget (fidToNam book) fid ++ "_f(Term ref) {"
   emit $ "  return " ++ mget (fidToNam book) fid ++ "_t(ref);"
   emit $ "}"
+
+checkRefAri :: Book -> Core -> Compile ()
+checkRefAri book core = do
+  case core of
+    Ref nam fid arg -> when ((funArity book fid) /= fromIntegral (length arg)) $ do
+      error $ "Arity mismatch on term: " ++ showCore core ++ ". Expected " ++ show (funArity book fid) ++ ", got " ++ show (length arg) ++ "."
+    _ -> return ()
