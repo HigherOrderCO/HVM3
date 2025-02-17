@@ -25,6 +25,7 @@ typedef struct {
   Term*  sbuf; // reduction stack buffer
   u64*   spos; // reduction stack position
   ATerm* heap; // global node buffer
+  u64*   size; // total node length on last gc
   u64*   nsiz; // global node length new gen
   u64*   osiz; // global node length old gen
 
@@ -124,7 +125,7 @@ static State HVM = {
 // ----
 
 Loc get_len() {
-  return (*HVM.osiz & 0x7FFFFFFFFF) + (*HVM.nsiz & 0x7FFFFFFFFF);
+  return *HVM.size + (*HVM.nsiz & 0x7FFFFFFFFF);
 }
 
 u64 get_itr() {
@@ -329,6 +330,8 @@ Term collect_root(Term root) {
 }
 
 void collect_minor() {
+  *HVM.size += *HVM.nsiz & 0x7FFFFFFFFF;
+
   for (u64 rpos = *HVM.rlas; rpos < *HVM.rpos; rpos++) {
     if (HVM.rbuf[rpos].cnt > 0) {
       Term term = HVM.rbuf[rpos].term;
@@ -357,6 +360,8 @@ void collect_major() {
   *HVM.osiz = (old_nsiz & 0x8000000000) + 1;
   collect_minor();
   *HVM.gth2 = *HVM.osiz + GC_THR;
+  // Avoid double counting on major collection
+  *HVM.size -= (old_osiz & 0x7FFFFFFFFF);
 }
 
 // Stringification
@@ -1411,6 +1416,7 @@ void hvm_init() {
   HVM.rpos = malloc(sizeof(u64));
   HVM.rlas = malloc(sizeof(u64));
   HVM.spos = malloc(sizeof(u64));
+  HVM.size = malloc(sizeof(u64));
   HVM.osiz = malloc(sizeof(u64));
   HVM.nsiz = malloc(sizeof(u64));
   HVM.gth1 = malloc(sizeof(u64));
@@ -1423,6 +1429,7 @@ void hvm_init() {
     exit(1);
   }
   *HVM.spos = 0;
+  *HVM.size = 0;
   *HVM.osiz = (1ull << 39) + 1;
   *HVM.nsiz = 1;
   // delay the first minor gc, better for small programs
@@ -1448,6 +1455,7 @@ void hvm_free() {
   free(HVM.sbuf);
   free(HVM.spos);
   free(HVM.heap);
+  free(HVM.size);
   free(HVM.osiz);
   free(HVM.nsiz);
   free(HVM.obuf);
@@ -1471,10 +1479,12 @@ void hvm_set_state(State* hvm) {
   HVM.spos = hvm->spos;
   HVM.rbuf = hvm->rbuf;
   HVM.rpos = hvm->rpos;
+  HVM.rlas = hvm->rlas;
   HVM.obuf = hvm->obuf;
   HVM.opos = hvm->opos;
   HVM.gbuf = hvm->gbuf;
   HVM.heap = hvm->heap;
+  HVM.size = hvm->size;
   HVM.osiz = hvm->osiz;
   HVM.nsiz = hvm->nsiz;
   HVM.gth1 = hvm->gth1;
