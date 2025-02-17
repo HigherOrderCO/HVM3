@@ -78,11 +78,12 @@ compileFull book fid core copy args = do
   emit $ "Term " ++ mget (fidToNam book) fid ++ "_t(Term ref) {"
   tabInc
   forM_ (zip [0..] args) $ \(i, arg) -> do
+    argVar <- fresh "arg"
+    if fst arg
+      then emit $ "Term " ++ argVar ++ " = reduce_at(term_loc(ref) + " ++ show i ++ ", 0);"
+      else emit $ "Term " ++ argVar ++ " = got(term_loc(ref) + " ++ show i ++ ");"
     let argName = snd arg
-    let argTerm = if fst arg
-          then "reduce_at(term_loc(ref) + " ++ show i ++ ", 0)"
-          else "got(term_loc(ref) + " ++ show i ++ ")"
-    bind argName argTerm
+    bind argName argVar
   result <- compileFullCore book fid core "root"
   st <- get
   forM_ (vars st) $ \ (var,host) -> do
