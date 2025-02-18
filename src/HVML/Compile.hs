@@ -313,13 +313,58 @@ compileFastBody book fid term@(Mat val mov css) ctx stop@False itr reuse = do
     emit $ "}"
 
   -- Constructor Pattern-Matching (with IfLet)
+  else if matType book term == IfLet then do
+    let (Var defNam) = val
+    let css          = undoIfLetChain defNam term
+    let (_, dflt)    = last css
+    let othCss       = init css
+    emit $ "if (term_tag(" ++ valNam ++ ") == CTR) {"
+    tabInc
+    emit $ "switch (term_lab(" ++ valNam ++ ")) {"
+    tabInc
+    itrA <- foldM (\itr (mov, (ctr, fds, bod)) -> do
+      emit $ "case " ++ show (mget (ctrToCid book) ctr) ++ ": {"
+      tabInc
+      let reuse' = MS.insertWith (++) (length fds) ["term_loc(" ++ valNam ++ ")"] reuse
+      forM_ (zip [0..] fds) $ \(k, fd) -> do
+        fdNam <- fresh "fd"
+        emit $ "Term " ++ fdNam ++ " = got(term_loc(" ++ valNam ++ ") + " ++ show k ++ ");"
+        bind fd fdNam
+      forM_ mov $ \(key, val) -> do
+        valT <- compileFastCore book fid val reuse'
+        bind key valT
+      compileFastBody book fid bod ctx stop (itr + 1 + length fds + length mov) reuse'
+      emit $ "break;"
+      tabDec
+      emit $ "}"
+      return (itr + 1 + 1 + length mov)) itr othCss
+    emit $ "default: {"
+    tabInc
+    let (_, [dflNam], dflBod) = dflt
+    fdNam <- fresh "fd"
+    emit $ "Term " ++ fdNam ++ " = " ++ valNam ++ ";"
+    bind dflNam fdNam
+    forM_ mov $ \(key, val) -> do
+      valT <- compileFastCore book fid val reuse
+      bind key valT
+    compileFastBody book fid dflBod ctx stop itrA reuse
+    emit $ "break;"
+    tabDec
+    emit $ "}"
+    tabDec
+    emit $ "}"
+    tabDec
+    emit $ "}"
+
+  -- Constructor Pattern-Matching (without IfLet)
   else do
-    if matType book term == IfLet then do
-      emit $ "if (term_tag(" ++ valNam ++ ") == CTR) {"
+    emit $ "if (term_tag(" ++ valNam ++ ") == CTR) {"
+    tabInc
+    emit $ "switch (term_lab(" ++ valNam ++ ") - " ++ show (matFirstCid book term) ++ ") {"
+    tabInc
+    forM_ (zip [0..] css) $ \ (i, (ctr,fds,bod)) -> do
+      emit $ "case " ++ show i ++ ": {"
       tabInc
-      emit $ "if (term_lab(" ++ valNam ++ ") == " ++ show (matFirstCid book term) ++ ") {"
-      tabInc
-      let (ctr,fds,bod) = css !! 0
       let reuse' = MS.insertWith (++) (length fds) ["term_loc(" ++ valNam ++ ")"] reuse
       forM_ (zip [0..] fds) $ \ (k,fd) -> do
         fdNam <- fresh "fd"
@@ -329,51 +374,22 @@ compileFastBody book fid term@(Mat val mov css) ctx stop@False itr reuse = do
         valT <- compileFastCore book fid val reuse'
         bind key valT
       compileFastBody book fid bod ctx stop (itr + 1 + length fds + length mov) reuse'
-      tabDec
-      emit $ "} else {"
-      tabInc
-      let (ctr,fds,bod) = css !! 1
-      when (length fds /= 1) $ do
-        error "incorrect arity on if-let default case"
-      fdNam <- fresh "fd"
-      emit $ "Term " ++ fdNam ++ " = " ++ valNam ++ ";"
-      bind (head fds) fdNam
-      forM_ mov $ \ (key,val) -> do
-        valT <- compileFastCore book fid val reuse
-        bind key valT
-      compileFastBody book fid bod ctx stop (itr + 1 + 1 + length mov) reuse
+      emit $ "break;"
       tabDec
       emit $ "}"
-      tabDec
-      emit $ "}"
-
-    -- Constructor Pattern-Matching (without IfLet)
-    else do
-      emit $ "if (term_tag(" ++ valNam ++ ") == CTR) {"
-      tabInc
-      emit $ "switch (term_lab(" ++ valNam ++ ") - " ++ show (matFirstCid book term) ++ ") {"
-      tabInc
-      forM_ (zip [0..] css) $ \ (i, (ctr,fds,bod)) -> do
-        emit $ "case " ++ show i ++ ": {"
-        tabInc
-        let reuse' = MS.insertWith (++) (length fds) ["term_loc(" ++ valNam ++ ")"] reuse
-        forM_ (zip [0..] fds) $ \ (k,fd) -> do
-          fdNam <- fresh "fd"
-          emit $ "Term " ++ fdNam ++ " = got(term_loc(" ++ valNam ++ ") + " ++ show k ++ ");"
-          bind fd fdNam
-        forM_ mov $ \ (key,val) -> do
-          valT <- compileFastCore book fid val reuse'
-          bind key valT
-        compileFastBody book fid bod ctx stop (itr + 1 + length fds + length mov) reuse'
-        emit $ "break;"
-        tabDec
-        emit $ "}"
-      tabDec
-      emit $ "}"
-      tabDec
-      emit $ "}"
+    tabDec
+    emit $ "}"
+    tabDec
+    emit $ "}"
 
   compileFastUndo book fid term ctx itr reuse
+  where
+    undoIfLetChain :: String -> Core -> [([(String,Core)], (String, [String], Core))]
+    undoIfLetChain expNam term@(Mat (Var gotNam) mov [(ctr, fds, bod), ("_", [nxtNam], rest)]) =
+      if gotNam == expNam
+        then (mov, (ctr, fds, bod)) : undoIfLetChain nxtNam rest
+        else [([], ("_", [expNam], term))]
+    undoIfLetChain expNam term = [([], ("_", [expNam], term))]
 
 compileFastBody book fid term@(Dup lab dp0 dp1 val bod) ctx stop itr reuse = do
   valT <- compileFastCore book fid val reuse
@@ -691,11 +707,12 @@ compileFastVar var = do
     Just entry -> do
       return entry
     Nothing -> do
-      return "<ERR>"
+      return $ "<ERR>"
 
 -- Compiles a function using Fast-Mode
 compileSlow :: Book -> Word64 -> Core -> Bool -> [(Bool,String)] -> Compile ()
 compileSlow book fid core copy args = do
+  book <- return book
   emit $ "Term " ++ mget (fidToNam book) fid ++ "_f(Term ref) {"
   emit $ "  return " ++ mget (fidToNam book) fid ++ "_t(ref);"
   emit $ "}"
