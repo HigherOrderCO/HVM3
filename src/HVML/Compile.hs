@@ -383,7 +383,7 @@ compileFastBody book fid term@(Dup lab dp0 dp1 val bod) ctx stop itr reuse = do
   emit $ "Term " ++ valNam ++ " = (" ++ valT ++ ");"
   emit $ "Term " ++ dp0Nam ++ ";"
   emit $ "Term " ++ dp1Nam ++ ";"
-  emit $ "if (term_tag(" ++ valNam ++ ") == W32) {"
+  emit $ "if (term_is_atom(" ++ valNam ++ ")) {"
   tabInc
   emit $ "itrs += 1;"
   emit $ dp0Nam ++ " = " ++ valNam ++ ";"
@@ -534,7 +534,7 @@ compileFastCore book fid (Dup lab dp0 dp1 val bod) reuse = do
   emit $ "Term " ++ valNam ++ " = (" ++ valT ++ ");"
   emit $ "Term " ++ dp0Nam ++ ";"
   emit $ "Term " ++ dp1Nam ++ ";"
-  emit $ "if (term_tag("++valNam++") == W32 || term_tag("++valNam++") == CHR) {"
+  emit $ "if (term_is_atom(" ++ valNam ++ ")) {"
   tabInc
   emit $ "itrs += 1;"
   emit $ dp0Nam ++ " = " ++ valNam ++ ";"

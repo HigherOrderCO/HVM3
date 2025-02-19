@@ -204,6 +204,15 @@ u64 term_size(Term term) {
   }
 }
 
+_Bool term_is_atom(Term term) {
+  switch (term_tag(term)) {
+    case ERA:
+    case W32:
+    case CHR: return 1;
+    default: return 0;
+  }
+}
+
 // Relocation Table
 // ----------------
 
@@ -251,7 +260,7 @@ void set(Loc loc, Term term) {
   atomic_store_explicit(&HVM.heap[loc], term, memory_order_relaxed);
   // If we're setting a location in old gen to point to new gen
   // add it to the old gen update buffer
-  if (loc_is_old(loc) && !loc_is_old(term_loc(term)) && term_size(term) > 0) {
+  if (loc_is_old(loc) && !loc_is_old(term_loc(term)) && term_is_atom(term)) {
     HVM.obuf[(*HVM.opos)++] = loc;
   }
 }
