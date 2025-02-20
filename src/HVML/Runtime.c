@@ -1254,11 +1254,15 @@ Term reduce(Term term, _Bool gc) {
 }
 
 Term reduce_at(Loc host, _Bool gc) {
+  Term tm0 = got(host);
+  if (term_tag(tm0) >= ERA) {
+    return tm0;
+  }
   spush(host);
-  Term term = reduce(got(host), gc);
+  Term tm1 = reduce(tm0, gc);
   host = spop();
-  set_old(host, term);
-  return term;
+  set_old(host, tm1);
+  return tm1;
 }
 
 Term normal(Term term) {
