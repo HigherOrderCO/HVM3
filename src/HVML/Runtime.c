@@ -260,7 +260,7 @@ void set_old(Loc loc, Term term) {
   atomic_store_explicit(&HVM.heap[loc], term, memory_order_relaxed);
   // If we're setting a location in old gen to point to new gen
   // add it to the old gen update buffer
-  if (loc_is_old(loc) && !loc_is_old(term_loc(term)) && term_is_atom(term)) {
+  if (loc_is_old(loc) && !loc_is_old(term_loc(term)) && !term_is_atom(term)) {
     HVM.obuf[(*HVM.opos)++] = loc;
   }
 }
