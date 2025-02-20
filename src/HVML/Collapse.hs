@@ -125,7 +125,7 @@ collapseDupsAt state@(paths) reduceAt book host = do
       sub <- got loc
       if termGetBit sub /= 0
       then do
-        set (loc + 0) (termRemBit sub)
+        setOld (loc + 0) (termRemBit sub)
         collapseDupsAt state reduceAt book (loc + 0)
       else do
         name <- return $ "$" ++ show loc
@@ -137,7 +137,7 @@ collapseDupsAt state@(paths) reduceAt book host = do
       sb0 <- got (loc+0)
       if termGetBit sb0 /= 0
       then do
-        set (loc + 0) (termRemBit sb0)
+        setOld (loc + 0) (termRemBit sb0)
         collapseDupsAt state reduceAt book (loc + 0)
       else do
         let newPaths = IM.alter (Just . maybe [0] (0:)) (fromIntegral lab) paths
@@ -149,7 +149,7 @@ collapseDupsAt state@(paths) reduceAt book host = do
       sb1 <- got (loc+0)
       if termGetBit sb1 /= 0
       then do
-        set (loc + 0) (termRemBit sb1)
+        setOld (loc + 0) (termRemBit sb1)
         collapseDupsAt state reduceAt book (loc + 0)
       else do
         let newPaths = IM.alter (Just . maybe [1] (1:)) (fromIntegral lab) paths

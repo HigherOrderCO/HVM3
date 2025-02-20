@@ -65,7 +65,7 @@ extractCoreAt dupsRef reduceAt book host = do
           name <- return $ "$" ++ show (loc + 0)
           return $ Var name
         else do
-          set (loc + 0) (termRemBit sub)
+          setOld (loc + 0) (termRemBit sub)
           extractCoreAt dupsRef reduceAt book (loc + 0)
 
     DP0 -> do

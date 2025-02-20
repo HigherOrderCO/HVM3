@@ -112,8 +112,10 @@ foreign import ccall unsafe "Runtime.c hvm_free"
   hvmFree :: IO ()
 foreign import ccall unsafe "Runtime.c alloc_node"
   allocNode :: Word64 -> IO Word64
-foreign import ccall unsafe "Runtime.c set"
-  set :: Word64 -> Term -> IO ()
+foreign import ccall unsafe "Runtime.c set_old"
+  setOld :: Word64 -> Term -> IO ()
+foreign import ccall unsafe "Runtime.c set_new"
+  setNew :: Word64 -> Term -> IO ()
 foreign import ccall unsafe "Runtime.c got"
   got :: Word64 -> IO Term
 foreign import ccall unsafe "Runtime.c take"
