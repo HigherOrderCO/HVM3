@@ -325,9 +325,4 @@ data Maybe {
 // It finds `?X = λλ(0 λλ((1 3) 2))` in 3k interactions.
 @main = @when(@eq(#App{@X @A} @B 0) @do_show_term(@X))
 
-
-
-
-
-
 //@main = @X

@@ -98,29 +98,29 @@ data Bin { #O{pred} #I{pred} #E }
 }
 
 // 8:
-@K = 3
-@H = 4
-@S = 8
-@X = @cat(@all1(@H) @bin(@H 0))
-@Y = @cat(@all2(@H) @bin(@H 0))
-@P = #I{#O{#O{#I{#O{#I{#O{#I{#E}}}}}}}}
+@K_A = 3
+@H_A = 4
+@S_A = 8
+@X_A = @cat(@all1(@H_A) @bin(@H_A 0))
+@Y_A = @cat(@all2(@H_A) @bin(@H_A 0))
+@P_A = #I{#O{#O{#I{#O{#I{#O{#I{#E}}}}}}}}
 
 // 20:
-@K = 9
-@H = 10
-@S = 20
-@X = @cat(@all1(@H) @bin(@H 0))
-@Y = @cat(@all2(@H) @bin(@H 0))
-@P = #I{#I{#I{#I{#O{#I{#I{#O{#I{#I{#O{#O{#I{#O{#I{#O{#O{#O{#I{#I{#E}}}}}}}}}}}}}}}}}}}}
+@K_B = 9
+@H_B = 10
+@S_B = 20
+@X_B = @cat(@all1(@H_B) @bin(@H_B 0))
+@Y_B = @cat(@all2(@H_B) @bin(@H_B 0))
+@P_B = #I{#I{#I{#I{#O{#I{#I{#O{#I{#I{#O{#O{#I{#O{#I{#O{#O{#O{#I{#I{#E}}}}}}}}}}}}}}}}}}}}
 
 // 30:
-@K = 14
-@H = 15
-@S = 30
-@X = @cat(@all1(@H) @bin(@H 0))
-@Y = @cat(@all2(@H) @bin(@H 0))
-@P = #I{#I{#I{#O{#O{#O{#I{#I{#O{#I{#O{#I{#O{#O{#O{#O{#I{#O{#I{#I{#O{#O{#I{#O{#O{#I{#O{#I{#O{#I{#E}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}
+@K_C = 14
+@H_C = 15
+@S_C = 30
+@X_C = @cat(@all1(@H_C) @bin(@H_C 0))
+@Y_C = @cat(@all2(@H_C) @bin(@H_C 0))
+@P_C = #I{#I{#I{#O{#O{#O{#I{#I{#O{#I{#O{#I{#O{#O{#O{#O{#I{#O{#I{#I{#O{#O{#I{#O{#O{#I{#O{#I{#O{#I{#E}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}
 
 ////INJECT//
 
-@main = @if(@eq(@mul(@X @Y) @P) λt(t @u32(@X) @u32(@Y)) *)
+@main = @if(@eq(@mul(@X_B @Y_B) @P_B) λt(t @u32(@X_B) @u32(@Y_B)) *)

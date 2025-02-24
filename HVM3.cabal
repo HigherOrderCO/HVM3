@@ -24,7 +24,7 @@ executable hvml
                     , HVML.Parse
                     , HVML.Reduce
                     , HVML.Show
-    build-depends:    base ^>=4.20.0.0,
+    build-depends:    base ^>=4.21.0.0,
                       mtl ^>=2.3.1,
                       containers ^>=0.7,
                       parsec ^>=3.1.17.0,
@@ -50,7 +50,7 @@ executable hvms
                     , HVMS.Inject
                     , HVMS.Parse
                     , HVMS.Show
-    build-depends:    base ^>=4.20.0.0,
+    build-depends:    base ^>=4.21.0.0,
                       mtl ^>=2.3.1,
                       containers ^>=0.7,
                       unordered-containers ^>=0.2.19.1,
