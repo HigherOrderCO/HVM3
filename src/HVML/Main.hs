@@ -19,6 +19,7 @@ import GHC.Conc
 import HVML.Collapse
 import HVML.Compile
 import HVML.Extract
+import HVML.Foreign
 import HVML.Inject
 import HVML.Parse
 import HVML.Reduce

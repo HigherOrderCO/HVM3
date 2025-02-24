@@ -10,6 +10,7 @@ import Data.IORef
 import Data.Word
 import Debug.Trace
 import GHC.Conc
+import HVML.Foreign
 import HVML.Show
 import HVML.Type
 import System.Exit (exitFailure)

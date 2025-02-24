@@ -9,8 +9,9 @@ import Data.Bits (shiftL, (.|.))
 import Data.List
 import Data.Word
 import Debug.Trace
+import HVML.Foreign hiding (fresh)
 import HVML.Show
-import HVML.Type hiding (fresh)
+import HVML.Type
 import qualified Data.Map.Strict as MS
 
 -- Compilation

@@ -6,6 +6,7 @@ import Control.Monad (when, forM, forM_)
 import Data.Word
 import HVML.Collapse
 import HVML.Extract
+import HVML.Foreign
 import HVML.Inject
 import HVML.Show
 import HVML.Type

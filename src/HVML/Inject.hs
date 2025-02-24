@@ -9,6 +9,7 @@ import Data.Char (ord)
 import Data.List (foldr, take)
 import Data.Word
 import Debug.Trace
+import HVML.Foreign
 import HVML.Show
 import HVML.Type
 import qualified Data.Map.Strict as MS

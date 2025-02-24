@@ -9,6 +9,7 @@ import Data.Char (intToDigit)
 import Data.IORef
 import Data.List
 import Data.Word
+import HVML.Foreign
 import HVML.Type
 import Numeric (showIntAtBase)
 import System.IO.Unsafe (unsafePerformIO)

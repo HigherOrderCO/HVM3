@@ -20,6 +20,7 @@ executable hvml
                     , HVML.Collapse
                     , HVML.Compile
                     , HVML.Extract
+                    , HVML.Foreign
                     , HVML.Inject
                     , HVML.Parse
                     , HVML.Reduce

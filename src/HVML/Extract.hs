@@ -10,6 +10,7 @@ import Data.Char (chr, ord)
 import Data.IORef
 import Data.Word
 import Debug.Trace
+import HVML.Foreign
 import HVML.Show
 import HVML.Type
 import System.IO.Unsafe (unsafeInterleaveIO)
