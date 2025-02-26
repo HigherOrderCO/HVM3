@@ -84,7 +84,7 @@ data TAG
   | APP
   | LAM
   | SUP
-  | SUB
+  | FWD
   | REF
   | LET
   | CTR
@@ -111,7 +111,7 @@ tagT :: Tag -> TAG
 tagT 0x00 = DP0
 tagT 0x01 = DP1
 tagT 0x02 = VAR
-tagT 0x03 = SUB
+tagT 0x03 = FWD
 tagT 0x04 = REF
 tagT 0x05 = LET
 tagT 0x06 = APP
@@ -137,8 +137,8 @@ _DP1_ = 0x01
 _VAR_ :: Tag
 _VAR_ = 0x02
 
-_SUB_ :: Tag
-_SUB_ = 0x03
+_FWD_ :: Tag
+_FWD_ = 0x03
 
 _REF_ :: Tag
 _REF_ = 0x04

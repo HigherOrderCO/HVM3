@@ -76,7 +76,7 @@ static State HVM = {
 #define DP0 0x00
 #define DP1 0x01
 #define VAR 0x02
-#define SUB 0x03
+#define FWD 0x03
 #define REF 0x04
 #define LET 0x05
 #define APP 0x06
@@ -186,7 +186,7 @@ u64 term_size(Term term) {
     case W32: return 0;
     case CHR: return 0;
     case VAR: return 1;
-    case SUB: return 1;
+    case FWD: return 1;
     case LAM: return 1;
     case APP: return 2;
     case SUP: return 2;
@@ -309,7 +309,7 @@ Term collect_term(Term term, u64* gpos) {
     return term;
   } else {
     Term chld = got(loc + 0);
-    if (term_tag(chld) == SUB) {
+    if (term_tag(chld) == FWD) {
       // Already relocated
       Loc loc = term_loc(chld);
       return term_set_loc(term, loc);
@@ -321,7 +321,7 @@ Term collect_term(Term term, u64* gpos) {
         HVM.gbuf[(*gpos)++] = *HVM.osiz;
         set_new((*HVM.osiz)++, tmi);
       }
-      set_new(loc, term_new(SUB, 0, oloc));
+      set_new(loc, term_new(FWD, 0, oloc));
       return term_set_loc(term, oloc);
     }
   }
@@ -378,7 +378,7 @@ void collect_major() {
 
 void print_tag(Tag tag) {
   switch (tag) {
-    case SUB: printf("SUB"); break;
+    case FWD: printf("FWD"); break;
     case VAR: printf("VAR"); break;
     case DP0: printf("DP0"); break;
     case DP1: printf("DP1"); break;
@@ -1260,10 +1260,10 @@ Term reduce_at(Loc host, _Bool gc) {
   if (term_tag(tm0) >= ERA) {
     return tm0;
   }
-  spush(host);
+  spush(term_new(FWD, 0, host));
   Term tm1 = reduce(tm0, gc);
   host = spop();
-  set_old(host, tm1);
+  set_old(term_loc(host), tm1);
   return tm1;
 }
 
