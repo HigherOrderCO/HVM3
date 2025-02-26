@@ -1229,22 +1229,24 @@ Term reduce(Term term, _Bool gc) {
     if ((*HVM.spos) == stop) {
       return next;
     } else {
-      Term host = spop();
-      Tag  htag = term_tag(host);
-      Lab  hlab = term_lab(host);
-      Loc  hloc = term_loc(host);
-      switch (htag) {
-        case APP: set_old(hloc + 0, next); break;
-        case DP0: set_old(hloc + 0, next); break;
-        case DP1: set_old(hloc + 0, next); break;
-        case LET: set_old(hloc + 0, next); break;
-        case MAT:
-        case IFL:
-        case SWI: set_old(hloc + 0, next); break;
-        case OPX: set_old(hloc + 0, next); break;
-        case OPY: set_old(hloc + 1, next); break;
+      while ((*HVM.spos) > stop) {
+        Term host = spop();
+        Tag  htag = term_tag(host);
+        Lab  hlab = term_lab(host);
+        Loc  hloc = term_loc(host);
+        switch (htag) {
+          case APP: set_old(hloc + 0, next); break;
+          case DP0: 
+          case DP1: set_old(hloc + 0, next); break;
+          case LET: set_old(hloc + 0, next); break;
+          case MAT:
+          case IFL:
+          case SWI: set_old(hloc + 0, next); break;
+          case OPX: set_old(hloc + 0, next); break;
+          case OPY: set_old(hloc + 1, next); break;
+        }
+        next = host;
       }
-      *HVM.spos = stop;
       return HVM.sbuf[stop];
     }
 
