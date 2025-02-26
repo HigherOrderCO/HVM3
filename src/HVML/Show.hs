@@ -117,10 +117,10 @@ tagToString :: Tag -> String
 tagToString t = show (tagT t)
 
 labToString :: Word64 -> String
-labToString loc = padLeft (showHex loc) 6 '0'
+labToString loc = padLeft (showHex loc) 4 '0'
 
 locToString :: Word64 -> String
-locToString loc = padLeft (showHex loc) 9 '0'
+locToString loc = padLeft (showHex loc) 10 '0'
 
 termToString :: Term -> String
 termToString term =
@@ -253,9 +253,9 @@ dumpHeap = do
 
 heapToString :: ([(Word64, Term)], Word64) -> String
 heapToString (terms, itr) = 
-  "set_itr(0x" ++ padLeft (showHex itr) 9 '0' ++ ");\n" ++
+  "set_itr(0x" ++ padLeft (showHex itr) 10 '0' ++ ");\n" ++
   foldr (\(k,v) txt ->
-    let addr = padLeft (showHex k) 9 '0'
+    let addr = padLeft (showHex k) 10 '0'
         term = termToString v
     in "set(0x" ++ addr ++ ", " ++ term ++ ");\n" ++ txt) "" terms
 
