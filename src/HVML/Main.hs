@@ -7,7 +7,6 @@
 module Main where
 
 import Control.Monad (guard, when, forM_)
-import Control.Monad.Trans.Maybe (runMaybeT, MaybeT(..))
 import Data.FileEmbed
 import Data.List (partition, isPrefixOf, take, find)
 import Data.Word
@@ -120,16 +119,15 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
     let fName = last $ words $ map (\c -> if c == '/' then ' ' else c) filePath
     let cPath = ".build/" ++ fName ++ ".c"
     let oPath = ".build/" ++ fName ++ ".so"
-    cache <- runMaybeT $ do
-      oldFile <- MaybeT $ (either (\_ -> Nothing) Just) <$> tryIOError (readFile' cPath)
-      guard (oldFile == mainC)
-      MaybeT $ (either (\_ -> Nothing) Just) <$> tryIOError (dlopen oPath [RTLD_NOW])
-    bookLib <- case cache of
-      Just cache -> return cache
-      Nothing -> do
-        writeFile cPath mainC
-        callCommand $ "gcc -O2 -fPIC -shared " ++ cPath ++ " -o " ++ oPath
-        dlopen oPath [RTLD_NOW]
+
+    oldCFile <- tryIOError (readFile' cPath)
+    bookLib <- if oldCFile == Right mainC then do
+      dlopen oPath [RTLD_NOW]
+    else do
+      writeFile cPath mainC
+      callCommand $ "gcc -O2 -fPIC -shared " ++ cPath ++ " -o " ++ oPath
+      dlopen oPath [RTLD_NOW]
+
     -- Register compiled functions
     forM_ (MS.keys (fidToFun book)) $ \ fid -> do
       funPtr <- dlsym bookLib (mget (fidToNam book) fid ++ "_f")

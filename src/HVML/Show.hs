@@ -3,7 +3,6 @@
 module HVML.Show where
 
 import Control.Applicative ((<|>))
-import Control.Monad.State
 import Data.Char (chr, ord)
 import Data.Char (intToDigit)
 import Data.IORef

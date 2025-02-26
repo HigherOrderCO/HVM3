@@ -29,14 +29,12 @@ executable hvml
                       mtl ^>=2.3.1,
                       containers ^>=0.7,
                       parsec ^>=3.1.17.0,
-                      hs-highlight == 1.0.3,
+                      hs-highlight == 1.0.4,
                       ansi-terminal == 1.1.1,
-                      transformers == 0.6.1.2,
                       process,
                       libffi,
                       unix,
                       file-embed,
-                      bytestring,
     hs-source-dirs:   src
     default-language: GHC2024
     c-sources:        src/HVML/Runtime.c
@@ -52,11 +50,8 @@ executable hvms
                     , HVMS.Parse
                     , HVMS.Show
     build-depends:    base ^>=4.21.0.0,
-                      mtl ^>=2.3.1,
                       containers ^>=0.7,
-                      unordered-containers ^>=0.2.19.1,
                       parsec ^>=3.1.17.0,
-                      hashable ^>=1.5.0.0,
     hs-source-dirs:   src
     default-language: GHC2024
     c-sources:        src/HVMS/Runtime.c
