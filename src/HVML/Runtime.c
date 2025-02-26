@@ -1371,6 +1371,7 @@ Term SUP_f(Term ref) {
   Term ret = term_new(SUP, lab_val, sup);
   set_new(sup + 0, tm0);
   set_new(sup + 1, tm1);
+  *HVM.itrs += 1;
   return ret;
 }
 
@@ -1398,7 +1399,7 @@ Term DUP_f(Term ref) {
       Term bod1 = got(lam1 + 0);
       sub(lam0 + 0, term_new(DP0, lab_val, dup));
       sub(lam1 + 0, term_new(DP1, lab_val, dup));
-      *HVM.itrs += 2;
+      *HVM.itrs += 3;
       return bod1;
     }
   }
@@ -1408,6 +1409,7 @@ Term DUP_f(Term ref) {
   Loc app1 = alloc_node(2);
   set_new(app1 + 0, term_new(APP, 0, app0));
   set_new(app1 + 1, term_new(DP1, lab_val, dup));
+  *HVM.itrs += 1;
   return term_new(APP, 0, app1);
 }
 
