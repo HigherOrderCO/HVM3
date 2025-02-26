@@ -281,13 +281,7 @@ reduceRefAt_FreshF book host loc ari = do
   return ret
 
 reduceCAt :: Bool -> ReduceAt
-reduceCAt = \ _ _ host gc -> do
-  term <- got host
-  spush (termNew _SUB_ 0 host)
-  whnf <- reduceC term (if gc then 1 else 0)
-  tHst <- spop
-  setOld (termLoc tHst) whnf
-  return $ whnf
+reduceCAt = \ _ _ host gc -> reduceAtC host (if gc then 1 else 0)
 
 -- normalAtWith :: (Book -> Term -> HVM Term) -> Book -> Loc -> HVM Term
 -- normalAtWith reduceAt book host = do
