@@ -42,8 +42,8 @@ foreign import ccall unsafe "Runtime.c term_set_bit"
   termSetBit :: Term -> Tag
 foreign import ccall unsafe "Runtime.c term_rem_bit"
   termRemBit :: Term -> Tag
-foreign import ccall unsafe "Runtime.c term_get_size"
-  termGetSize :: Term -> Word64
+foreign import ccall unsafe "Runtime.c term_size"
+  term_size :: Term -> Word64
 foreign import ccall unsafe "Runtime.c get_len"
   getLen :: IO Word64
 foreign import ccall unsafe "Runtime.c get_itr"
