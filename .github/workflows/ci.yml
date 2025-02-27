@@ -14,11 +14,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Set up GHC 2024
+      - name: Set up Haskell
         uses: haskell-actions/setup@v2
         with:
-          ghc-version: '9.10.1'  
-          cabal-version: '3.12'  
+          ghc-version: '9.12.1'
+          cabal-version: '3.14'
 
       - name: Cache dependencies
         uses: actions/cache@v3
@@ -31,8 +31,14 @@ jobs:
       - name: Build the project
         run: cabal build
 
-      - name: Run Interpreted Benchmarks
-        run: cabal run hvml -- run ./book/bench_count.hvml
+      - name: Run interpreted normalization
+        run: cabal run hvml -- run ./book/feat_hoas.hvml
 
-      - name: Run Compiled Benchmarks
-        run: cabal run hvml -- run ./book/bench_count.hvml -c
+      - name: Run compiled normalization
+        run: cabal run hvml -- run ./book/feat_hoas.hvml -c
+
+      - name: Run interpreted collapse
+        run: cabal run hvml -- run ./book/enum_lam_smart.hvml -C
+
+      - name: Run compiled collapse
+        run: cabal run hvml -- run ./book/enum_lam_smart.hvml -C -c
