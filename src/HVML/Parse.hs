@@ -565,7 +565,7 @@ skip = skipMany (parseSpace <|> parseComment) where
   parseComment = (try $ do
     string "//"
     skipMany (noneOf "\n")
-    char '\n'
+    (char '\n' <|> eof)
     return ()) <?> "Comment"
 
 genFreshLabel :: ParserM Word64
