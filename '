@@ -124,8 +124,9 @@ static State HVM = {
 #define GC_THR (1ULL << 29)
 
 // Logging Macros
-#define CHECK_ALLOC(ptr, name) if (!(ptr)) { printf(name " alloc failed\n"); allocs_failed++; }
-int allocs_failed = 0; // Track if any allocation failed
+#define CHECK_ALLOC(ptr, name) if (!(ptr)) { printf(name " alloc failed\n"); alloc_failed++; }
+int alloc_failed = 0; // Track if any allocation failed
+Bool debug_mode = false;
 
 // Heap
 // ----
@@ -1462,8 +1463,8 @@ void hvm_init() {
   CHECK_ALLOC(HVM.frsh, "frsh");
   CHECK_ALLOC(HVM.gbuf, "gbuf");
 
-  if (allocs_failed > 0) {
-    printf("hvm_init alloc's failed: %d allocations failed\n", allocs_failed);
+  if (alloc_failed > 0) {
+    printf("hvm_init alloc failed: %d allocations failed\n", alloc_failed);
     exit(1);
   }
 
