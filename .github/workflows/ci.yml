@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
       - name: Checkout repository
@@ -17,13 +17,13 @@ jobs:
       - name: Set up GHC 2024
         uses: haskell-actions/setup@v2
         with:
-          ghc-version: '9.10.1'  
-          cabal-version: '3.12'  
+          ghc-version: '9.10.1'
+          cabal-version: '3.12'
 
       - name: Cache dependencies
         uses: actions/cache@v3
         with:
-          path: ~/.cabal/store
+          path: C:\Users\runneradmin\AppData\Roaming\cabal\store
           key: ${{ runner.os }}-cabal-${{ hashFiles('**/*.cabal') }}
           restore-keys: |
             ${{ runner.os }}-cabal-
