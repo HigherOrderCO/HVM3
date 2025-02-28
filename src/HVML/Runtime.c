@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+#include <unistd.h>
 #include <time.h>
 
 typedef uint8_t  Tag;
@@ -120,6 +121,10 @@ static State HVM = {
 #define VOID 0x00000000000000
 
 #define GC_THR (1ULL << 29)
+
+// Logging Macros
+#define CHECK_ALLOC(ptr, name) if (!(ptr)) { printf(name " alloc failed\n"); alloc_failed++; } else { printf(name " alloc passed\n"); }
+int alloc_failed = 0; // Track if any allocation failed
 
 // Heap
 // ----
@@ -1440,24 +1445,26 @@ void hvm_init() {
   HVM.itrs = malloc(sizeof(u64));
   HVM.frsh = malloc(sizeof(u64));
 
-  if (!HVM.sbuf) { printf("sbuf alloc failed\n"); }
-  if (!HVM.heap) { printf("heap alloc failed\n"); }
-  if (!HVM.rbuf) { printf("rbuf alloc failed\n"); }
-  if (!HVM.obuf) { printf("obuf alloc failed\n"); }
-  if (!HVM.opos) { printf("opos alloc failed\n"); }
-  if (!HVM.rpos) { printf("rpos alloc failed\n"); }
-  if (!HVM.rlas) { printf("rlas alloc failed\n"); }
-  if (!HVM.spos) { printf("spos alloc failed\n"); }
-  if (!HVM.osiz) { printf("osiz alloc failed\n"); }
-  if (!HVM.nsiz) { printf("nsiz alloc failed\n"); }
-  if (!HVM.gth1) { printf("gth1 alloc failed\n"); }
-  if (!HVM.gth2) { printf("gth2 alloc failed\n"); }
-  if (!HVM.itrs) { printf("itrs alloc failed\n"); }
-  if (!HVM.frsh) { printf("frsh alloc failed\n"); }
-  if (!HVM.gbuf) { printf("gbuf alloc failed\n"); }
+  CHECK_ALLOC(HVM.sbuf, "sbuf");
+  CHECK_ALLOC(HVM.heap, "heap");
+  CHECK_ALLOC(HVM.rbuf, "rbuf");
+  CHECK_ALLOC(HVM.obuf, "obuf");
+  CHECK_ALLOC(HVM.opos, "opos");
+  CHECK_ALLOC(HVM.rpos, "rpos");
+  CHECK_ALLOC(HVM.rlas, "rlas");
+  CHECK_ALLOC(HVM.spos, "spos");
+  CHECK_ALLOC(HVM.osiz, "osiz");
+  CHECK_ALLOC(HVM.nsiz, "nsiz");
+  CHECK_ALLOC(HVM.gth1, "gth1");
+  CHECK_ALLOC(HVM.gth2, "gth2");
+  CHECK_ALLOC(HVM.itrs, "itrs");
+  CHECK_ALLOC(HVM.frsh, "frsh");
+  CHECK_ALLOC(HVM.gbuf, "gbuf");
 
-  printf("hvm_init alloc failed\n");
-  exit(1);
+  if (alloc_failed > 0) {
+    printf("hvm_init alloc failed: %d allocations failed\n", alloc_failed);
+    exit(1);
+  }
 
   *HVM.spos = 0;
   *HVM.size = 0;
