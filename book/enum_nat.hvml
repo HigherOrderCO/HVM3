@@ -50,10 +50,8 @@ data Nat { #Z #S{pred} }
 // A superposition of all Nats (pseudo-metavar)
 @X = &0{#Z #S{@X}}
 
-// Solves 'X * 20 = 5000'
-@main = 
-  ! ok = @eq(@mul(@X @nat(20)) @nat(5000))
-  @if(ok @u32(@X) *)
+// Solves 'X * 20 = 20000'
+@main = @if(@eq(@mul(@X @nat(20)) @nat(12000)) @u32(@X) *)
 
 // This is quadratic. In the post below, I discuss solutions to make it linear:
 // https://gist.github.com/VictorTaelin/93c327e5b4e752b744d7798687977f8a

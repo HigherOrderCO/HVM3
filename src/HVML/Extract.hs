@@ -3,13 +3,14 @@
 
 module HVML.Extract where
 
-import Control.Monad (foldM)
+import Control.Monad (foldM, forM_, forM)
 import Control.Monad.State
 import Data.Bits (shiftR)
 import Data.Char (chr, ord)
 import Data.IORef
 import Data.Word
 import Debug.Trace
+import HVML.Foreign
 import HVML.Show
 import HVML.Type
 import System.IO.Unsafe (unsafeInterleaveIO)
@@ -18,8 +19,8 @@ import qualified Data.Map.Strict as MS
 
 extractCoreAt :: IORef IS.IntSet -> ReduceAt -> Book -> Loc -> HVM Core
 
-extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
-  term <- reduceAt book host
+extractCoreAt dupsRef reduceAt book host = do
+  term <- reduceAt book host True
   -- trace ("extract " ++ show host ++ " " ++ termToString term) $
   case tagT (termTag term) of
 
@@ -30,27 +31,31 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
       let loc  = termLoc term
       let mode = modeT (termLab term)
       name <- return $ "$" ++ show (loc + 0)
-      val  <- extractCoreAt dupsRef reduceAt book (loc + 0)
-      bod  <- extractCoreAt dupsRef reduceAt book (loc + 1)
+      ridx <- rpush term 2
+      val  <- extractCoreAtLazy dupsRef reduceAt book ridx 0
+      bod  <- extractCoreAtLazy dupsRef reduceAt book ridx 1
       return $ Let mode name val bod
 
     LAM -> do
       let loc = termLoc term
       name <- return $ "$" ++ show (loc + 0)
-      bod  <- extractCoreAt dupsRef reduceAt book (loc + 0)
+      ridx <- rpush term 1
+      bod  <- extractCoreAtLazy dupsRef reduceAt book ridx 0
       return $ Lam name bod
 
     APP -> do
       let loc = termLoc term
-      fun <- extractCoreAt dupsRef reduceAt book (loc + 0)
-      arg <- extractCoreAt dupsRef reduceAt book (loc + 1)
+      ridx <- rpush term 2
+      fun <- extractCoreAtLazy dupsRef reduceAt book ridx 0
+      arg <- extractCoreAtLazy dupsRef reduceAt book ridx 1
       return $ App fun arg
 
     SUP -> do
       let loc = termLoc term
       let lab = termLab term
-      tm0 <- extractCoreAt dupsRef reduceAt book (loc + 0)
-      tm1 <- extractCoreAt dupsRef reduceAt book (loc + 1)
+      ridx <- rpush term 2
+      tm0 <- extractCoreAtLazy dupsRef reduceAt book ridx 0
+      tm1 <- extractCoreAtLazy dupsRef reduceAt book ridx 1
       return $ Sup lab tm0 tm1
 
     VAR -> do
@@ -61,7 +66,7 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
           name <- return $ "$" ++ show (loc + 0)
           return $ Var name
         else do
-          set (loc + 0) (termRemBit sub)
+          setOld (loc + 0) (termRemBit sub)
           extractCoreAt dupsRef reduceAt book (loc + 0)
 
     DP0 -> do
@@ -75,7 +80,8 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
       else do
         dp0 <- return $ "$" ++ show (loc + 0) ++ "_0"
         dp1 <- return $ "$" ++ show (loc + 0) ++ "_1"
-        val <- extractCoreAt dupsRef reduceAt book loc
+        ridx <- rpush term 1
+        val <- extractCoreAtLazy dupsRef reduceAt book ridx 0
         modifyIORef' dupsRef (IS.insert (fromIntegral loc))
         return $ Dup lab dp0 dp1 val (Var dp0)
 
@@ -90,7 +96,8 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
       else do
         dp0 <- return $ "$" ++ show (loc + 0) ++ "_0"
         dp1 <- return $ "$" ++ show (loc + 0) ++ "_1"
-        val <- extractCoreAt dupsRef reduceAt book loc
+        ridx <- rpush term 1
+        val <- extractCoreAtLazy dupsRef reduceAt book ridx 0
         modifyIORef' dupsRef (IS.insert (fromIntegral loc))
         return $ Dup lab dp0 dp1 val (Var dp1)
 
@@ -101,7 +108,8 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
       let nam = mget (cidToCtr book) cid
       let ari = mget (cidToAri book) cid
       let ars = if ari == 0 then [] else [0..ari-1]
-      fds <- mapM (\i -> extractCoreAt dupsRef reduceAt book (loc + i)) ars
+      ridx <- rpush term (fromIntegral ari)
+      fds <- mapM (\i -> extractCoreAtLazy dupsRef reduceAt book ridx i) ars
       return $ Ctr nam fds
 
     MAT -> do
@@ -109,30 +117,33 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
       let lab = termLab term
       let cid = lab
       let len = fromIntegral $ mget (cidToLen book) cid
-      val <- extractCoreAt dupsRef reduceAt book (loc + 0)
+      ridx <- rpush term (1 + len)
+      val <- extractCoreAtLazy dupsRef reduceAt book ridx 0
       css <- foldM (\css i -> do
         let ctr = mget (cidToCtr book) (cid + i)
         let ari = fromIntegral $ mget (cidToAri book) (cid + i)
         let fds = if ari == 0 then [] else ["$" ++ show (loc + 1 + j) | j <- [0..ari-1]]
-        bod <- extractCoreAt dupsRef reduceAt book (loc + 1 + i)
+        bod <- extractCoreAtLazy dupsRef reduceAt book ridx (1 + i)
         return $ (ctr,fds,bod):css) [] [0..len-1]
       return $ Mat val [] (reverse css)
 
     IFL -> do
       let loc = termLoc term
       let lab = termLab term
-      val <- extractCoreAt dupsRef reduceAt book (loc + 0)
-      cs0 <- extractCoreAt dupsRef reduceAt book (loc + 1)
-      cs1 <- extractCoreAt dupsRef reduceAt book (loc + 2)
+      ridx <- rpush term 3
+      val <- extractCoreAtLazy dupsRef reduceAt book ridx 0
+      cs0 <- extractCoreAtLazy dupsRef reduceAt book ridx 1
+      cs1 <- extractCoreAtLazy dupsRef reduceAt book ridx 2
       return $ Mat val [] [(mget (cidToCtr book) lab, [], cs0), ("_", [], cs1)]
 
     SWI -> do
       let loc = termLoc term
       let lab = termLab term
       let len = fromIntegral $ mget (cidToLen book) lab
-      val <- extractCoreAt dupsRef reduceAt book (loc + 0)
+      ridx <- rpush term (1 + len)
+      val <- extractCoreAtLazy dupsRef reduceAt book ridx 0
       css <- foldM (\css i -> do
-        bod <- extractCoreAt dupsRef reduceAt book (loc + 1 + i)
+        bod <- extractCoreAtLazy dupsRef reduceAt book ridx (1 + i)
         return $ (show i, [], bod):css) [] [0..len-1]
       return $ Mat val [] (reverse css)
 
@@ -147,15 +158,17 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
     OPX -> do
       let loc = termLoc term
       let opr = toEnum (fromIntegral (termLab term))
-      nm0 <- extractCoreAt dupsRef reduceAt book (loc + 0)
-      nm1 <- extractCoreAt dupsRef reduceAt book (loc + 1)
+      ridx <- rpush term 2
+      nm0 <- extractCoreAtLazy dupsRef reduceAt book ridx 0
+      nm1 <- extractCoreAtLazy dupsRef reduceAt book ridx 1
       return $ Op2 opr nm0 nm1
 
     OPY -> do
       let loc = termLoc term
       let opr = toEnum (fromIntegral (termLab term))
-      nm0 <- extractCoreAt dupsRef reduceAt book (loc + 0)
-      nm1 <- extractCoreAt dupsRef reduceAt book (loc + 1)
+      ridx <- rpush term 2
+      nm0 <- extractCoreAtLazy dupsRef reduceAt book ridx 0
+      nm1 <- extractCoreAtLazy dupsRef reduceAt book ridx 1
       return $ Op2 opr nm0 nm1
 
     REF -> do
@@ -164,12 +177,18 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
       let fid = lab
       let ari = funArity book fid
       let aux = if ari == 0 then [] else [0..ari-1]
-      arg <- mapM (\i -> extractCoreAt dupsRef reduceAt book (loc + i)) aux
+      ridx <- rpush term (fromIntegral ari)
+      arg <- mapM (\i -> extractCoreAtLazy dupsRef reduceAt book ridx i) aux
       let name = MS.findWithDefault "?" fid (fidToNam book)
       return $ Ref name fid arg
 
     _ -> do
       return Era
+
+  where
+    extractCoreAtLazy dupsRef reduceAt book ridx off = unsafeInterleaveIO $ do
+      base <- rtake ridx
+      extractCoreAt dupsRef reduceAt book ((termLoc base) + off)
 
 doExtractCoreAt :: ReduceAt -> Book -> Loc -> HVM Core
 doExtractCoreAt reduceAt book loc = do

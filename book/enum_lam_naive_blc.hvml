@@ -135,8 +135,8 @@ data Maybe {
 }
 
 @show_dec(n r) =
-  ! &10000002{n n0} = n
-  ! &10000002{n n1} = n
+  ! &{n n0} = n
+  ! &{n n1} = n
   ! chr = (+ (% n 10) '0')
   ~ (< n0 10) !chr !r {
     0: @show_dec((/ n1 10) #Cons{chr r})

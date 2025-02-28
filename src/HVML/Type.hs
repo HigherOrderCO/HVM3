@@ -84,7 +84,7 @@ data TAG
   | APP
   | LAM
   | SUP
-  | SUB
+  | FWD
   | REF
   | LET
   | CTR
@@ -101,125 +101,7 @@ data TAG
 type HVM = IO
 
 --show--
-type ReduceAt = Book -> Loc -> HVM Term
-
--- C Functions
--- -----------
-
-foreign import ccall unsafe "Runtime.c hvm_init"
-  hvmInit :: IO ()
-foreign import ccall unsafe "Runtime.c hvm_free"
-  hvmFree :: IO ()
-foreign import ccall unsafe "Runtime.c alloc_node"
-  allocNode :: Word64 -> IO Word64
-foreign import ccall unsafe "Runtime.c set"
-  set :: Word64 -> Term -> IO ()
-foreign import ccall unsafe "Runtime.c got"
-  got :: Word64 -> IO Term
-foreign import ccall unsafe "Runtime.c take"
-  take :: Word64 -> IO Term
-foreign import ccall unsafe "Runtime.c swap"
-  swap :: Word64 -> IO Term
-foreign import ccall unsafe "Runtime.c term_new"
-  termNew :: Tag -> Lab -> Loc -> Term
-foreign import ccall unsafe "Runtime.c term_tag"
-  termTag :: Term -> Tag
-foreign import ccall unsafe "Runtime.c term_get_bit"
-  termGetBit :: Term -> Tag
-foreign import ccall unsafe "Runtime.c term_lab"
-  termLab :: Term -> Lab
-foreign import ccall unsafe "Runtime.c term_loc"
-  termLoc :: Term -> Loc
-foreign import ccall unsafe "Runtime.c term_set_bit"
-  termSetBit :: Term -> Tag
-foreign import ccall unsafe "Runtime.c term_rem_bit"
-  termRemBit :: Term -> Tag
-foreign import ccall unsafe "Runtime.c get_len"
-  getLen :: IO Word64
-foreign import ccall unsafe "Runtime.c get_itr"
-  getItr :: IO Word64
-foreign import ccall unsafe "Runtime.c inc_itr"
-  incItr :: IO Word64
-foreign import ccall unsafe "Runtime.c fresh"
-  fresh :: IO Word64
-foreign import ccall unsafe "Runtime.c reduce"
-  reduceC :: Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_let"
-  reduceLet :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_app_era"
-  reduceAppEra :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_app_lam"
-  reduceAppLam :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_app_sup"
-  reduceAppSup :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_app_ctr"
-  reduceAppCtr :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_app_w32"
-  reduceAppW32 :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_dup_era"
-  reduceDupEra :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_dup_lam"
-  reduceDupLam :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_dup_sup"
-  reduceDupSup :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_dup_ctr"
-  reduceDupCtr :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_dup_w32"
-  reduceDupW32 :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_dup_ref"
-  reduceDupRef :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_mat_era"
-  reduceMatEra :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_mat_lam"
-  reduceMatLam :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_mat_sup"
-  reduceMatSup :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_mat_ctr"
-  reduceMatCtr :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_mat_w32"
-  reduceMatW32 :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_opx_era"
-  reduceOpxEra :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_opx_lam"
-  reduceOpxLam :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_opx_sup"
-  reduceOpxSup :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_opx_ctr"
-  reduceOpxCtr :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_opx_w32"
-  reduceOpxW32 :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_opy_era"
-  reduceOpyEra :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_opy_lam"
-  reduceOpyLam :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_opy_sup"
-  reduceOpySup :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_opy_ctr"
-  reduceOpyCtr :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_opy_w32"
-  reduceOpyW32 :: Term -> Term -> IO Term
-foreign import ccall unsafe "Runtime.c reduce_ref_sup"
-  reduceRefSup :: Term -> Word64 -> IO Term
-foreign import ccall unsafe "Runtime.c hvm_define"
-  hvmDefine :: Word64 -> FunPtr (IO Term) -> IO ()
-foreign import ccall unsafe "Runtime.c hvm_get_state"
-  hvmGetState :: IO (Ptr ())
-foreign import ccall unsafe "Runtime.c hvm_set_state"
-  hvmSetState :: Ptr () -> IO ()
-foreign import ccall unsafe "Runtime.c u12v2_new"
-  u12v2New :: Word64 -> Word64 -> Word64
-foreign import ccall unsafe "Runtime.c u12v2_x"
-  u12v2X :: Word64 -> Word64
-foreign import ccall unsafe "Runtime.c u12v2_y"
-  u12v2Y :: Word64 -> Word64
-foreign import ccall unsafe "Runtime.c hvm_set_cari"
-  hvmSetCari :: Word64 -> Word16 -> IO ()
-foreign import ccall unsafe "Runtime.c hvm_set_clen"
-  hvmSetClen :: Word64 -> Word16 -> IO ()
-foreign import ccall unsafe "Runtime.c hvm_set_cadt"
-  hvmSetCadt :: Word64 -> Word16 -> IO ()
-foreign import ccall unsafe "Runtime.c hvm_set_fari"
-  hvmSetFari :: Word64 -> Word16 -> IO ()
+type ReduceAt = Book -> Loc -> Bool -> HVM Term
 
 -- Constants
 -- ---------
@@ -229,7 +111,7 @@ tagT :: Tag -> TAG
 tagT 0x00 = DP0
 tagT 0x01 = DP1
 tagT 0x02 = VAR
-tagT 0x03 = SUB
+tagT 0x03 = FWD
 tagT 0x04 = REF
 tagT 0x05 = LET
 tagT 0x06 = APP
@@ -255,8 +137,8 @@ _DP1_ = 0x01
 _VAR_ :: Tag
 _VAR_ = 0x02
 
-_SUB_ :: Tag
-_SUB_ = 0x03
+_FWD_ :: Tag
+_FWD_ = 0x03
 
 _REF_ :: Tag
 _REF_ = 0x04

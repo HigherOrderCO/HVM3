@@ -50,4 +50,3 @@ faster single-core than Bend, due to its compiler (Bend was interpreted). It is
 also 2x-3x faster than Node.js and Haskell in the first program I tested, but
 possibly slower in others. HVM3 is a work-in-progress. It is currently single
 threaded. Threading (both on CPU and GPU) will be added later.
-

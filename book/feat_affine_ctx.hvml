@@ -76,7 +76,6 @@ data Tree { #Leaf #Node{lft rgt} }
     &0{ctx #Node{lft rgt}}
 }
 
-
 // Fast Version: mutable references
 // --------------------------------
 

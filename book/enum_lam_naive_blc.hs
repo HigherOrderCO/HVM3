@@ -171,4 +171,3 @@ main = forM_ [0..2^25-1] $ \i -> do
       when solved $ do
         putStrLn (doShowTerm x)
         exitSuccess
-

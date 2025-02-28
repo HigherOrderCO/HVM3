@@ -25,8 +25,4 @@ function main() {
 
 main();
 
-
 // translate this to python
-
-
-

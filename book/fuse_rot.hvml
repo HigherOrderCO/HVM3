@@ -93,4 +93,4 @@ data List { #Nil #Cons{head tail} }
 @KB   = @K(0)
 
 // meh
-@main = (@read(@S) @sqr(12345 (@add(@S) @KA) @KB))
+@main = (@read(@S) @sqr(54321 (@add(@S) @KA) @KB))

@@ -9,6 +9,7 @@ import Data.Char (ord)
 import Data.List (foldr, take)
 import Data.Word
 import Debug.Trace
+import HVML.Foreign
 import HVML.Show
 import HVML.Type
 import qualified Data.Map.Strict as MS
@@ -26,13 +27,13 @@ emptyState = InjectState MS.empty []
 injectCore :: Book -> Core -> Loc -> InjectM ()
 
 injectCore _ Era loc = do
-  lift $ set loc (termNew _ERA_ 0 0)
+  lift $ setNew loc (termNew _ERA_ 0 0)
 
 injectCore _ (Var nam) loc = do
   argsMap <- gets args
   case MS.lookup nam argsMap of
     Just term -> do
-      lift $ set loc term
+      lift $ setNew loc term
       when (head nam /= '&') $ do
         modify $ \s -> s { args = MS.delete nam (args s) }
     Nothing -> do
@@ -43,26 +44,25 @@ injectCore book (Let mod nam val bod) loc = do
   modify $ \s -> s { args = MS.insert nam (termNew _VAR_ 0 (let_node + 0)) (args s) }
   injectCore book val (let_node + 0)
   injectCore book bod (let_node + 1)
-  lift $ set loc (termNew _LET_ (fromIntegral $ fromEnum mod) let_node)
+  lift $ setNew loc (termNew _LET_ (fromIntegral $ fromEnum mod) let_node)
 
 injectCore book (Lam vr0 bod) loc = do
   lam <- lift $ allocNode 1
-  -- lift $ set (lam + 0) (termNew _SUB_ 0 0)
   modify $ \s -> s { args = MS.insert vr0 (termNew _VAR_ 0 (lam + 0)) (args s) }
   injectCore book bod (lam + 0)
-  lift $ set loc (termNew _LAM_ 0 lam)
+  lift $ setNew loc (termNew _LAM_ 0 lam)
 
 injectCore book (App fun arg) loc = do
   app <- lift $ allocNode 2
   injectCore book fun (app + 0)
   injectCore book arg (app + 1)
-  lift $ set loc (termNew _APP_ 0 app)
+  lift $ setNew loc (termNew _APP_ 0 app)
 
 injectCore book (Sup lab tm0 tm1) loc = do
   sup <- lift $ allocNode 2
   injectCore book tm0 (sup + 0)
   injectCore book tm1 (sup + 1)
-  lift $ set loc (termNew _SUP_ lab sup)
+  lift $ setNew loc (termNew _SUP_ lab sup)
 
 injectCore book (Dup lab dp0 dp1 val bod) loc = do
   dup <- lift $ allocNode 1
@@ -75,16 +75,18 @@ injectCore book (Dup lab dp0 dp1 val bod) loc = do
 
 injectCore book (Ref nam fid arg) loc = do
   let ari = funArity book fid
+  when (ari /= fromIntegral (length arg)) $ do
+    error $ "Arity mismatch on term: " ++ showCore (Ref nam fid arg) ++ ". Expected " ++ show ari ++ ", got " ++ show (length arg) ++ "."
   ref <- lift $ allocNode (fromIntegral ari)
   sequence_ [injectCore book x (ref + i) | (i,x) <- zip [0..] arg]
-  lift $ set loc (termNew _REF_ fid ref)
+  lift $ setNew loc (termNew _REF_ fid ref)
 
 injectCore book (Ctr nam fds) loc = do
   let ari = length fds
   let cid = mget (ctrToCid book) nam
   ctr <- lift $ allocNode (fromIntegral ari)
   sequence_ [injectCore book fd (ctr + ix) | (ix,fd) <- zip [0..] fds]
-  lift $ set loc (termNew _CTR_ cid ctr)
+  lift $ setNew loc (termNew _CTR_ cid ctr)
 
 injectCore book tm@(Mat val mov css) loc = do
   typ <- return $ matType book tm
@@ -97,24 +99,24 @@ injectCore book tm@(Mat val mov css) loc = do
   trm <- return $ termNew tag lab mat
   ret <- foldM (\mat (_, val) -> do
       app <- lift $ allocNode 2
-      lift $ set (app + 0) mat
+      lift $ setNew (app + 0) mat
       injectCore book val (app + 1)
       return $ termNew _APP_ 0 app)
     trm
     mov
-  lift $ set loc ret
+  lift $ setNew loc ret
 
 injectCore book (U32 val) loc = do
-  lift $ set loc (termNew _W32_ 0 (fromIntegral val))
+  lift $ setNew loc (termNew _W32_ 0 (fromIntegral val))
 
 injectCore book (Chr val) loc = do
-  lift $ set loc (termNew _CHR_ 0 (fromIntegral $ ord val))
+  lift $ setNew loc (termNew _CHR_ 0 (fromIntegral $ ord val))
 
 injectCore book (Op2 opr nm0 nm1) loc = do
   opx <- lift $ allocNode 2
   injectCore book nm0 (opx + 0)
   injectCore book nm1 (opx + 1)
-  lift $ set loc (termNew _OPX_ (fromIntegral $ fromEnum opr) opx)
+  lift $ setNew loc (termNew _OPX_ (fromIntegral $ fromEnum opr) opx)
 
 doInjectCoreAt :: Book -> Core -> Loc -> [(String,Term)] -> HVM Term
 doInjectCoreAt book core host argList = do
@@ -122,7 +124,7 @@ doInjectCoreAt book core host argList = do
   foldM (\m (name, loc) -> do
     case MS.lookup name (args state) of
       Just term -> do
-        set loc term
+        setNew loc term
         if (head name /= '&') then do
           return $ MS.delete name m
         else do

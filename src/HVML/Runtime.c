@@ -16,6 +16,7 @@ typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 typedef _Atomic(Term) ATerm;
+typedef struct{Term term; u16 cnt;} Rloc;
 
 // Runtime Types
 // -------------
@@ -24,7 +25,20 @@ typedef struct {
   Term*  sbuf; // reduction stack buffer
   u64*   spos; // reduction stack position
   ATerm* heap; // global node buffer
-  u64*   size; // global node length
+  u64*   size; // total node length on last gc
+  u64*   nsiz; // global node length new gen
+  u64*   osiz; // global node length old gen
+
+  // garbage collection
+  Rloc*  rbuf; // relocation table, update terms not in global mem
+  u64*   rpos; // relocation table position
+  u64*   rlas; // relocation table position in last gc
+  Loc*   obuf; // old gen update buffer, update terms in old gen
+  u64*   opos; // old gen update buffer position
+  Term*  gbuf; // gc stack buffer
+  u64*   gth1; // gc minor threshold
+  u64*   gth2; // gc major threshold
+
   u64*   itrs; // interaction count
   u64*   frsh; // fresh dup label count
   Term (*book[65536])(Term); // functions
@@ -38,7 +52,15 @@ static State HVM = {
   .sbuf = NULL,
   .spos = NULL,
   .heap = NULL,
-  .size = NULL,
+  .rbuf = NULL,
+  .rpos = NULL,
+  .rlas = NULL,
+  .osiz = NULL,
+  .nsiz = NULL,
+  .obuf = NULL,
+  .opos = NULL,
+  .gth1 = NULL,
+  .gth2 = NULL,
   .itrs = NULL,
   .frsh = NULL,
   .book = {NULL},
@@ -54,7 +76,7 @@ static State HVM = {
 #define DP0 0x00
 #define DP1 0x01
 #define VAR 0x02
-#define SUB 0x03
+#define FWD 0x03
 #define REF 0x04
 #define LET 0x05
 #define APP 0x06
@@ -97,11 +119,13 @@ static State HVM = {
 
 #define VOID 0x00000000000000
 
+#define GC_THR (1ULL << 29)
+
 // Heap
 // ----
 
 Loc get_len() {
-  return *HVM.size;
+  return *HVM.size + (*HVM.nsiz & 0x7FFFFFFFFF);
 }
 
 u64 get_itr() {
@@ -110,14 +134,6 @@ u64 get_itr() {
 
 u64 fresh() {
   return (*HVM.frsh)++;
-}
-
-void set_len(Loc value) {
-  *HVM.size = value;
-}
-
-void set_itr(Loc value) {
-  *HVM.itrs = value;
 }
 
 // Terms
@@ -154,6 +170,67 @@ Term term_rem_bit(Term term) {
   return term & ~(1ULL << 7);
 }
 
+Term term_set_loc(Term x, Loc loc) {
+  return (x & 0x0000000000FFFFFF) | (loc << 24);
+}
+
+_Bool loc_is_old(Loc loc) {
+  return (loc >= (*HVM.osiz & 0x8000000000)) && (loc < *HVM.osiz);
+}
+
+u64 term_size(Term term) {
+  Tag tag = term_tag(term);
+  Lab lab = term_lab(term);
+  switch (tag) {
+    case ERA: return 0;
+    case W32: return 0;
+    case CHR: return 0;
+    case VAR: return 1;
+    case FWD: return 1;
+    case LAM: return 1;
+    case APP: return 2;
+    case SUP: return 2;
+    case DP0: return 1;
+    case DP1: return 1;
+    case LET: return 2;
+    case REF: return HVM.fari[lab];
+    case CTR: return HVM.cari[lab];
+    case MAT: return 1 + HVM.clen[lab];
+    case IFL: return 3;
+    case SWI: return 1 + lab;
+    case OPX: return 2;
+    case OPY: return 2;
+    default: return 0;
+  }
+}
+
+_Bool term_is_atom(Term term) {
+  switch (term_tag(term)) {
+    case ERA:
+    case W32:
+    case CHR: return 1;
+    default: return 0;
+  }
+}
+
+// Relocation Table
+// ----------------
+
+u64 rpush(Term term, u16 cnt) {
+  u64 idx = (*HVM.rpos)++;
+  HVM.rbuf[idx] = (Rloc){.term = term, .cnt = cnt};
+  return idx;
+}
+
+Term rtake(u64 idx) {
+  if (HVM.rbuf[idx].cnt == 0) {
+    printf("ERROR: RLOC CNT IS 0\n");
+    exit(1);
+  }
+  HVM.rbuf[idx].cnt--;
+  return HVM.rbuf[idx].term;
+}
+
 // Atomics
 // -------
 
@@ -169,18 +246,27 @@ Term swap(Loc loc, Term term) {
 Term got(Loc loc) {
   Term val = atomic_load_explicit(&HVM.heap[loc], memory_order_relaxed);
   if (val == 0) {
-    printf("GOT 0 at %llx\n", loc);
+    printf("GOT 0 at %010llx\n", loc);
     exit(0);
   }
   return val;
 }
 
-void set(Loc loc, Term term) {
+void set_new(Loc loc, Term term) {
   atomic_store_explicit(&HVM.heap[loc], term, memory_order_relaxed);
 }
 
+void set_old(Loc loc, Term term) {
+  atomic_store_explicit(&HVM.heap[loc], term, memory_order_relaxed);
+  // If we're setting a location in old gen to point to new gen
+  // add it to the old gen update buffer
+  if (loc_is_old(loc) && !loc_is_old(term_loc(term)) && !term_is_atom(term)) {
+    HVM.obuf[(*HVM.opos)++] = loc;
+  }
+}
+
 void sub(Loc loc, Term term) {
-  set(loc, term_set_bit(term));
+  set_old(loc, term_set_bit(term));
 }
 
 Term take(Loc loc) {
@@ -191,8 +277,8 @@ Term take(Loc loc) {
 // ----------
 
 Loc alloc_node(Loc arity) {
-  u64 old = *HVM.size;
-  *HVM.size += arity;
+  u64 old = *HVM.nsiz;
+  *HVM.nsiz += arity;
   return old;
 }
 
@@ -202,12 +288,97 @@ Loc inc_itr() {
   return old;
 }
 
+// Stack
+// ----
+
+void spush(Term term) {
+  HVM.sbuf[(*HVM.spos)++] = term;
+}
+
+Term spop() {
+  return HVM.sbuf[--(*HVM.spos)];
+}
+
+// Garbage Collection
+// -------------------
+
+Term collect_term(Term term, u64* gpos) {
+  u64 size = term_size(term);
+  Loc loc = term_loc(term);
+  if (size == 0 || loc_is_old(loc)) {
+    return term;
+  } else {
+    Term chld = got(loc + 0);
+    if (term_tag(chld) == FWD) {
+      // Already relocated
+      Loc loc = term_loc(chld);
+      return term_set_loc(term, loc);
+    } else {
+      // Copy and forward
+      Loc oloc = *HVM.osiz;
+      for (u64 i = 0; i < size; i++) {
+        Term tmi = got(loc + i);
+        HVM.gbuf[(*gpos)++] = *HVM.osiz;
+        set_new((*HVM.osiz)++, tmi);
+      }
+      set_new(loc, term_new(FWD, 0, oloc));
+      return term_set_loc(term, oloc);
+    }
+  }
+}
+
+Term collect_root(Term root) {
+  u64 gpos = 0;
+  Term rot2 = collect_term(root, &gpos);
+  while (gpos > 0) {
+    Loc loc = HVM.gbuf[--gpos];
+    Term term = collect_term(got(loc), &gpos);
+    set_new(loc, term);
+  }
+  return rot2;
+}
+
+void collect_minor() {
+  *HVM.size += *HVM.nsiz & 0x7FFFFFFFFF;
+
+  for (u64 rpos = *HVM.rlas; rpos < *HVM.rpos; rpos++) {
+    if (HVM.rbuf[rpos].cnt > 0) {
+      Term term = HVM.rbuf[rpos].term;
+      HVM.rbuf[rpos].term = collect_root(term);
+    }
+  }
+  for (u64 spos = 0; spos < *HVM.spos; spos++) {
+    Term term = HVM.sbuf[spos];
+    HVM.sbuf[spos] = collect_root(term);
+  }
+  for (u64 i = 0; i < *HVM.opos; i++) {
+    Term term = got(HVM.obuf[i]);
+    set_new(HVM.obuf[i], collect_root(term));
+  }
+  *HVM.rlas = *HVM.rpos;
+  *HVM.opos = 0;
+  *HVM.nsiz = (*HVM.nsiz & 0x8000000000) + 1;
+  *HVM.gth1 = (*HVM.nsiz & 0x8000000000) + GC_THR;
+}
+
+void collect_major() {
+  u64 old_osiz = *HVM.osiz;
+  u64 old_nsiz = *HVM.nsiz;
+  *HVM.rlas = 0;
+  *HVM.nsiz = old_osiz;
+  *HVM.osiz = (old_nsiz & 0x8000000000) + 1;
+  collect_minor();
+  *HVM.gth2 = *HVM.osiz + GC_THR;
+  // Avoid double counting on major collection
+  *HVM.size -= (old_osiz & 0x7FFFFFFFFF);
+}
+
 // Stringification
 // ---------------
 
 void print_tag(Tag tag) {
   switch (tag) {
-    case SUB: printf("SUB"); break;
+    case FWD: printf("FWD"); break;
     case VAR: printf("VAR"); break;
     case DP0: printf("DP0"); break;
     case DP1: printf("DP1"); break;
@@ -232,20 +403,24 @@ void print_tag(Tag tag) {
 void print_term(Term term) {
   printf("term_new(");
   print_tag(term_tag(term));
-  printf(",0x%06x,0x%09llx)", term_lab(term), term_loc(term));
-}
-
-void print_term_ln(Term term) {
-  print_term(term);
-  printf("\n");
+  printf(",0x%04x,0x%010llx)", term_lab(term), term_loc(term));
 }
 
 void print_heap() {
-  Loc len = get_len();
-  for (Loc i = 0; i < len; i++) {
+  Loc obas = *HVM.osiz & 0x8000000000;
+  Loc nbas = *HVM.nsiz & 0x8000000000;
+  for (Loc i = obas; i < *HVM.osiz; i++) {
     Term term = got(i);
     if (term != 0) {
-      printf("set(0x%09llx, ", i);
+      printf("set(0x%010llx, ", i);
+      print_term(term);
+      printf(");\n");
+    }
+  }
+  for (Loc i = nbas; i < *HVM.nsiz; i++) {
+    Term term = got(i);
+    if (term != 0) {
+      printf("set(0x%010llx, ", i);
       print_term(term);
       printf(");\n");
     }
@@ -287,21 +462,21 @@ Term reduce_ref_sup(Term ref, u32 idx) {
       // Duplicate argument
       Term arg = got(ref_loc + i);
       Loc dup_loc = alloc_node(1);
-      set(dup_loc + 0, arg);
-      set(ref_loc + i, term_new(DP0, sup_lab, dup_loc));
-      set(ref1_loc + i, term_new(DP1, sup_lab, dup_loc));
+      set_new(dup_loc + 0, arg);
+      set_old(ref_loc + i, term_new(DP0, sup_lab, dup_loc));
+      set_new(ref1_loc + i, term_new(DP1, sup_lab, dup_loc));
     } else {
       // Set the SUP components directly
-      set(ref_loc + i, sup0);
-      set(ref1_loc + i, sup1);
+      set_old(ref_loc + i, sup0);
+      set_new(ref1_loc + i, sup1);
     }
   }
   // Create new REF nodes
   Term ref0 = term_new(REF, ref_lab, ref_loc);
   Term ref1 = term_new(REF, ref_lab, ref1_loc);
   // Reuse sup_loc to create the new SUP node
-  set(sup_loc + 0, ref0);
-  set(sup_loc + 1, ref1);
+  set_old(sup_loc + 0, ref0);
+  set_old(sup_loc + 1, ref1);
   return term_new(SUP, sup_lab, sup_loc);
 }
 
@@ -369,16 +544,16 @@ Term reduce_app_sup(Term app, Term sup) {
   Loc du0     = alloc_node(1);
   //Loc su0     = alloc_node(2);
   //Loc ap0     = alloc_node(2);
-  Loc ap0     = app_loc;
-  Loc su0     = sup_loc;
+  Loc ap0     = sup_loc;
+  Loc su0     = app_loc;
   Loc ap1     = alloc_node(2);
-  set(du0 + 0, arg);
-  set(ap0 + 0, tm0);
-  set(ap0 + 1, term_new(DP0, sup_lab, du0));
-  set(ap1 + 0, tm1);
-  set(ap1 + 1, term_new(DP1, sup_lab, du0));
-  set(su0 + 0, term_new(APP, 0, ap0));
-  set(su0 + 1, term_new(APP, 0, ap1));
+  set_new(du0 + 0, arg);
+  //set_old(ap0 + 0, tm0);
+  set_old(ap0 + 1, term_new(DP0, sup_lab, du0));
+  set_new(ap1 + 0, tm1);
+  set_new(ap1 + 1, term_new(DP1, sup_lab, du0));
+  set_old(su0 + 0, term_new(APP, 0, ap0));
+  set_old(su0 + 1, term_new(APP, 0, ap1));
   return term_new(SUP, sup_lab, su0);
 }
 
@@ -429,13 +604,11 @@ Term reduce_dup_lam(Term dup, Term lam) {
   Loc lm0     = alloc_node(1);
   Loc lm1     = alloc_node(1);
   Loc su0     = alloc_node(2);
-  set(du0 + 0, bod);
-  //set(lm0 + 0, term_new(SUB, 0, 0));
-  set(lm0 + 0, term_new(DP0, dup_lab, du0));
-  //set(lm1 + 0, term_new(SUB, 0, 0));
-  set(lm1 + 0, term_new(DP1, dup_lab, du0));
-  set(su0 + 0, term_new(VAR, 0, lm0));
-  set(su0 + 1, term_new(VAR, 0, lm1));
+  set_new(du0 + 0, bod);
+  set_new(lm0 + 0, term_new(DP0, dup_lab, du0));
+  set_new(lm1 + 0, term_new(DP1, dup_lab, du0));
+  set_new(su0 + 0, term_new(VAR, 0, lm0));
+  set_new(su0 + 1, term_new(VAR, 0, lm1));
   sub(lam_loc + 0, term_new(SUP, dup_lab, su0));
   if (term_tag(dup) == DP0) {
     sub(dup_loc + 0, term_new(LAM, 0, lm1));
@@ -474,19 +647,20 @@ Term reduce_dup_sup(Term dup, Term sup) {
       return term_rem_bit(tm1);
     }
   } else {
-    Loc du0 = alloc_node(1);
-    Loc du1 = alloc_node(1);
-    //Loc su0 = alloc_node(2);
-    Loc su0 = sup_loc;
+    //Loc du0 = alloc_node(1);
+    //Loc du1 = alloc_node(1);
+    Loc du0 = sup_loc + 0;
+    Loc du1 = sup_loc + 1;
+    Loc su0 = alloc_node(2);
     Loc su1 = alloc_node(2);
-    Term tm0 = take(sup_loc + 0);
-    Term tm1 = take(sup_loc + 1);
-    set(du0 + 0, tm0);
-    set(du1 + 0, tm1);
-    set(su0 + 0, term_new(DP0, dup_lab, du0));
-    set(su0 + 1, term_new(DP0, dup_lab, du1));
-    set(su1 + 0, term_new(DP1, dup_lab, du0));
-    set(su1 + 1, term_new(DP1, dup_lab, du1));
+    //Term tm0 = got(sup_loc + 0);
+    //Term tm1 = got(sup_loc + 1);
+    //set_old(du0 + 0, tm0);
+    //set_old(du1 + 0, tm1);
+    set_new(su0 + 0, term_new(DP0, dup_lab, du0));
+    set_new(su0 + 1, term_new(DP0, dup_lab, du1));
+    set_new(su1 + 0, term_new(DP1, dup_lab, du0));
+    set_new(su1 + 1, term_new(DP1, dup_lab, du1));
     if (term_tag(dup) == DP0) {
       sub(dup_loc + 0, term_new(SUP, sup_lab, su1));
       return term_new(SUP, sup_lab, su0);
@@ -518,9 +692,9 @@ Term reduce_dup_ctr(Term dup, Term ctr) {
   Loc ctr1    = alloc_node(ctr_ari);
   for (u64 i = 0; i < ctr_ari; i++) {
     Loc du0 = alloc_node(1);
-    set(du0 + 0, got(ctr_loc + i));
-    set(ctr0 + i, term_new(DP0, dup_lab, du0));
-    set(ctr1 + i, term_new(DP1, dup_lab, du0));
+    set_new(du0 + 0, got(ctr_loc + i));
+    set_old(ctr0 + i, term_new(DP0, dup_lab, du0));
+    set_new(ctr1 + i, term_new(DP1, dup_lab, du0));
   }
   if (term_tag(dup) == DP0) {
     sub(dup_loc + 0, term_new(CTR, ctr_lab, ctr1));
@@ -563,9 +737,9 @@ Term reduce_dup_ref(Term dup, Term ref) {
   Loc ref1    = alloc_node(ref_ari);
   for (u64 i = 0; i < ref_ari; i++) {
     Loc du0 = alloc_node(1);
-    set(du0 + 0, got(ref_loc + i));
-    set(ref0 + i, term_new(DP0, dup_lab, du0));
-    set(ref1 + i, term_new(DP1, dup_lab, du0));
+    set_new(du0 + 0, got(ref_loc + i));
+    set_old(ref0 + i, term_new(DP0, dup_lab, du0));
+    set_new(ref1 + i, term_new(DP1, dup_lab, du0));
   }
   if (term_tag(dup) == DP0) {
     sub(dup_loc + 0, term_new(REF, ref_lab, ref1));
@@ -618,16 +792,16 @@ Term reduce_mat_sup(Term mat, Term sup) {
   //Loc sup0    = alloc_node(2);
   Loc mat0    = mat_loc;
   Loc sup0    = sup_loc;
-  set(mat0 + 0, tm0);
-  set(mat1 + 0, tm1);
+  set_old(mat0 + 0, tm0);
+  set_new(mat1 + 0, tm1);
   for (u64 i = 0; i < mat_len; i++) {
     Loc du0 = alloc_node(1);
-    set(du0 + 0, got(mat_loc + 1 + i));
-    set(mat0 + 1 + i, term_new(DP0, sup_lab, du0));
-    set(mat1 + 1 + i, term_new(DP1, sup_lab, du0));
+    set_new(du0 + 0, got(mat_loc + 1 + i));
+    set_old(mat0 + 1 + i, term_new(DP0, sup_lab, du0));
+    set_new(mat1 + 1 + i, term_new(DP1, sup_lab, du0));
   }
-  set(sup0 + 0, term_new(mat_tag, mat_lab, mat0));
-  set(sup0 + 1, term_new(mat_tag, mat_lab, mat1));
+  set_old(sup0 + 0, term_new(mat_tag, mat_lab, mat0));
+  set_old(sup0 + 1, term_new(mat_tag, mat_lab, mat1));
   return term_new(SUP, sup_lab, sup0);
 }
 
@@ -646,17 +820,17 @@ Term reduce_mat_ctr(Term mat, Term ctr) {
     if (mat_ctr == ctr_num) {
       Term app = got(mat_loc + 1);
       for (u64 i = 0; i < ctr_ari; i++) {
-        Loc new_app = alloc_node(2);
-        set(new_app + 0, app);
-        set(new_app + 1, got(ctr_loc + i));
+        Loc new_app = i == 0 ? mat_loc : alloc_node(2);
+        set_old(new_app + 0, app);
+        set_old(new_app + 1, got(ctr_loc + i));
         app = term_new(APP, 0, new_app);
       }
       return app;
     } else {
       Term app = got(mat_loc + 2);
-      Loc new_app = alloc_node(2);
-      set(new_app + 0, app);
-      set(new_app + 1, ctr);
+      Loc new_app = mat_loc;
+      set_old(new_app + 0, app);
+      set_old(new_app + 1, ctr);
       app = term_new(APP, 0, new_app);
       return app;
     }
@@ -670,9 +844,9 @@ Term reduce_mat_ctr(Term mat, Term ctr) {
     u64 cse_idx = ctr_num - mat_ctr;
     Term app = got(mat_loc + 1 + cse_idx);
     for (u64 i = 0; i < ctr_ari; i++) {
-      Loc new_app = alloc_node(2);
-      set(new_app + 0, app);
-      set(new_app + 1, got(ctr_loc + i));
+      Loc new_app = i == 0 ? mat_loc : alloc_node(2);
+      set_old(new_app + 0, app);
+      set_old(new_app + 1, got(ctr_loc + i));
       app = term_new(APP, 0, new_app);
     }
     return app;
@@ -693,9 +867,10 @@ Term reduce_mat_w32(Term mat, Term w32) {
   if (w32_val < mat_len - 1) {
     return got(mat_loc + 1 + w32_val);
   } else {
-    Loc app = alloc_node(2);
-    set(app + 0, got(mat_loc + mat_len));
-    set(app + 1, term_new(W32, 0, w32_val - (mat_len - 1)));
+    Term fn = got(mat_loc + mat_len);
+    Loc app = mat_loc;
+    set_old(app + 0, fn);
+    set_old(app + 1, term_new(W32, 0, w32_val - (mat_len - 1)));
     return term_new(APP, 0, app);
   }
 }
@@ -737,13 +912,13 @@ Term reduce_opx_sup(Term opx, Term sup) {
   Loc op0     = opx_loc;
   Loc op1     = sup_loc;
   Loc su0     = alloc_node(2);
-  set(du0 + 0, nmy);
-  set(op0 + 0, tm0);
-  set(op0 + 1, term_new(DP0, sup_lab, du0));
-  set(op1 + 0, tm1);
-  set(op1 + 1, term_new(DP1, sup_lab, du0));
-  set(su0 + 0, term_new(OPX, term_lab(opx), op0));
-  set(su0 + 1, term_new(OPX, term_lab(opx), op1));
+  set_new(du0 + 0, nmy);
+  set_old(op0 + 0, tm0);
+  set_old(op0 + 1, term_new(DP0, sup_lab, du0));
+  set_old(op1 + 0, tm1);
+  set_old(op1 + 1, term_new(DP1, sup_lab, du0));
+  set_new(su0 + 0, term_new(OPX, term_lab(opx), op0));
+  set_new(su0 + 1, term_new(OPX, term_lab(opx), op1));
   return term_new(SUP, sup_lab, su0);
 }
 
@@ -764,7 +939,7 @@ Term reduce_opx_w32(Term opx, Term w32) {
   inc_itr();
   Lab opx_lab = term_lab(opx);
   Loc opx_loc = term_loc(opx);
-  set(opx_loc + 0, w32);
+  set_old(opx_loc + 0, w32);
   return term_new(OPY, opx_lab, opx_loc);
 }
 
@@ -803,12 +978,12 @@ Term reduce_opy_sup(Term opy, Term sup) {
   Loc op0     = opy_loc;
   Loc op1     = sup_loc;
   Loc su0     = alloc_node(2);
-  set(op0 + 0, nmx);
-  set(op0 + 1, tm0);
-  set(op1 + 0, nmx);
-  set(op1 + 1, tm1);
-  set(su0 + 0, term_new(OPY, term_lab(opy), op0));
-  set(su0 + 1, term_new(OPY, term_lab(opy), op1));
+  // set_old(op0 + 0, nmx);
+  set_old(op0 + 1, tm0);
+  set_old(op1 + 0, nmx);
+  // set_old(op1 + 1, tm1);
+  set_new(su0 + 0, term_new(OPY, term_lab(opy), op0));
+  set_new(su0 + 1, term_new(OPY, term_lab(opy), op1));
   return term_new(SUP, sup_lab, su0);
 }
 
@@ -857,13 +1032,21 @@ Term reduce_opy_w32(Term opy, Term w32) {
   return term_new(t, 0, result);
 }
 
-Term reduce(Term term) {
+Term reduce(Term term, _Bool gc) {
   if (term_tag(term) >= ERA) return term;
   Term next = term;
   u64  stop = *HVM.spos;
   u64* spos = HVM.spos;
 
   while (1) {
+    if (gc && *HVM.nsiz > *HVM.gth1) {
+      spush(next);
+      collect_minor();
+      if (*HVM.osiz > *HVM.gth2) {
+        collect_major();
+      }
+      next = spop();
+    }
 
     //printf("NEXT "); print_term(term); printf("\n");
     //printf("PATH ");
@@ -886,7 +1069,7 @@ Term reduce(Term term) {
             continue;
           }
           case STRI: {
-            HVM.sbuf[(*spos)++] = next;
+            spush(next);
             next = got(loc + 0);
             continue;
           }
@@ -902,7 +1085,7 @@ Term reduce(Term term) {
       }
 
       case APP: {
-        HVM.sbuf[(*spos)++] = next;
+        spush(next);
         next = got(loc + 0);
         continue;
       }
@@ -910,43 +1093,32 @@ Term reduce(Term term) {
       case MAT:
       case IFL:
       case SWI: {
-        HVM.sbuf[(*spos)++] = next;
+        spush(next);
         next = got(loc + 0);
         continue;
       }
 
       case OPX: {
-        HVM.sbuf[(*spos)++] = next;
+        spush(next);
         next = got(loc + 0);
         continue;
       }
 
       case OPY: {
-        HVM.sbuf[(*spos)++] = next;
+        spush(next);
         next = got(loc + 1);
         continue;
       }
 
-      case DP0: {
-        Term sb0 = got(loc + 0);
-        if (term_get_bit(sb0) == 0) {
-          HVM.sbuf[(*spos)++] = next;
-          next = got(loc + 0);
-          continue;
-        } else {
-          next = term_rem_bit(sb0);
-          continue;
-        }
-      }
-
+      case DP0:
       case DP1: {
-        Term sb1 = got(loc + 0);
-        if (term_get_bit(sb1) == 0) {
-          HVM.sbuf[(*spos)++] = next;
-          next = got(loc + 0);
+        Term sub = got(loc + 0);
+        if (term_get_bit(sub) == 0) {
+          spush(next);
+          next = sub;
           continue;
         } else {
-          next = term_rem_bit(sb1);
+          next = term_rem_bit(sub);
           continue;
         }
       }
@@ -1057,22 +1229,24 @@ Term reduce(Term term) {
     if ((*HVM.spos) == stop) {
       return next;
     } else {
-      Term host = HVM.sbuf[--(*HVM.spos)];
-      Tag  htag = term_tag(host);
-      Lab  hlab = term_lab(host);
-      Loc  hloc = term_loc(host);
-      switch (htag) {
-        case APP: set(hloc + 0, next); break;
-        case DP0: set(hloc + 0, next); break;
-        case DP1: set(hloc + 0, next); break;
-        case LET: set(hloc + 0, next); break;
-        case MAT:
-        case IFL:
-        case SWI: set(hloc + 0, next); break;
-        case OPX: set(hloc + 0, next); break;
-        case OPY: set(hloc + 1, next); break;
+      while ((*HVM.spos) > stop) {
+        Term host = spop();
+        Tag  htag = term_tag(host);
+        Lab  hlab = term_lab(host);
+        Loc  hloc = term_loc(host);
+        switch (htag) {
+          case APP: set_old(hloc + 0, next); break;
+          case DP0: 
+          case DP1: set_old(hloc + 0, next); break;
+          case LET: set_old(hloc + 0, next); break;
+          case MAT:
+          case IFL:
+          case SWI: set_old(hloc + 0, next); break;
+          case OPX: set_old(hloc + 0, next); break;
+          case OPY: set_old(hloc + 1, next); break;
+        }
+        next = host;
       }
-      *HVM.spos = stop;
       return HVM.sbuf[stop];
     }
 
@@ -1081,14 +1255,20 @@ Term reduce(Term term) {
   return 0;
 }
 
-Term reduce_at(Loc host) {
-  Term term = reduce(got(host));
-  set(host, term);
-  return term;
+Term reduce_at(Loc host, _Bool gc) {
+  Term tm0 = got(host);
+  if (term_tag(tm0) >= ERA) {
+    return tm0;
+  }
+  spush(term_new(FWD, 0, host));
+  Term tm1 = reduce(tm0, gc);
+  host = spop();
+  set_old(term_loc(host), tm1);
+  return tm1;
 }
 
 Term normal(Term term) {
-  Term wnf = reduce(term);
+  Term wnf = reduce(term, 1);
   Tag tag = term_tag(wnf);
   Lab lab = term_lab(wnf);
   Loc loc = term_loc(wnf);
@@ -1096,46 +1276,56 @@ Term normal(Term term) {
 
     case LAM: {
       Term bod = got(loc + 0);
+      spush(wnf);
       bod = normal(bod);
-      set(loc + 1, bod);
+      wnf = spop();
+      set_old(term_loc(wnf) + 1, bod);
       return wnf;
     }
 
     case APP: {
       Term fun = got(loc + 0);
       Term arg = got(loc + 1);
+      spush(wnf);
       fun = normal(fun);
       arg = normal(arg);
-      set(loc + 0, fun);
-      set(loc + 1, arg);
+      wnf = spop();
+      set_old(term_loc(wnf) + 0, fun);
+      set_old(term_loc(wnf) + 1, arg);
       return wnf;
     }
 
     case SUP: {
       Term tm0 = got(loc + 0);
       Term tm1 = got(loc + 1);
+      spush(wnf);
       tm0 = normal(tm0);
       tm1 = normal(tm1);
-      set(loc + 0, tm0);
-      set(loc + 1, tm1);
+      wnf = spop();
+      set_old(term_loc(wnf) + 0, tm0);
+      set_old(term_loc(wnf) + 1, tm1);
       return wnf;
     }
 
     case DP0:
     case DP1: {
       Term val = got(loc + 0);
+      spush(wnf);
       val = normal(val);
-      set(loc + 0, val);
+      wnf = spop();
+      set_old(term_loc(wnf) + 0, val);
       return wnf;
     }
 
     case CTR: {
       u64 cid = lab;
       u64 ari = HVM.cari[cid];
+      u64 spos = rpush(wnf, ari);
       for (u64 i = 0; i < ari; i++) {
         Term arg = got(loc + i);
         arg = normal(arg);
-        set(loc + i, arg);
+        wnf = rtake(spos);
+        set_old(term_loc(wnf) + i, arg);
       }
       return wnf;
     }
@@ -1144,10 +1334,12 @@ Term normal(Term term) {
     case IFL:
     case SWI: {
       u64 len = tag == SWI ? lab : tag == IFL ? 2 : HVM.clen[lab];
+      u64 spos = rpush(wnf, len);
       for (u64 i = 0; i <= len; i++) {
         Term arg = got(loc + i);
         arg = normal(arg);
-        set(loc + i, arg);
+        wnf = rtake(spos);
+        set_old(term_loc(wnf) + i, arg);
       }
       return wnf;
     }
@@ -1165,7 +1357,7 @@ Term normal(Term term) {
 // Allocates a new SUP node with given label.
 Term SUP_f(Term ref) {
   Loc ref_loc = term_loc(ref);
-  Term lab = reduce(got(ref_loc + 0));
+  Term lab = reduce(got(ref_loc + 0), 0);
   Term lab_val = term_loc(lab);
   if (term_tag(lab) != W32) {
     printf("ERROR:non-numeric-sup-label\n");
@@ -1177,8 +1369,9 @@ Term SUP_f(Term ref) {
   Term tm1 = got(ref_loc + 2);
   Loc  sup = alloc_node(2);
   Term ret = term_new(SUP, lab_val, sup);
-  set(sup + 0, tm0);
-  set(sup + 1, tm1);
+  set_new(sup + 0, tm0);
+  set_new(sup + 1, tm1);
+  *HVM.itrs += 1;
   return ret;
 }
 
@@ -1186,7 +1379,7 @@ Term SUP_f(Term ref) {
 // Creates a DUP node with given label.
 Term DUP_f(Term ref) {
   Loc ref_loc = term_loc(ref);
-  Term lab = reduce(got(ref_loc + 0));
+  Term lab = reduce(got(ref_loc + 0), 0);
   Term lab_val = term_loc(lab);
   if (term_tag(lab) != W32) {
     printf("ERROR:non-numeric-dup-label\n");
@@ -1196,28 +1389,28 @@ Term DUP_f(Term ref) {
   }
   Term val = got(ref_loc + 1);
   Term bod = got(ref_loc + 2);
-  Loc dup = alloc_node(1);
-  set(dup + 0, val);
-  Term bod_term = got(ref_loc + 2);
-  if (term_tag(bod_term) == LAM) {
-    Loc lam1_loc = term_loc(bod_term);
-    Term lam1_bod = got(lam1_loc + 0);
-    if (term_tag(lam1_bod) == LAM) {
-      Loc lam2_loc = term_loc(lam1_bod);
-      Term lam2_bod = got(lam2_loc + 0);
-      sub(lam1_loc + 0, term_new(DP0, lab_val, dup));
-      sub(lam2_loc + 0, term_new(DP1, lab_val, dup));
-      *HVM.itrs += 2;
-      return lam2_bod;
+  Loc  dup = alloc_node(1);
+  set_new(dup + 0, val);
+  if (term_tag(bod) == LAM) {
+    Loc  lam0 = term_loc(bod);
+    Term bod0 = got(lam0 + 0);
+    if (term_tag(bod0) == LAM) {
+      Loc  lam1 = term_loc(bod0);
+      Term bod1 = got(lam1 + 0);
+      sub(lam0 + 0, term_new(DP0, lab_val, dup));
+      sub(lam1 + 0, term_new(DP1, lab_val, dup));
+      *HVM.itrs += 3;
+      return bod1;
     }
   }
+  Loc app0 = alloc_node(2);
+  set_new(app0 + 0, bod);
+  set_new(app0 + 1, term_new(DP0, lab_val, dup));
   Loc app1 = alloc_node(2);
-  set(app1 + 0, bod);
-  set(app1 + 1, term_new(DP0, lab_val, dup));
-  Loc app2 = alloc_node(2);
-  set(app2 + 0, term_new(APP, 0, app1));
-  set(app2 + 1, term_new(DP1, lab_val, dup));
-  return term_new(APP, 0, app2);
+  set_new(app1 + 0, term_new(APP, 0, app0));
+  set_new(app1 + 1, term_new(DP1, lab_val, dup));
+  *HVM.itrs += 1;
+  return term_new(APP, 0, app1);
 }
 
 Term LOG_f(Term ref) {
@@ -1232,18 +1425,37 @@ void hvm_init() {
   // FIXME: use mmap instead
   HVM.sbuf = malloc((1ULL << 40) * sizeof(Term));
   HVM.heap = malloc((1ULL << 40) * sizeof(ATerm));
+  HVM.rbuf = malloc((1ULL << 40) * sizeof(Rloc));
+  HVM.obuf = malloc((1ULL << 40) * sizeof(Loc));
+  HVM.gbuf = malloc((1ULL << 40) * sizeof(Loc));
+  HVM.opos = malloc(sizeof(u64));
+  HVM.rpos = malloc(sizeof(u64));
+  HVM.rlas = malloc(sizeof(u64));
   HVM.spos = malloc(sizeof(u64));
   HVM.size = malloc(sizeof(u64));
+  HVM.osiz = malloc(sizeof(u64));
+  HVM.nsiz = malloc(sizeof(u64));
+  HVM.gth1 = malloc(sizeof(u64));
+  HVM.gth2 = malloc(sizeof(u64));
   HVM.itrs = malloc(sizeof(u64));
   HVM.frsh = malloc(sizeof(u64));
-  if (!HVM.sbuf || !HVM.heap || !HVM.spos || !HVM.size || !HVM.itrs || !HVM.frsh) {
+  if (!HVM.sbuf || !HVM.heap || !HVM.rbuf || !HVM.obuf || !HVM.opos || !HVM.rpos || !HVM.rlas || 
+      !HVM.spos || !HVM.osiz || !HVM.nsiz || !HVM.gth1 || !HVM.gth2 || !HVM.itrs || !HVM.frsh || !HVM.gbuf) {
     printf("hvm_init alloc failed");
     exit(1);
   }
   *HVM.spos = 0;
-  *HVM.size = 1;
+  *HVM.size = 0;
+  *HVM.osiz = (1ull << 39) + 1;
+  *HVM.nsiz = 1;
+  // delay the first minor gc, better for small programs
+  *HVM.gth1 = 2 * GC_THR;
+  *HVM.gth2 = *HVM.osiz + GC_THR;
   *HVM.itrs = 0;
   *HVM.frsh = 0x20;
+  *HVM.rpos = 0;
+  *HVM.rlas = 0;
+  *HVM.opos = 0;
   HVM.book[SUP_F] = SUP_f;
   HVM.book[DUP_F] = DUP_f;
   HVM.book[LOG_F] = LOG_f;
@@ -1260,8 +1472,18 @@ void hvm_free() {
   free(HVM.spos);
   free(HVM.heap);
   free(HVM.size);
+  free(HVM.osiz);
+  free(HVM.nsiz);
+  free(HVM.obuf);
+  free(HVM.opos);
+  free(HVM.gth1);
+  free(HVM.gth2);
   free(HVM.itrs);
   free(HVM.frsh);
+  free(HVM.rbuf);
+  free(HVM.rpos);
+  free(HVM.rlas);
+  free(HVM.gbuf);
 }
 
 State* hvm_get_state() {
@@ -1271,8 +1493,18 @@ State* hvm_get_state() {
 void hvm_set_state(State* hvm) {
   HVM.sbuf = hvm->sbuf;
   HVM.spos = hvm->spos;
+  HVM.rbuf = hvm->rbuf;
+  HVM.rpos = hvm->rpos;
+  HVM.rlas = hvm->rlas;
+  HVM.obuf = hvm->obuf;
+  HVM.opos = hvm->opos;
+  HVM.gbuf = hvm->gbuf;
   HVM.heap = hvm->heap;
   HVM.size = hvm->size;
+  HVM.osiz = hvm->osiz;
+  HVM.nsiz = hvm->nsiz;
+  HVM.gth1 = hvm->gth1;
+  HVM.gth2 = hvm->gth2;
   HVM.itrs = hvm->itrs;
   HVM.frsh = hvm->frsh;
   for (int i = 0; i < 65536; i++) {

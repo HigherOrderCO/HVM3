@@ -7,24 +7,23 @@
 module Main where
 
 import Control.Monad (guard, when, forM_)
-import Control.Monad.Trans.Maybe (runMaybeT, MaybeT(..))
 import Data.FileEmbed
 import Data.List (partition, isPrefixOf, take, find)
-import Data.Time.Clock
 import Data.Word
 import Foreign.C.Types
 import Foreign.LibFFI
 import Foreign.LibFFI.Types
+import GHC.Clock
 import GHC.Conc
 import HVML.Collapse
 import HVML.Compile
 import HVML.Extract
+import HVML.Foreign
 import HVML.Inject
 import HVML.Parse
 import HVML.Reduce
 import HVML.Show
 import HVML.Type
-import System.CPUTime
 import System.Environment (getArgs)
 import System.Exit (exitWith, ExitCode(ExitSuccess, ExitFailure))
 import System.IO
@@ -36,8 +35,6 @@ import Text.Printf
 import Data.IORef
 import qualified Data.Map.Strict as MS
 import Text.Read (readMaybe)
-
-import Debug.Trace
 
 runtime_c :: String
 runtime_c = $(embedStringFile "./src/HVML/Runtime.c")
@@ -102,10 +99,6 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
   hvmInit
   code <- readFile' filePath
   book <- doParseBook filePath code
-  -- Create the C file content
-  let decls = compileHeaders book
-  let funcs = map (\ (fid, _) -> compile book fid) (MS.toList (fidToFun book))
-  let mainC = unlines $ [runtime_c] ++ [decls] ++ funcs ++ [genMain book]
   -- Set constructor arities, case length and ADT ids
   forM_ (MS.toList (cidToAri book)) $ \ (cid, ari) -> do
     hvmSetCari cid (fromIntegral ari)
@@ -117,21 +110,24 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
     hvmSetFari fid (fromIntegral $ length args)
   -- Compile to native
   when compiled $ do
+    -- Create the C file content
+    let decls = compileHeaders book
+    let funcs = map (\ (fid, _) -> compile book fid) (MS.toList (fidToFun book))
+    let mainC = unlines $ [runtime_c] ++ [decls] ++ funcs ++ [genMain book]
     -- Try to use a cached .so file
     callCommand "mkdir -p .build"
     let fName = last $ words $ map (\c -> if c == '/' then ' ' else c) filePath
     let cPath = ".build/" ++ fName ++ ".c"
     let oPath = ".build/" ++ fName ++ ".so"
-    cache <- runMaybeT $ do
-      oldFile <- MaybeT $ (either (\_ -> Nothing) Just) <$> tryIOError (readFile' cPath)
-      guard (oldFile == mainC)
-      MaybeT $ (either (\_ -> Nothing) Just) <$> tryIOError (dlopen oPath [RTLD_NOW])
-    bookLib <- case cache of
-      Just cache -> return cache
-      Nothing -> do
-        writeFile cPath mainC
-        callCommand $ "gcc -O2 -fPIC -shared " ++ cPath ++ " -o " ++ oPath
-        dlopen oPath [RTLD_NOW]
+
+    oldCFile <- tryIOError (readFile' cPath)
+    bookLib <- if oldCFile == Right mainC then do
+      dlopen oPath [RTLD_NOW]
+    else do
+      writeFile cPath mainC
+      callCommand $ "gcc -O2 -fPIC -shared " ++ cPath ++ " -o " ++ oPath
+      dlopen oPath [RTLD_NOW]
+
     -- Register compiled functions
     forM_ (MS.keys (fidToFun book)) $ \ fid -> do
       funPtr <- dlsym bookLib (mget (fidToNam book) fid ++ "_f")
@@ -151,7 +147,7 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
               ++ " arguments, found " ++ show (length strArgs)
     exitWith (ExitFailure 1)
   -- Normalize main
-  init <- getCPUTime
+  init <- getMonotonicTimeNSec
   -- Convert string arguments to Core terms and inject them at runtime
   let args = map (\str -> foldr (\c acc -> Ctr "#Cons" [Chr c, acc]) (Ctr "#Nil" []) str) strArgs
   root <- doInjectCoreAt book (Ref "main" (mget (namToFid book) "main") args) 0 []
@@ -181,12 +177,12 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
                    else showCore (head vals)
       putStrLn output
   -- Prints total time
-  end <- getCPUTime
+  end <- getMonotonicTimeNSec
   -- Show stats
   when showStats $ do
     itrs <- getItr
     size <- getLen
-    let time = fromIntegral (end - init) / (10^12) :: Double
+    let time = fromIntegral (end - init) / (10^9) :: Double
     let mips = (fromIntegral itrs / 1000000.0) / time
     printf "WORK: %llu interactions\n" itrs
     printf "TIME: %.7f seconds\n" time

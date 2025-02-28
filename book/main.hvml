@@ -12,9 +12,6 @@ data Term {
   #Num{val}
 }
 
-
-
-
 @main = ~ (#Pol{123}) {
   #Var{idx}: *
   #Pol{bod}: 123
@@ -24,42 +21,6 @@ data Term {
   #U32: *
   #Num{val}: *
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 ////@main = ~ (#A) {
   ////#A: 1
@@ -72,18 +33,11 @@ data Term {
   ////p: p
 ////}
 
-
 //@main = 
   //~ [1 2] {
     //#Cons{a b}: a
     //#Nil: 0
   //}
-
-
-
-
-
-
 
 //!@foo(k a) =
   //! &0{x y} = a
@@ -91,7 +45,6 @@ data Term {
   //! &2{_ _} = 2
   //(+ x y)
 //@main = @foo(1 &0{1 2})
-
 
 //data Foo {
   //#A{k}
@@ -105,24 +58,15 @@ data Term {
 
 //@main = @bar(*)
 
-
-
-
-
-
-
-
 //@foo(n) = ~n { 0: 0 p: (+ 1 @foo(p)) }
 
 ////@main = @foo(&0{1000 1000})
 //@main = &0{@foo(1000) @foo(1000)}
 
-
 // ~ &0{#A{...} #B{...}} {
 //  #A: ...
 //  #B: ...
 // }
-
 
 //@foo(&0{1 2} x y)
 //-----------------
@@ -130,13 +74,10 @@ data Term {
 //&0{y0 y1}=y
 //&0{@foo(1 x0 y0) @foo(2 x1 y1)}
 
-
-
 //(&L{x y} arg)
 //-------------
 //&0{arg0 arg1}=arg
 //&{(x arg0) (y arg1)}
-
 
 //data Foo { #A{a b} #B{a b} #C{a b} #D{a b} }
 
@@ -157,25 +98,19 @@ data Term {
   //term: term
 //}
 
-
 //@main = ~ #A{1 2} {
   //#A{a b}: ["A" a b]
   //x: 123
 //}
-
-
 
 //data List { #Nil #Cons{head tail} }
 
 //@Foo = #Cons{1 @Foo}
 //@main = 50
 
-
-
 //@main = λx
   //!! @LOG(&{1 (+ x 1)})
   //123
-
 
 //@main = λt(t &0{&0{1 2} &0{3 4}} &0{&0{1 2} &0{3 4}})
 
@@ -204,7 +139,6 @@ data Term {
 
 //@main = @all(4)
 
-
 //data Tree { #Leaf #Node{lft rgt} }
 
 //@all(s l) = ~s {
@@ -222,11 +156,6 @@ data Term {
 //}
 
 //@main = @all(4 1)
-
-
-
-
-
 
 //@dyn(n lab) = ~n {
   //0: 0
@@ -253,8 +182,6 @@ data Term {
   //! val = λf λx (f x)
   //{ val :: typ }
 
-
-
 //@main = λA λB
   //! &0{A A0} = A
   //! &0{A A1} = A
@@ -263,16 +190,11 @@ data Term {
   //{  λf λx !&0{f0 f1}=f (f0 (f1 x))
   //:: @Fun(@Fun(A0 A1) @Fun(A2 A3)) }
 
-
-
 //@main = λA λB {λx x :: @Fun(A B)}
 
 //@main = λA λB
   //!&0{A0 A1}=A
   //{λa λb (a b) :: %f λa λb {(f {a::A0} {b::B})::A1}}
-
-
-
 
 //@count(n k) = ~n !k {
   //0: k
@@ -280,7 +202,6 @@ data Term {
 //}
 
 //@main = @count(2_000_000_000 0)
-
 
 //data L { #N #C{h t} }
 
@@ -301,7 +222,6 @@ data Term {
 
 ////@main = λt(t (+ 1 (+ 2 (+ 3 4))) (+ 1 (+ 2 (+ 3 4))))
 //@main = (+ 1 2)
-
 
 //@true = λt λf t
 //@false = λt λf f
