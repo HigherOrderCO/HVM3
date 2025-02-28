@@ -30,9 +30,15 @@ jobs:
 
       - name: Build the project
         run: cabal build
-
-      - name: Run Interpreted Benchmarks
-        run: cabal run hvml -- run ./book/bench_count.hvml
-
-      - name: Run Compiled Benchmarks
-        run: cabal run hvml -- run ./book/bench_count.hvml -c
+        
+      - name: Run interpreted normalization
+        run: cabal run hvml -- run ./book/feat_hoas.hvml
+        
+      - name: Run compiled normalization
+        run: cabal run hvml -- run ./book/feat_hoas.hvml -c
+        
+      - name: Run interpreted collapse
+        run: cabal run hvml -- run ./book/enum_lam_smart.hvml -C
+        
+      - name: Run compiled collapse
+        run: cabal run hvml -- run ./book/enum_lam_smart.hvml -C -c
