@@ -1,4 +1,4 @@
-name: Haskell CI
+name: HVM3 CI
 
 on:
   push:
@@ -7,18 +7,30 @@ on:
     branches: [ main ]
 
 jobs:
-  build:
+  hvml-pipeline:
     runs-on: macos-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      - name: Cache GHC installation
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.ghcup
+            ~/.cabal
+          key: ${{ runner.os }}-ghc-${{ hashFiles('**/*.cabal') }}
+          restore-keys: |
+            ${{ runner.os }}-ghc-
+
       - name: Set up GHC and Cabal
         uses: haskell-actions/setup@v2
         with:
           ghc-version: '9.12.1'
-          cabal-version: '3.14.1.1'  # Ensure compatibility with GHC 9.12.1, todo!()
+          cabal-version: '3.14.1.1'
+          enable-stack: false
+          enable-cabal: true
 
       - name: Cache Cabal store
         uses: actions/cache@v3
