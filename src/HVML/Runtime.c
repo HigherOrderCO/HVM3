@@ -1439,11 +1439,26 @@ void hvm_init() {
   HVM.gth2 = malloc(sizeof(u64));
   HVM.itrs = malloc(sizeof(u64));
   HVM.frsh = malloc(sizeof(u64));
-  if (!HVM.sbuf || !HVM.heap || !HVM.rbuf || !HVM.obuf || !HVM.opos || !HVM.rpos || !HVM.rlas || 
-      !HVM.spos || !HVM.osiz || !HVM.nsiz || !HVM.gth1 || !HVM.gth2 || !HVM.itrs || !HVM.frsh || !HVM.gbuf) {
-    printf("hvm_init alloc failed");
-    exit(1);
-  }
+
+  if (!HVM.sbuf) { printf("sbuf alloc failed\n"); }
+  if (!HVM.heap) { printf("heap alloc failed\n"); }
+  if (!HVM.rbuf) { printf("rbuf alloc failed\n"); }
+  if (!HVM.obuf) { printf("obuf alloc failed\n"); }
+  if (!HVM.opos) { printf("opos alloc failed\n"); }
+  if (!HVM.rpos) { printf("rpos alloc failed\n"); }
+  if (!HVM.rlas) { printf("rlas alloc failed\n"); }
+  if (!HVM.spos) { printf("spos alloc failed\n"); }
+  if (!HVM.osiz) { printf("osiz alloc failed\n"); }
+  if (!HVM.nsiz) { printf("nsiz alloc failed\n"); }
+  if (!HVM.gth1) { printf("gth1 alloc failed\n"); }
+  if (!HVM.gth2) { printf("gth2 alloc failed\n"); }
+  if (!HVM.itrs) { printf("itrs alloc failed\n"); }
+  if (!HVM.frsh) { printf("frsh alloc failed\n"); }
+  if (!HVM.gbuf) { printf("gbuf alloc failed\n"); }
+
+  printf("hvm_init alloc failed\n");
+  exit(1);
+
   *HVM.spos = 0;
   *HVM.size = 0;
   *HVM.osiz = (1ull << 39) + 1;
