@@ -6,7 +6,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+#include <unistd.h>
 #include <time.h>
+#include <stdbool.h>
 
 typedef uint8_t  Tag;
 typedef uint16_t Lab;
@@ -120,6 +122,10 @@ static State HVM = {
 #define VOID 0x00000000000000
 
 #define GC_THR (1ULL << 29)
+
+// Logging Macros
+#define CHECK_ALLOC(ptr, name) if (!(ptr)) { printf(name " alloc failed\n"); allocs_failed++; }
+int allocs_failed = 0; // Track if any allocation failed
 
 // Heap
 // ----
@@ -1439,11 +1445,28 @@ void hvm_init() {
   HVM.gth2 = malloc(sizeof(u64));
   HVM.itrs = malloc(sizeof(u64));
   HVM.frsh = malloc(sizeof(u64));
-  if (!HVM.sbuf || !HVM.heap || !HVM.rbuf || !HVM.obuf || !HVM.opos || !HVM.rpos || !HVM.rlas || 
-      !HVM.spos || !HVM.osiz || !HVM.nsiz || !HVM.gth1 || !HVM.gth2 || !HVM.itrs || !HVM.frsh || !HVM.gbuf) {
-    printf("hvm_init alloc failed");
+
+  CHECK_ALLOC(HVM.sbuf, "sbuf");
+  CHECK_ALLOC(HVM.heap, "heap");
+  CHECK_ALLOC(HVM.rbuf, "rbuf");
+  CHECK_ALLOC(HVM.obuf, "obuf");
+  CHECK_ALLOC(HVM.opos, "opos");
+  CHECK_ALLOC(HVM.rpos, "rpos");
+  CHECK_ALLOC(HVM.rlas, "rlas");
+  CHECK_ALLOC(HVM.spos, "spos");
+  CHECK_ALLOC(HVM.osiz, "osiz");
+  CHECK_ALLOC(HVM.nsiz, "nsiz");
+  CHECK_ALLOC(HVM.gth1, "gth1");
+  CHECK_ALLOC(HVM.gth2, "gth2");
+  CHECK_ALLOC(HVM.itrs, "itrs");
+  CHECK_ALLOC(HVM.frsh, "frsh");
+  CHECK_ALLOC(HVM.gbuf, "gbuf");
+
+  if (allocs_failed > 0) {
+    printf("hvm_init alloc's failed: %d allocations failed\n", allocs_failed);
     exit(1);
   }
+
   *HVM.spos = 0;
   *HVM.size = 0;
   *HVM.osiz = (1ull << 39) + 1;
