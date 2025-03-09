@@ -1444,17 +1444,17 @@ void hvm_init() {
   HVM.rbuf = alloc_huge((1ULL << 30) * sizeof(Rloc));
   HVM.obuf = alloc_huge((1ULL << 30) * sizeof(Loc));
   HVM.gbuf = alloc_huge((1ULL << 30) * sizeof(Loc));
-  HVM.opos = malloc(sizeof(u64));
-  HVM.rpos = malloc(sizeof(u64));
-  HVM.rlas = malloc(sizeof(u64));
-  HVM.spos = malloc(sizeof(u64));
-  HVM.size = malloc(sizeof(u64));
-  HVM.osiz = malloc(sizeof(u64));
-  HVM.nsiz = malloc(sizeof(u64));
-  HVM.gth1 = malloc(sizeof(u64));
-  HVM.gth2 = malloc(sizeof(u64));
-  HVM.itrs = malloc(sizeof(u64));
-  HVM.frsh = malloc(sizeof(u64));
+  HVM.opos = alloc_huge(sizeof(u64));
+  HVM.rpos = alloc_huge(sizeof(u64));
+  HVM.rlas = alloc_huge(sizeof(u64));
+  HVM.spos = alloc_huge(sizeof(u64));
+  HVM.size = alloc_huge(sizeof(u64));
+  HVM.osiz = alloc_huge(sizeof(u64));
+  HVM.nsiz = alloc_huge(sizeof(u64));
+  HVM.gth1 = alloc_huge(sizeof(u64));
+  HVM.gth2 = alloc_huge(sizeof(u64));
+  HVM.itrs = alloc_huge(sizeof(u64));
+  HVM.frsh = alloc_huge(sizeof(u64));
 
   CHECK_ALLOC(HVM.sbuf, "sbuf");
   CHECK_ALLOC(HVM.heap, "heap");
@@ -1500,24 +1500,38 @@ void hvm_init() {
   }
 }
 
-void hvm_free() {
-  free(HVM.sbuf);
-  free(HVM.spos);
-  free(HVM.heap);
-  free(HVM.size);
-  free(HVM.osiz);
-  free(HVM.nsiz);
-  free(HVM.obuf);
-  free(HVM.opos);
-  free(HVM.gth1);
-  free(HVM.gth2);
-  free(HVM.itrs);
-  free(HVM.frsh);
-  free(HVM.rbuf);
-  free(HVM.rpos);
-  free(HVM.rlas);
-  free(HVM.gbuf);
+void hvm_munmap(void *ptr, size_t size, const char *name) {
+    if (ptr != MAP_FAILED) {
+        if (munmap(ptr, size) == -1) {
+            perror("munmap failed");
+        } else {
+            printf("Successfully unmapped %s\n", name);
+        }
+    } else {
+        printf("%s is already null or invalid.\n", name);
+    }
 }
+
+void hvm_free() {
+    hvm_munmap(HVM.sbuf, (1ULL << 30) * sizeof(Term), "sbuf");
+    hvm_munmap(HVM.heap, (1ULL << 30) * sizeof(ATerm), "heap");
+    hvm_munmap(HVM.rbuf, (1ULL << 30) * sizeof(Rloc), "rbuf");
+    hvm_munmap(HVM.obuf, (1ULL << 30) * sizeof(Loc), "obuf");
+    hvm_munmap(HVM.gbuf, (1ULL << 30) * sizeof(Loc), "gbuf");
+     
+    hvm_munmap(HVM.opos, sizeof(u64), "opos");
+    hvm_munmap(HVM.rpos, sizeof(u64), "rpos");
+    hvm_munmap(HVM.rlas, sizeof(u64), "rlas");
+    hvm_munmap(HVM.spos, sizeof(u64), "spos");
+    hvm_munmap(HVM.size, sizeof(u64), "size");
+    hvm_munmap(HVM.osiz, sizeof(u64), "osiz");
+    hvm_munmap(HVM.nsiz, sizeof(u64), "nsiz");
+    hvm_munmap(HVM.gth1, sizeof(u64), "gth1");
+    hvm_munmap(HVM.gth2, sizeof(u64), "gth2");
+    hvm_munmap(HVM.itrs, sizeof(u64), "itrs");
+    hvm_munmap(HVM.frsh, sizeof(u64), "frsh");
+}
+
 
 State* hvm_get_state() {
   return &HVM;
