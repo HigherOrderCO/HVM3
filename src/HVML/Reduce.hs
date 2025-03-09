@@ -192,6 +192,9 @@ reduceRefAt book host = do
               then reduceAt False book (loc + i) False
               else return term
         doInjectCoreAt book core host $ zip (map snd args) argTerms
+      Nothing -> do
+          putStrLn $ "RUNTIME_ERROR: Function ID " ++ show fid ++ " not found in fidToFun book."
+          exitFailure  
 
 -- Primitive: Dynamic Dup `@DUP(lab val λdp0λdp1(bod))`
 reduceRefAt_DupF :: Book -> Loc -> Loc -> Word64 -> HVM Term  

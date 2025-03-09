@@ -1424,16 +1424,26 @@ Term LOG_f(Term ref) {
   exit(0);
 }
 
+void *alloc_huge(size_t size) {
+    void *ptr = mmap(NULL, size, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (ptr == MAP_FAILED) {
+        perror("mmap failed");
+        return NULL;
+    }
+    return ptr;
+}
+
 // Runtime Memory
 // --------------
 
 void hvm_init() {
-  // FIXME: use mmap instead
-  HVM.sbuf = malloc((1ULL << 40) * sizeof(Term));
-  HVM.heap = malloc((1ULL << 40) * sizeof(ATerm));
-  HVM.rbuf = malloc((1ULL << 40) * sizeof(Rloc));
-  HVM.obuf = malloc((1ULL << 40) * sizeof(Loc));
-  HVM.gbuf = malloc((1ULL << 40) * sizeof(Loc));
+
+  HVM.sbuf = alloc_huge((1ULL << 30) * sizeof(Term)); 
+  HVM.heap = alloc_huge((1ULL << 30) * sizeof(ATerm));
+  HVM.rbuf = alloc_huge((1ULL << 30) * sizeof(Rloc));
+  HVM.obuf = alloc_huge((1ULL << 30) * sizeof(Loc));
+  HVM.gbuf = alloc_huge((1ULL << 30) * sizeof(Loc));
   HVM.opos = malloc(sizeof(u64));
   HVM.rpos = malloc(sizeof(u64));
   HVM.rlas = malloc(sizeof(u64));
