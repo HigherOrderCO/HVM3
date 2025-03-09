@@ -202,7 +202,7 @@ reduceRefAt book host = do
 
 -- Check for valid function ID
 isValidFid :: Word64 -> Bool
-isValidFid fid = fid >= 0 && fid <= 6000
+isValidFid fid = fid >= 0 && fid <= 65536 -- FIX: Linux BUG as this is out of RANGE!!
 
 
 -- Primitive: Dynamic Dup `@DUP(lab val λdp0λdp1(bod))`
