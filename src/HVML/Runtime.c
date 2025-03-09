@@ -1438,7 +1438,6 @@ void *alloc_huge(size_t size) {
 // --------------
 
 void hvm_init() {
-
   HVM.sbuf = alloc_huge((1ULL << 30) * sizeof(Term)); 
   HVM.heap = alloc_huge((1ULL << 30) * sizeof(ATerm));
   HVM.rbuf = alloc_huge((1ULL << 30) * sizeof(Rloc));
