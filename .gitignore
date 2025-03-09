@@ -21,3 +21,6 @@ tmp/
 TIMES/
 .main*
 .build/
+
+# Fix after done
+hvm.c
