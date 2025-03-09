@@ -1505,7 +1505,7 @@ void hvm_munmap(void *ptr, size_t size, const char *name) {
         if (munmap(ptr, size) == -1) {
             perror("munmap failed");
         } else {
-            printf("Successfully unmapped %s\n", name);
+            // printf("Successfully unmapped %s\n", name);
         }
     } else {
         printf("%s is already null or invalid.\n", name);
