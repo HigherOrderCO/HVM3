@@ -63,7 +63,7 @@ coreToString core =
       Mat val mov css ->
         let val' = coreToString val in
         let mov' = concatMap (\ (k,v) -> " !" ++ k ++ "=" ++ coreToString v) mov in
-        let css' = unwords [ctr ++ "{" ++ unwords fds ++ "}:" ++ coreToString bod | (ctr, fds, bod) <- css] in
+        let css' = unwords [ctr ++ ":" ++ coreToString bod | (ctr, fds, bod) <- css] in
         "(~" ++ val' ++ mov' ++ " {" ++ css' ++ "})"
 
       U32 val ->
