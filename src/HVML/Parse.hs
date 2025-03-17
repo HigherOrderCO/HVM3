@@ -499,30 +499,45 @@ parseTopDef = do
   def <- parseDef
   return [def]
 
--- FIXME: this is ugly code, improve it
 parseTopImp :: ParserM [(String, ((Bool, [(Bool,String)]), Core))]
 parseTopImp = do
   string "import"
   space
   path <- many1 (noneOf "\n\r")
+  
+  -- Check if file has already been imported
   st <- getState
-  case MS.lookup path (imported st) of
-    Just _  -> return []
-    Nothing -> do
-      contents <- liftIO $ readFile path
-      modifyState (\s -> s { imported = MS.insert path () (imported s) })
-      st <- getState
-      result <- liftIO $ runParserT parseBookWithState st path contents
-      case result of
-        Left err -> do
-          liftIO $ showParseError path contents err
-          fail $ "encountered the above error when importing file " ++ show path
-        Right (importedDefs, importedState) -> do
-          putState importedState
-          skip
-          return importedDefs
+  if MS.member path (imported st)
+    then return []  -- Already imported? do nothing
+    else importFile path
 
-doParseBook :: String -> String -> IO Book
+-- | Helper function: Handle the actual file import logic
+importFile :: String -> ParserM [(String, ((Bool, [(Bool,String)]), Core))]
+importFile path = do
+  -- Mark the file as imported
+  modifyState (\s -> s { imported = MS.insert path () (imported s) })
+  
+  -- Read & Parse
+  contents <- liftIO $ readFile path
+  st <- getState
+  result <- liftIO $ runParserT parseBookWithState st path contents
+  
+  case result of
+    Left err -> handleParseError path contents err
+    Right (importedDefs, importedState) -> do
+      -- Update parser state w/t the state from imported file
+      putState importedState
+      skip
+      return importedDefs
+
+-- | Helper function: Handle parse errors in imported files
+handleParseError :: String -> String -> ParseError -> ParserM a
+handleParseError path contents err = do
+  liftIO $ showParseError path contents err
+  fail $ "Error importing file " ++ show path ++ ": parse failed"
+
+
+-- doParseBook
 doParseBook filePath code = do
   result <- runParserT p (ParserState MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty 0) "" code
   case result of

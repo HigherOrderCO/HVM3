@@ -174,24 +174,36 @@ reduceRefAt book host = do
   let loc = termLoc term
   let fid = lab
   let ari = funArity book fid
-  case fid of
-    x | x == _DUP_F_ -> reduceRefAt_DupF book host loc ari
-    x | x == _SUP_F_ -> reduceRefAt_SupF book host loc ari
-    x | x == _LOG_F_ -> reduceRefAt_LogF book host loc ari
-    oterwise -> case MS.lookup fid (fidToFun book) of
-      Just ((copy, args), core) -> do
-        incItr
-        when (length args /= fromIntegral ari) $ do
-          putStrLn $ "RUNTIME_ERROR: arity mismatch on call to '@" ++ mget (fidToNam book) fid ++ "'."
+  if isValidFid fid then
+    case fid of
+      x | x == _DUP_F_ -> reduceRefAt_DupF book host loc ari
+      x | x == _SUP_F_ -> reduceRefAt_SupF book host loc ari
+      x | x == _LOG_F_ -> reduceRefAt_LogF book host loc ari
+      otherwise -> case MS.lookup fid (fidToFun book) of
+        Just ((copy, args), core) -> do
+          incItr
+          when (length args /= fromIntegral ari) $ do
+            putStrLn $ "RUNTIME_ERROR: arity mismatch on call to '@" ++ mget (fidToNam book) fid ++ "'."
+            exitFailure
+          argTerms <- if ari == 0
+            then return []
+            else forM (zip [0..] args) $ \(i, (strict, _)) -> do
+              term <- got (loc + i)
+              if strict
+                then reduceAt False book (loc + i) False
+                else return term
+          doInjectCoreAt book core host $ zip (map snd args) argTerms
+        Nothing -> do
+          putStrLn $ "RUNTIME_ERROR: Function ID " ++ show fid ++ " not found in fidToFun book."
           exitFailure
-        argTerms <- if ari == 0
-          then return []
-          else forM (zip [0..] args) $ \(i, (strict, _)) -> do
-            term <- got (loc + i)
-            if strict
-              then reduceAt False book (loc + i) False
-              else return term
-        doInjectCoreAt book core host $ zip (map snd args) argTerms
+  else do
+    putStrLn $ "RUNTIME_ERROR: Invalid function ID " ++ show fid
+    exitFailure
+
+-- Check for valid function ID
+isValidFid :: Word64 -> Bool
+isValidFid fid = fid >= 0 && fid <= 65536 -- FIX: Linux BUG as this is out of RANGE!! the book only has [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
 
 -- Primitive: Dynamic Dup `@DUP(lab val λdp0λdp1(bod))`
 reduceRefAt_DupF :: Book -> Loc -> Loc -> Word64 -> HVM Term  
