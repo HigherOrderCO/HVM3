@@ -152,19 +152,19 @@ Term term_new(Tag tag, Lab lab, Loc loc) {
   return tag_enc | lab_enc | loc_enc;
 }
 
-Tag term_tag(Term x) {
+u64 term_tag(Term x) {
   return x & 0x7F;
 }
 
-Lab term_lab(Term x) {
+u64 term_lab(Term x) {
   return (x >> 8) & 0xFFFF;
 }
 
-Loc term_loc(Term x) {
+u64 term_loc(Term x) {
   return (x >> 24) & 0xFFFFFFFFFF;
 }
 
-Tag term_get_bit(Term x) {
+u64 term_get_bit(Term x) {
   return (x >> 7) & 1;
 }
 
@@ -1443,7 +1443,7 @@ void hvm_init() {
   HVM.heap = alloc_huge((1ULL << 30) * sizeof(ATerm));
   HVM.rbuf = alloc_huge((1ULL << 30) * sizeof(Rloc));
   HVM.obuf = alloc_huge((1ULL << 30) * sizeof(Loc));
-  HVM.gbuf = alloc_huge((1ULL << 30) * sizeof(Loc));
+  HVM.gbuf = alloc_huge((1ULL << 30) * sizeof(Term));
   HVM.opos = alloc_huge(sizeof(u64));
   HVM.rpos = alloc_huge(sizeof(u64));
   HVM.rlas = alloc_huge(sizeof(u64));
@@ -1517,7 +1517,7 @@ void hvm_free() {
     hvm_munmap(HVM.heap, (1ULL << 30) * sizeof(ATerm), "heap");
     hvm_munmap(HVM.rbuf, (1ULL << 30) * sizeof(Rloc), "rbuf");
     hvm_munmap(HVM.obuf, (1ULL << 30) * sizeof(Loc), "obuf");
-    hvm_munmap(HVM.gbuf, (1ULL << 30) * sizeof(Loc), "gbuf");
+    hvm_munmap(HVM.gbuf, (1ULL << 30) * sizeof(Term), "gbuf");
      
     hvm_munmap(HVM.opos, sizeof(u64), "opos");
     hvm_munmap(HVM.rpos, sizeof(u64), "rpos");
