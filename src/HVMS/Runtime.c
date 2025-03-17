@@ -6,8 +6,6 @@
 #include <stdatomic.h>
 #include <string.h>
 #include <time.h>
-#include <pthread.h>
-
 
 typedef uint8_t  Tag;  //  8 bits
 typedef uint32_t Lab;  // 24 bits
