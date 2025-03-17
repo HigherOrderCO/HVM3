@@ -1,4 +1,4 @@
-name: HVM3 CI
+name: MACOS HVM3 CI
 
 on:
   push:
