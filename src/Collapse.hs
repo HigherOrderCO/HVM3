@@ -3,7 +3,7 @@
 
 module Collapse where
 
-import Control.Monad (ap, forM, forM_)
+import Control.Monad (ap, forM, forM_, foldM)
 import Control.Monad.IO.Class
 import Data.Char (chr, ord)
 import Data.IORef
@@ -18,7 +18,6 @@ import System.IO.Unsafe (unsafeInterleaveIO)
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Map.Strict as MS
 
--- NEW COLLAPSER
 -- λx.*
 -- ------ ERA-LAM
 -- x <- *
@@ -257,6 +256,126 @@ icDupApp dup app = do
   else do
     setOld dupLoc (termSetBit app0)
     return app1
+
+-- #CTR {&L{x0 x1} k0 k1 ... kn}
+-- --------------------------- SUP-CTR
+-- !&L{CTR0 CTR1} = CTR
+-- !&L{k00, k01}=k0
+-- !&L{k10, k11}=k1
+-- !&L{kn0, kn1}=kn
+-- &L{#CTR0{x0 k00 k10 ... kn0} #CTR1{x1 k01 k11 kn1}}
+icSupCtr ::  Term -> Term -> Word64 -> Word64 -> HVM Term
+icSupCtr ctr sup ctrAri supIdx = do
+  -- Extract locations and labels
+  let ctrLoc = termLoc ctr
+  let supLoc = termLoc sup
+  let supLab = termLab sup  -- Label L of the superposition
+  let cid = termLab ctr     -- Constructor ID
+
+  -- Get the superposition components x0 and x1
+  x0 <- got (supLoc + 0)
+  x1 <- got (supLoc + 1)
+
+  -- Build field pairs for both constructors
+  fieldPairs <- forM [0 .. ctrAri - 1] $ \j -> do
+    if j == supIdx then
+      -- Superposed field: use x0 and x1 directly
+      return (x0, x1)
+    else do
+      -- Non-superposed field: duplicate it
+      fj <- got (ctrLoc + j)
+      dupFjLoc <- allocNode 1
+      setNew dupFjLoc fj
+      let fj0 = termNew _DP0_ supLab dupFjLoc
+      let fj1 = termNew _DP1_ supLab dupFjLoc
+      return (fj0, fj1)
+
+  -- Extract fields for each constructor
+  let fields0 = map fst fieldPairs  -- Fields for CTR0: x0 at supIdx, fj0 elsewhere
+  let fields1 = map snd fieldPairs  -- Fields for CTR1: x1 at supIdx, fj1 elsewhere
+
+  -- Allocate and populate first constructor (CTR0)
+  ctr0Loc <- allocNode ctrAri
+  forM_ [0 .. ctrAri - 1] $ \j -> do
+    setNew (ctr0Loc + j) (fields0 !! fromIntegral j)
+  let ctr0 = termNew _CTR_ cid ctr0Loc
+
+  -- Allocate and populate second constructor (CTR1)
+  ctr1Loc <- allocNode ctrAri
+  forM_ [0 .. ctrAri - 1] $ \j -> do
+    setNew (ctr1Loc + j) (fields1 !! fromIntegral j)
+  let ctr1 = termNew _CTR_ cid ctr1Loc
+
+  -- Create the resulting superposition
+  newSupLoc <- allocNode 2
+  setNew (newSupLoc + 0) ctr0
+  setNew (newSupLoc + 1) ctr1
+  return (termNew _SUP_ supLab newSupLoc)
+
+
+
+-- ~N{#A: &L{z0 z1} #B: x #C: y ...}
+-- --------------------------------- SUP-MAT-CTR
+-- !&L{N0,N1} = N;
+-- !&L{x0,x1} = x;
+-- !&L{y0,y1} = y;
+-- &L{~N0{#A:z0 #B: x0 #C: y0} ~N1{#A:z1 #B: x1 #C: y1}}
+icSupMatCtr :: Term -> Term -> Word64 -> Word64 -> HVM Term
+icSupMatCtr mat sup matLen supIdx = do
+  let matLoc = termLoc mat
+  let matLab = termLab mat
+  let supLab = termLab sup 
+  let supLoc = termLoc sup
+
+  -- Step 1: Get N from the MAT term and duplicate it
+  n <- got (matLoc + 0)
+  dupNLoc <- allocNode 1
+  setNew dupNLoc n
+  let n0 = termNew _DP0_ supLab dupNLoc
+  let n1 = termNew _DP1_ supLab dupNLoc
+
+  -- Step 2: Get the superposition components from sup
+  z0 <- got (supLoc + 0)
+  z1 <- got (supLoc + 1)
+
+  -- Step 3: Process all case terms, duplicating non-superposed ones
+  uList <- forM [1 .. matLen] $ \j -> do
+    let caseOffset = matLoc + j
+    if j == supIdx then do
+      -- This is the superposed case; use z0 and z1 directly
+      return (z0, z1)
+    else do
+      -- Duplicate non-superposed case
+      tj <- got caseOffset
+
+      dupTjLoc <- allocNode 1
+      setNew dupTjLoc tj
+      let t0j = termNew _DP0_ supLab dupTjLoc
+      let t1j = termNew _DP1_ supLab dupTjLoc
+      return (t0j, t1j)
+
+  -- Step 4: Create the first MAT term
+  mat0Loc <- allocNode (matLen + 1)
+  setNew (mat0Loc + 0) n0
+  forM_ [0 .. matLen - 1] $ \j -> do
+    let (u_j, _) = uList !! fromIntegral j
+    setNew (mat0Loc + 1 + j) u_j
+  let mat0 = termNew _MAT_ matLab mat0Loc
+
+  -- Step 5: Create the second MAT term
+  mat1Loc <- allocNode (matLen + 1)
+  setNew (mat1Loc + 0) n1
+  forM_ [0 .. matLen - 1] $ \j -> do
+    let (_, v_j) = uList !! fromIntegral j
+    setNew (mat1Loc + 1 + j) v_j
+  let mat1 = termNew _MAT_ matLab mat1Loc
+
+  -- Step 6: Create the resulting superposition
+  supLoc <- allocNode 2
+  setNew (supLoc + 0) mat0
+  setNew (supLoc + 1) mat1
+  return (termNew _SUP_ supLab supLoc)
+
       
 -- ~N{0:&L{z0,z1};+:s;}
 -- --------------------------------- SUP-SWI-Z
@@ -372,6 +491,8 @@ collapseSupsTerm book root = do
   let lab = termLab term
   let loc = termLoc term
 
+  -- putStrLn $ show (tagT tag)
+
   -- Step 2: Recursively collapse children
   case (tagT tag) of
     LAM -> do
@@ -392,6 +513,15 @@ collapseSupsTerm book root = do
       rgtCol <- collapseSupsTerm book rgt
       setOld (loc + 0) lftCol
       setOld (loc + 1) rgtCol
+    CTR -> do
+      let cid = termLab term
+      let ctrAri = mget (cidToAri book) cid
+      forM_ [1 .. ctrAri] $ \i -> do
+        ctr <- got (loc + (i - 1))
+        ctrCol <- collapseSupsTerm book ctr
+        setOld (loc + (i - 1)) ctrCol
+      return ()
+
     _ -> do return ()
 
   -- Step 3: Reduce to WHNF again
@@ -449,6 +579,36 @@ collapseSupsTerm book root = do
         collapseSupsTerm book result
       else
         return term
+
+
+    MAT -> do
+        let matLen = mget (cidToLen book) lab
+
+        result <- let findFirstSup i = do
+                        if i > matLen 
+                          then return term 
+                          else do
+                            trm <- got (loc + (i - 1))
+                            if isSup trm 
+                              then do
+                                res <- icSupMatCtr term trm matLen (i - 1)
+                                collapseSupsTerm book res 
+                              else findFirstSup (i + 1)
+                  in findFirstSup 1
+
+        return result
+
+    CTR -> do
+          let cid = termLab term
+          let ctrAri = mget (cidToAri book) cid
+          let findFirstSup i = if i >= ctrAri then return term else do
+                field <- got (loc + i)
+                if isSup field then do
+                  res <- icSupCtr term field ctrAri i
+                  collapseSupsTerm book res
+                else findFirstSup (i + 1)
+          findFirstSup 0
+
     _ -> do
       return term
 
@@ -459,9 +619,11 @@ collapseDupsTerm book root = do
 
   let tag = termTag term
   let loc = termLoc term
+  putStrLn $ show (tagT tag)
 
   case (tagT tag) of
     tag | isDup tag -> do
+      putStrLn $ "IT IS A DUP"
       -- Get the value this duplication points to and collapse it
       val <- got loc
       valCol <- collapseDupsTerm book val
@@ -527,6 +689,32 @@ collapseDupsTerm book root = do
       setOld (loc + 0) numCol
       setOld (loc + 1) ifzCol
       setOld (loc + 2) ifsCol
+      return term
+
+    CTR -> do
+      -- Collapse all the fields of the constructor
+      let cid = termLab term 
+      let ctrAri = mget (cidToAri book) cid
+      forM_ [1 .. ctrAri] $ \i -> do
+        ctr <- got (loc + (i - 1))
+        ctrCol <- collapseDupsTerm book ctr
+        setOld (loc + (i - 1)) ctrCol
+
+      return term
+
+    MAT -> do
+      -- Get the constructor ID and number of cases
+      let cid = termLab term
+      let matLen = mget (cidToLen book) cid
+      -- Collapse the scrutinee
+      scrutinee <- got (loc + 0)
+      scrutineeCol <- collapseDupsTerm book scrutinee
+      setOld (loc + 0) scrutineeCol
+      -- Collapse each case
+      forM_ [1 .. matLen] $ \i -> do
+        caseTerm <- got (loc + i)
+        caseCol <- collapseDupsTerm book caseTerm
+        setOld (loc + i) caseCol
       return term
   
     ERA -> return term
