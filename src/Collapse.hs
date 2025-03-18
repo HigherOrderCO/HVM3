@@ -458,8 +458,6 @@ collapseSupsTerm book root = do
       else if isSup rgtCol && lab > termLab rgtCol then do
         result <- icSupSupY term rgtCol
         collapseSupsTerm book result
-      else if isEra lftCol && isEra rgtCol then do
-        
       else return term
     CTR -> do
       let cid = termLab term
