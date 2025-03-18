@@ -491,8 +491,6 @@ collapseSupsTerm book root = do
   let lab = termLab term
   let loc = termLoc term
 
-  -- putStrLn $ show (tagT tag)
-
   -- Step 2: Recursively collapse children
   case (tagT tag) of
     LAM -> do
@@ -619,11 +617,9 @@ collapseDupsTerm book root = do
 
   let tag = termTag term
   let loc = termLoc term
-  putStrLn $ show (tagT tag)
 
   case (tagT tag) of
     tag | isDup tag -> do
-      putStrLn $ "IT IS A DUP"
       -- Get the value this duplication points to and collapse it
       val <- got loc
       valCol <- collapseDupsTerm book val
