@@ -13,13 +13,13 @@
     !&0{p0 p1}=(+ p 1)
     !&0{fA f0}=f
     !&0{f1 f2}=fA
-    @sqr((/ p0 2) λk(f0 (f1 k)) @rep((% p1 2) f2 x))
+    @sqr((/ p0 2) λk.(f0 (f1 k)) @rep((% p1 2) f2 x))
 }
 
 // Bits (Scott)
-@o(x) = λo λi λe (o x)
-@i(x) = λo λi λe (i x)
-@e    = λo λi λe e
+@o(x) = λo. λi. λe. (o x)
+@i(x) = λo. λi. λe. (i x)
+@e    = λo. λi. λe. e
 
 // Creates an all-zero Bits
 @zero(s) = ~s{
@@ -39,18 +39,18 @@
 
 // Bits -> U32
 @u32(xs) = (xs
-  λp0 (+ (* 2 @u32(p0)) 0)
-  λp1 (+ (* 2 @u32(p1)) 1)
+  λp0. (+ (* 2 @u32(p0)) 0)
+  λp1. (+ (* 2 @u32(p1)) 1)
   0)
 
 // Bits increment
-@inc(x) = λo λi λe (x i λop(o @inc(op)) e)
+@inc(x) = λo. λi. λe. (x i λop.(o @inc(op)) e)
 
 // Addition with carry
-@add = λa (a
-  λap λb (b λbp λap @o((@add ap bp)) λbp λap @i(     (@add ap bp))  @e ap)
-  λap λb (b λbp λap @i((@add ap bp)) λbp λap @o(@inc((@add ap bp))) @e ap)
-  λb b)
+@add = λa. (a
+  λap. λb. (b λbp. λap. @o((@add ap bp)) λbp. λap. @i(     (@add ap bp))  @e ap)
+  λap. λb. (b λbp. λap. @i((@add ap bp)) λbp. λap. @o(@inc((@add ap bp))) @e ap)
+  λb. b)
 
 // Multiplication by squared addition
 @mul(a b) = @u32(@sqr(a (@add @bits(b)) @zero(64)))

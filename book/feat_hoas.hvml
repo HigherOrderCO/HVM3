@@ -36,7 +36,7 @@ data Term {
 
 @nf(term) = ~ @wnf(term) {
   #Var{nam}: #Var{nam}
-  #Lam{nam bod}: #Lam{nam λx @nf((bod #Sub{x}))}
+  #Lam{nam bod}: #Lam{nam λx. @nf((bod #Sub{x}))}
   #App{fun arg}: #App{@nf(fun) @nf(arg)}
   #Sub{val}: val
 }
@@ -48,9 +48,9 @@ data Term {
   #Sub{val}: #Var{"TODO"}
 }
 
-@ID = #Lam{"x" λx(x)}
-@c2 = #Lam{"f" λf #Lam{"x" λx !&1{f0 f1}=f #App{f0 #App{f1 x}}}}
-@k2 = #Lam{"g" λf #Lam{"y" λx !&2{f0 f1}=f #App{f0 #App{f1 x}}}}
+@ID = #Lam{"x" λx.(x)}
+@c2 = #Lam{"f" λf. #Lam{"x" λx. !&1{f0 f1}=f #App{f0 #App{f1 x}}}}
+@k2 = #Lam{"g" λf. #Lam{"y" λx. !&2{f0 f1}=f #App{f0 #App{f1 x}}}}
 @fn = #App{@c2 @k2}
 
 @main = @show(@nf(@fn))

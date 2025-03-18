@@ -154,7 +154,7 @@ b = HLam $ \t -> HApp (HApp t (HVar 2)) (HVar 1)
 r :: HTerm
 r = HLam $ \x -> HApp x (HLam $ \a -> HLam $ \b -> HLam $ \t -> HApp (HApp t b) a)
 
--- Solve `?x` in `λaλb(?x λt(t a b)) == λaλbλt(t b a)`
+-- Solve `?x` in `λa.λb.(?x λt.(t a b)) == λaλb.λt.(t b a)`
 main :: IO ()
 main = forM_ [0..2^25-1] $ \i -> do
   let bs = bits 25 i

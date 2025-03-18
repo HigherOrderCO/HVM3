@@ -92,7 +92,7 @@ data Term {
   //#C{a b}: ["C" a b]
 //}
 
-//@main = λx ~ #D{1 2} {
+//@main = λx. ~ #D{1 2} {
   //#A{a b}: ["A" a b]
   //#C{a b}: ["C" a b]
   //term: term
@@ -112,12 +112,12 @@ data Term {
   //!! @LOG(&{1 (+ x 1)})
   //123
 
-//@main = λt(t &0{&0{1 2} &0{3 4}} &0{&0{1 2} &0{3 4}})
+//@main = λt.(t &0{&0{1 2} &0{3 4}} &0{&0{1 2} &0{3 4}})
 
-//λa ((a 1) 1)
-//λa ((a 2) 2)
-//λa ((a 3) 3)
-//λa ((a 4) 4)
+//λa. ((a 1) 1)
+//λa. ((a 2) 2)
+//λa. ((a 3) 3)
+//λa. ((a 4) 4)
 
 //@foo(&a x) = ~ x {
   //0: &a
@@ -127,8 +127,8 @@ data Term {
 //@main = @foo(7 1)
 
 //@main = λa
-  //@DUP((+ 5 7) a λx λy [x y])
-  //@DUP(11 @SUP(10 50 60) λa λb [a b])
+  //@DUP((+ 5 7) a λx. λy. [x y])
+  //@DUP(11 @SUP(10 50 60) λa. λb. [a b])
 
 //data Tree { #Leaf #Node{lft rgt} }
 
@@ -165,36 +165,36 @@ data Term {
 //@main = @dyn(8 0)
 
 //// Simple Function, `A -> B`
-//@Fun(A B) = %f λx {(f {x::A}) :: B}
+//@Fun(A B) = %f λx. {(f {x::A}) :: B}
 
 //// Dependent Function, `∀(x: A) -> (B x)`
-//@All(A B) = %f λx !&0{x0 x1}=x {(f {x0::A}) :: (B x)}
+//@All(A B) = %f λx. !&0{x0 x1}=x {(f {x0::A}) :: (B x)}
 
 //// main
 //// : ∀A (A -> A) -> (A -> A)
-//// = λf λx (f x)
+//// = λf. λx. (f x)
 //@main = λA
   //! &0{A A0} = A
   //! &0{A A1} = A
   //! &0{A A2} = A
   //! &0{A A3} = A
   //! typ = @Fun(@Fun(A0 A1) @Fun(A2 A3))
-  //! val = λf λx (f x)
+  //! val = λf. λx. (f x)
   //{ val :: typ }
 
-//@main = λA λB
+//@main = λA. λB
   //! &0{A A0} = A
   //! &0{A A1} = A
   //! &0{A A2} = A
   //! &0{A A3} = A
-  //{  λf λx !&0{f0 f1}=f (f0 (f1 x))
+  //{  λf. λx. !&0{f0 f1}=f (f0 (f1 x))
   //:: @Fun(@Fun(A0 A1) @Fun(A2 A3)) }
 
-//@main = λA λB {λx x :: @Fun(A B)}
+//@main = λA. λB. {λx. x :: @Fun(A B)}
 
-//@main = λA λB
+//@main = λA. λB
   //!&0{A0 A1}=A
-  //{λa λb (a b) :: %f λa λb {(f {a::A0} {b::B})::A1}}
+  //{λa. λb. (a b) :: %f λa. λb. {(f {a::A0} {b::B})::A1}}
 
 //@count(n k) = ~n !k {
   //0: k
@@ -205,12 +205,12 @@ data Term {
 
 //data L { #N #C{h t} }
 
-//@foo = λx λa λb λc ~x !a !b !c {
-  //#N: λt(t a b c)
-  //#C{H T}: λt(t a b c H T)
+//@foo = λx. λa. λb. λc. ~x !a !b !c {
+  //#N: λt.(t a b c)
+  //#C{H T}: λt.(t a b c H T)
 //}
 
-//@bar = λx ~x {
+//@bar = λx. ~x {
   //0: 10
   //1+p: p
 //}
@@ -218,22 +218,22 @@ data Term {
 ////@main = (+ (+ 2 3) 4)
 ////@main = (@bar 10)
 ////@main = (@foo #C{1 #C{2 #C{3 #N}}} 10 20 30)
-////@main = λx ~x { #N: 0 #C{h t}: λK(K h t) }
+////@main = λx. ~x { #N: 0 #C{h t}: λK.(K h t) }
 
-////@main = λt(t (+ 1 (+ 2 (+ 3 4))) (+ 1 (+ 2 (+ 3 4))))
+////@main = λt.(t (+ 1 (+ 2 (+ 3 4))) (+ 1 (+ 2 (+ 3 4))))
 //@main = (+ 1 2)
 
-//@true = λt λf t
-//@false = λt λf f
-//@not = λb ((b @false) @true)
+//@true = λt. λf. t
+//@false = λt. λf. f
+//@not = λb. ((b @false) @true)
 //@dups = ! &1{ x y } = &0{ #12{} #24{} } &0{ y x }
-//@main = (+ 10 ~7{ 0 1 2 λx x })
+//@main = (+ 10 ~7{ 0 1 2 λx. x })
 //@main = (* 100 123)
-//@main = λt(t #5{(λx x 7)} λk k)
-//@main = (λa λb(λt λf t &0{a b} &0{b a}) 1 2)
-//@succ = λn λs λz (s n)
-//@zero = λs λz z
-//@mul2 = λn (n λp(@succ (@succ (@mul2 p))) @zero)
+//@main = λt.(t #5{(λx. x 7)} λk. k)
+//@main = (λa. λb.(λt. λf. t &0{a b} &0{b a}) 1 2)
+//@succ = λn. λs. λz. (s n)
+//@zero = λs. λz. z
+//@mul2 = λn. (n λp.(@succ (@succ (@mul2 p))) @zero)
 //@main = (@mul2 (@succ (@succ (@succ @zero))))
 //@foo(x y) = #0{y x}
 //@main = @foo(@foo(5 8) @foo(1 2))
@@ -242,7 +242,7 @@ data Term {
 
 //@sum(xs r) = ~xs{
   //#Nil: r
-  //#Cons: λhead λtail @sum(tail (+ head r))
+  //#Cons: λhead. λtail. @sum(tail (+ head r))
 //}
 
 //@range(n xs) = ~n{
@@ -254,4 +254,4 @@ data Term {
   //!list = #Cons{0 #Cons{1 #Cons{&0{10 20} #Cons{3 #Cons{4 #Cons{5 #Cons{6 #Cons{7 #Cons{8 #Cons{9 #Nil}}}}}}}}}}
   //@sum(list 0)
 
-//@main = !&0{a b}=(+ 1 2) λt(t a b)
+//@main = !&0{a b}=(+ 1 2) λt.(t a b)

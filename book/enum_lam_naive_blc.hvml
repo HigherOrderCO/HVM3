@@ -102,7 +102,7 @@ data Maybe {
 @bind_term(term ctx) = ~term !ctx {
   #Lam{bod}:
     ! &0{ctx bod} = @bind_term(bod #Cons{#Some{$x} ctx})
-    &0{@tail(ctx) #Lam{λ$x bod}}
+    &0{@tail(ctx) #Lam{λ$x. bod}}
   #App{fun arg}:
     ! &0{ctx fun} = @bind_term(fun ctx)
     ! &0{ctx arg} = @bind_term(arg ctx)
@@ -130,8 +130,8 @@ data Maybe {
 // ---------------
 
 @show_nat(nat) = ~nat { 
-  0: λk #Cons{'Z' k}
-  p: λk #Cons{'S' (@show_nat(p) k)}
+  0: λk. #Cons{'Z' k}
+  p: λk. #Cons{'S' (@show_nat(p) k)}
 }
 
 @show_dec(n r) =
@@ -146,20 +146,20 @@ data Maybe {
 @do_show_dec(n) = @show_dec(n #Nil)
 
 @show_bits(bits) = ~bits {
-  #O{pred}: λk #Cons{'#' #Cons{'O' #Cons{'{' (@show_bits(pred) #Cons{'}' k})}}}
-  #I{pred}: λk #Cons{'#' #Cons{'I' #Cons{'{' (@show_bits(pred) #Cons{'}' k})}}}
-  #E: λk #Cons{'#' #Cons{'E' k}}
+  #O{pred}: λk. #Cons{'#' #Cons{'O' #Cons{'{' (@show_bits(pred) #Cons{'}' k})}}}
+  #I{pred}: λk. #Cons{'#' #Cons{'I' #Cons{'{' (@show_bits(pred) #Cons{'}' k})}}}
+  #E: λk. #Cons{'#' #Cons{'E' k}}
 }
 
 @do_show_bits(bits) = (@show_bits(bits) #Nil)
 
 @show_term(term dep) = ~term !dep {
-  #Var{idx}: λk
+  #Var{idx}: λk.
     @show_dec((- (- dep idx) 1) k)
-  #Lam{bod}: λk
+  #Lam{bod}: λk.
     !&0{d0 d1}=dep
     #Cons{'λ' (@show_term((bod #Var{d0}) (+ d1 1)) k)}
-  #App{fun arg}: λk
+  #App{fun arg}: λk.
     !&0{d0 d1}=dep
     #Cons{'(' (@show_term(fun d0)
     #Cons{' ' (@show_term(arg d1)
@@ -226,21 +226,21 @@ data Maybe {
 // Tests
 // -----
 
-//A= λt (t ^1 ^2)
+//A= λt. (t ^1 ^2)
 //A= λ((Z SZ) SSZ)
-@A = #Lam{λt #App{#App{t #Var{1}} #Var{2}}}
+@A = #Lam{λt. #App{#App{t #Var{1}} #Var{2}}}
 
-//B= λt (t ^2 ^1)
+//B= λt. (t ^2 ^1)
 //B= λ((Z SSZ) SZ)
-@B = #Lam{λt #App{#App{t #Var{2}} #Var{1}}}
+@B = #Lam{λt. #App{#App{t #Var{2}} #Var{1}}}
 
-//R= λx (x λa λb λt (t b a))
-//R= λ(Z λλλ((SSSZ SSZ) SZ))
-@R = #Lam{λx #App{x #Lam{λa #Lam{λb #Lam{λt #App{#App{t b} a}}}}}}
+//R= λx. (x λa. λb. λt. (t b a))
+//R= λ(Z λλ.λ.((SSSZ SSZ) SZ))
+@R = #Lam{λx. #App{x #Lam{λa. #Lam{λb. #Lam{λt. #App{#App{t b} a}}}}}}
 
 @X = @all1(25)
 
-// Solve `?x` in `λaλb(?x λt(t a b)) == λaλbλt(t b a)`
+// Solve `?x` in `λa.λb.(?x λt.(t a b)) == λaλb.λt.(t b a)`
 @main =
   ! &5{x0 x1} = @do_parse_term(@X)
   ! solved    = @eq(#App{x0 @A} @B 0) // (?x A) == B

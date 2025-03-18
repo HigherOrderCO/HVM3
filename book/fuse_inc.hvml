@@ -20,16 +20,16 @@ data Bits {
     !&0{p0 p1}=(+ p 1)
     !&0{fA f0}=f
     !&0{f1 f2}=fA
-    @sqr((/ p0 2) λk(f0 (f1 k)) @rep((% p1 2) f2 x))
+    @sqr((/ p0 2) λk.(f0 (f1 k)) @rep((% p1 2) f2 x))
 }
 
 // Bits (Scott)
-@o(x) = λo λi λe (o x)
-@i(x) = λo λi λe (i x)
-@e    = λo λi λe e
+@o(x) = λo. λi. λe. (o x)
+@i(x) = λo. λi. λe. (i x)
+@e    = λo. λi. λe. e
 
 // Bits increment
-@inc(x) = λo λi λe (x i λop(o @inc(op)) e)
+@inc(x) = λo. λi. λe. (x i λop.(o @inc(op)) e)
 
 // Creates an all-zero Bits
 @zero(s) = ~s{
@@ -39,9 +39,9 @@ data Bits {
 
 // Converts a Bits to an U32
 @bits_to_u32(xs) = (xs
-  λp0 (+ (* 2 @bits_to_u32(p0)) 0)
-  λp1 (+ (* 2 @bits_to_u32(p1)) 1)
+  λp0. (+ (* 2 @bits_to_u32(p0)) 0)
+  λp1. (+ (* 2 @bits_to_u32(p1)) 1)
   0)
 
 // Applies 'inc' N times to zero
-@main = @bits_to_u32(@sqr(1234567 λx@inc(x) @zero(32)))
+@main = @bits_to_u32(@sqr(1234567 λx.@inc(x) @zero(32)))
