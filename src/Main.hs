@@ -150,12 +150,20 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
   init <- getMonotonicTimeNSec
   -- Convert string arguments to Core terms and inject them at runtime
   let args = map (\str -> foldr (\c acc -> Ctr "#Cons" [Chr c, acc]) (Ctr "#Nil" []) str) strArgs
+
   root <- doInjectCoreAt book (Ref "main" (mget (namToFid book) "main") args) 0 []
+
   rxAt <- if compiled
     then return (reduceCAt debug)
     else return (reduceAt debug)
   vals <- case mode of
-    Collapse _ -> doCollapseFlatAt rxAt book 0
+    Collapse _ -> do
+      root <- got 0
+      term <- collapseSupsTerm book root
+      term <- collapseDupsTerm book term
+      setOld 0 term
+      core <- doExtractCoreAt rxAt book 0
+      return [core]
     Normalize -> do
       core <- doExtractCoreAt rxAt book 0
       return [(doLiftDups core)]
