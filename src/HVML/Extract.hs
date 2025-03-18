@@ -139,7 +139,7 @@ extractCoreAt dupsRef reduceAt book host = do
     SWI -> do
       let loc = termLoc term
       let lab = termLab term
-      let len = fromIntegral $ mget (cidToLen book) lab
+      let len = fromIntegral lab
       ridx <- rpush term (1 + len)
       val <- extractCoreAtLazy dupsRef reduceAt book ridx 0
       css <- foldM (\css i -> do
