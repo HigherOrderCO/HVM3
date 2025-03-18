@@ -1,61 +1,57 @@
 name: MACOS HVM3 CI
-
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-
 jobs:
   hvml-pipeline:
     runs-on: macos-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-
+        
       - name: Cache GHC and Cabal installations
         uses: actions/cache@v3
         with:
           path: |
             ~/.ghcup
             ~/.cabal
-          key: ${{ runner.os }}-ghc-cabal-${{ hashFiles('**/*.cabal') }}
+          key: macos-ghc-${{ hashFiles('**/*.cabal') }}-${{ hashFiles('cabal.project*') }}
           restore-keys: |
-            ${{ runner.os }}-ghc-cabal-
-
+            macos-ghc-
+            
       - name: Set up GHC and Cabal
         uses: haskell-actions/setup@v2
         with:
           ghc-version: '9.12.1'
           cabal-version: '3.14.1.1'
-
+          
       - name: Update Cabal package list
         run: cabal update
-
       - name: Install system dependencies
         run: |
           brew install libffi
-
+          
       - name: Cache Cabal store
         uses: actions/cache@v3
         with:
           path: ${{ env.HOME }}/.cabal/store
-          key: ${{ runner.os }}-cabal-store-${{ hashFiles('**/*.cabal') }}
+          key: macos-cabal-store-${{ hashFiles('**/*.cabal') }}-${{ hashFiles('cabal.project*') }}
           restore-keys: |
-            ${{ runner.os }}-cabal-store-
-
+            macos-cabal-store-
+            
       - name: Build the project
         run: cabal build
-
+        
       - name: Run interpreted normalization
         run: cabal run hvml -- run ./book/feat_hoas.hvml
-
+        
       - name: Run compiled normalization
         run: cabal run hvml -- run ./book/feat_hoas.hvml -c
-
+        
       - name: Run interpreted collapse
         run: cabal run hvml -- run ./book/enum_lam_smart.hvml -C
-
+        
       - name: Run compiled collapse
         run: cabal run hvml -- run ./book/enum_lam_smart.hvml -C -c
