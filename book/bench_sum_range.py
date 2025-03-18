@@ -22,7 +22,7 @@ def sum_custom(lst):
     return total
 
 def main():
-    print(sum_custom(range_custom(50_000_000, Nil())))
+    print(sum_custom(range_custom(50000000, Nil())))
 
 if __name__ == "__main__":
     main()
