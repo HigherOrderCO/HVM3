@@ -1,0 +1,336 @@
+// Prelude
+// -------
+
+data Nat {
+  #Z
+  #S{pred}
+}
+
+data Bits {
+  #O{pred}
+  #I{pred}
+  #E
+}
+
+data Either {
+  #Lft{val}
+  #Rgt{val}
+}
+
+data Pair {
+  #Pair{fst snd}
+}
+
+data Maybe {
+  #None
+  #Some{value}
+}
+
+data List {
+  #Nil
+  #Cons{head tail}
+}
+
+data Result {
+  #Done{value}
+  #Fail{error}
+}
+
+@tm0(x) = !&0{a b}=x a
+@tm1(x) = !&0{a b}=x b
+
+@ref = &0{$x λbod λ$x bod}
+
+@BIN(&L) = &L{#O{@BIN(&L)} #I{@BIN(&L)}}
+@ALL = &1{#O{@ALL} #I{@ALL}}
+@PAR = &2{#O{@PAR} #I{@PAR}}
+
+// Repeated Application
+@rep(n f x) = ~ n !f !x {
+  0: x
+  p: !&{f0 f1}=f (f0 @rep(p f1 x))
+}
+
+// Squared Application
+@sqr(n f x) = ~ n !f !x {
+  0: x
+  p:!&{p0 p1}=(+ p 1)
+    !&{fA f0}=f
+    !&{f1 f2}=fA
+    @sqr((/ p0 2) λk(f0 (f1 k)) @rep((% p1 2) f2 x))
+}
+
+// Temporary
+//@FOO(a b)    = @BAR(0xFFFF a b)
+//@BAR(&L a b) = &L{a b}
+
+@fix(f) = !&{f0 f1}=f (f0 @fix(f1))
+
+!@and(!a b) = ~ a {
+  0: 0
+  p: b
+}
+
+!@or(!a b) = ~ a {
+  0: b
+  p: 1
+}
+
+@if(c t f) = ~ c {
+  0: f
+  p: t
+}
+
+@when(!c t) = ~ c {
+  0: *
+  p: t
+}
+
+!@head(!s) = ~s {
+  #Nil: #Nil
+  #Cons{h t}: h
+}
+
+!@tail(!xs) = ~ xs {
+  #Nil: *
+  #Cons{h t}: t
+}
+
+!@push(!xs x) = ~ xs !x {
+  #Nil: #Cons{x #Nil}
+  #Cons{h t}: #Cons{h @push(t x)}
+}
+
+!@map(!xs f) = ~ xs !f {
+  #Nil: #Nil
+  #Cons{h t}: !&{f0 f1}=f #Cons{(f0 h) @map(t f1)}
+}
+
+!@foldr(!xs f z) = ~ xs !f !z {
+  #Nil: z
+  #Cons{h t}: !&{f0 f1}=f (f0 h @foldr(t f1 z))
+}
+
+!@foldl(!xs f z) = ~ xs !z {
+  #Nil: z
+  #Cons{h t}: !&{f0 f1}=f @foldl(t f0 (f1 z h))
+}
+
+@take(n bs) =
+  ~ n {
+    0: #E
+    n: ~ bs !n {
+      #O{bs}: #O{@take(n bs)}
+      #I{bs}: #I{@take(n bs)}
+      #E: #E
+    }
+  }
+
+@insert(n xs val) = ~ n !xs !val {
+  0: #Cons{val xs}
+  n: ~ xs {
+    #Nil: *
+    #Cons{h t}: #Cons{h @insert(n t val)}
+  }
+}
+
+@every(bs) = ~ bs {
+  #Nil: 1
+  #Cons{b bs}: ~ b {
+    0: 0
+    p: @every(bs)
+  }
+}
+
+@unwrap(mb) = ~mb {
+  #None: *
+  #Some{x}: x
+}
+
+@seq(str) = ~ str {
+  #Nil: #Nil
+  #Cons{h t}:
+    !! h = h
+    !! t = @seq(t)
+    #Cons{h t}
+}
+
+@uncons(str) = ~str{
+  #Nil: #None
+  #Cons{h t}: #Some{#Pair{h t}}
+}
+
+@concat_char_str(chr str) = #Cons{chr str}
+
+@char_to_u32(c) =
+  (+ c 0)
+
+@is_digit(c) =
+  !&{c0 c1}=c
+  @and(@char_to_u32((>= c0 '0')) @char_to_u32((<= c1 '9')))
+
+@is_space(c) =
+  @char_to_u32((== c ' '))
+
+@is_newline(c) =
+  @char_to_u32((== c '\n'))
+
+@is_whitespace(c) =
+  !&{c0 c1} = c
+  @or(@is_space(c0) @is_newline(c1))
+
+@is_alphanumeric(c) =
+  !&{c c0}=c
+  !&{c c1}=c
+  !&{c c2}=c
+  !&{c c3}=c
+  @or(@and(@char_to_u32((>= c0 'a')) @char_to_u32((<= c1 'z')))
+  @or(@and(@char_to_u32((>= c2 'A')) @char_to_u32((<= c3 'Z')))
+    @is_digit(c)))
+
+@is_name_char(c) =
+  !&{c c0}=c
+  !&{c c1}=c
+  !&{c c2}=c
+  !&{c c3}=c
+  @or(@is_alphanumeric(c0)
+  @or(@char_to_u32((== c1 '_'))
+  @or(@char_to_u32((== c2 '-'))
+      @char_to_u32((== c3 '.')))))
+
+!@concat(xs !ys) = ~ xs !ys {
+  #Nil: ys
+  #Cons{h t}: #Cons{h @concat(t ys)}
+}
+
+!@length(!xs) =
+  ~ xs {
+    #Nil:
+      &0{#Nil 0}
+    #Cons{h t}:
+      ! &0{t0 len} = @length(t)
+      &0{#Cons{h t0} (+ len 1)}
+  }
+
+!@drop(!xs !n) = ~ n !xs {
+  0: xs
+  n: ~ xs {
+    #Nil: #Nil
+    #Cons{h t}: @drop(t n)
+  }
+}
+
+!@starts_with(!xs !pref) =
+  ~ pref !xs {
+    #Nil:
+      &0{xs 1}
+    #Cons{pref_h pref_t}:
+      ~ xs {
+        #Nil:
+          &0{#Nil 0}
+        #Cons{xs_h xs_t}:
+          ! &{xs_h0 xs_h1} = xs_h
+          ~ (== xs_h1 pref_h) !xs_h0 !xs_t {
+            0:
+              &0{#Cons{xs_h0 xs_t} 0}
+            p:
+              ! &0{xs_t matches} = @starts_with(xs_t pref_t)
+              &0{#Cons{xs_h0 xs_t} matches}
+          }
+      }
+  }
+
+!@take_while(!xs cond) =
+  ~ xs !cond {
+    #Nil:
+      &0{#Nil #Nil}
+    #Cons{h t}:
+      ! &{f0 f1} = cond
+      ! &{h0 h1} = h
+      @take_while_go((f0 h0) f1 h1 t)
+  }
+
+!@take_while_go(!cont cond h t) = ~ cont !h !t {
+  0: &0{#Nil #Cons{h t}}
+  p: ! &0{taken rest} = @take_while(t cond)
+      &0{#Cons{h taken} rest}
+}
+
+!@get_at(!xs !idx) = ~ xs {
+  #Nil: &0{#Nil *}
+  #Cons{h t}: ~ idx !h !t {
+    0: !&{h0 h1}=h &0{#Cons{h0 t} h1}
+    n: ! &0{t got}=@get_at(t n) &0{#Cons{h t} got}
+  }
+}
+
+!@take_at(!xs !idx) = ~ xs {
+  #Nil: &0{#Nil *}
+  #Cons{h t}: ~ idx !h !t {
+    0: &0{#Cons{* t} h}
+    n: !&0{t got}=@take_at(t n) &0{#Cons{h t} got}
+  }
+}
+
+!@set_at(!xs !idx val) = ~ xs {
+  #Nil: #Nil
+  #Cons{h t}: ~ idx !h !t !val {
+    0: #Cons{val t}
+    n: #Cons{h @set_at(t n val)}
+  }
+}
+
+!@read_decimal(!digits acc) =
+  ~ digits !acc {
+    #Nil:
+      &0{#Nil acc}
+    #Cons{c cs}:
+      ! &0{c0 c} = c
+      ~ @is_digit(c0) !c !cs !acc {
+        0: &0{#Cons{c cs} acc}
+        t: @read_decimal(cs (+ (* acc 10) @char_to_u32((- c '0'))))
+      }
+  }
+
+!@find_index(!xs f) = ~ xs {
+  #Nil: #None
+  #Cons{h t}:
+    ! &{f0 f1} = f
+    ~ (f0 h) {
+      0: ~ @find_index(t f1) {
+        #None: #None
+        #Some{i}: #Some{(+ 1 i)}
+      }
+      p: #Some{0}
+    }
+}
+
+!@list_u32_eq(!xs !ys) = ~ xs !ys {
+  #Nil: ~ ys {
+    #Nil: 1
+    #Cons{h t}: 0
+  }
+  #Cons{xh xt}: ~ ys {
+    #Nil: 0
+    #Cons{yh yt}:
+      ~ (== xh yh) {
+        0: 0
+        p: @list_u32_eq(xt yt)
+      }
+  }
+}
+
+@r_bind(x f) =
+  ~ x {
+    #Done{val}: (f val)
+    #Fail{err}: #Fail{err}
+  }
+
+!@r_seq(!x y) =
+  ~ x {
+    #Done{_}: y
+    #Fail{err}: #Fail{err}
+  }
+
+@r_pure(x) =
+  #Done{x}

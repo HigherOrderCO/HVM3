@@ -1,0 +1,83 @@
+
+
+@main = &0{1 2}
+
+@main = &0{&1{1 2} &1{3 4}}
+
+// &0{&1{1 4} &1{2 4}}
+@main = &1{&0{1 2} 4}
+
+@main = &0{λx x λy 1}
+
+@main = λx ~x {
+  0: &0{3 1}
+  p: &0{2 4}
+}
+// results in: which im not sure it is correctly collapsed
+// λa (~a {0:3 1:λb 2})
+// λa (~a {0:1 1:λb 4})
+
+data A {
+  #B{c d}
+  #C{a}
+}
+
+@main = #B{* *}
+// corectly collapses to *
+
+@main = #B{&0{1 2} 3}
+// #B{1 3}
+// #B{2 3}
+
+@main = #B{&0{1 2} &0{3 4}}
+// #B{1 3}
+// #B{2 4}
+
+@main = #B{&1{1 2} &0{3 4}}
+// We're emitted repeteated ones here, not sure if this is a problem
+// #B{1 3}
+// #B{2 3}
+// #B{1 3}
+// #B{2 4}
+// #B{1 4}
+// #B{2 3}
+// #B{1 4}
+// #B{2 4}
+
+// &1{#B{1 &0{3 4}} #B{2 &0{3 4}}}
+// &1{&0{#B{1 3} #B{1 4}} &0{#B{2 3} #B{2 4}}}
+// R=1 L=0 x0=#B{1 3} x1=#B{1 4} y=&0{#B{2 3} #B{2 4}}
+// &0{&1{#B{1 3} &0{#B{2 3} #B{2 4}}} &1{#B{1 4} &0{#B{2 3} #B{2 4}}}}
+// This is why repeats, because of the SUP-SUP-X and SUP-SUP-Y iteractions
+
+@main = λx ~x {
+  #B{a b}: &0{3 4}
+  #C{a}:   &0{5 6}
+}
+// fixed:
+// λa (~a {#B:λb λc 3 #C:λd 5})
+// λa (~a {#B:λb λc 4 #C:λd 6})
+
+data T {
+  #L
+  #M
+}
+//
+// @main = λx ~x {
+//   #L: &0{3 4}
+//   #M:   &0{5 6}
+// }
+// λa (~a {#L:3 #M:5})
+// λa (~a {#L:4 #M:6})
+//
+@main = λx ~x {
+  #L: &0{3 4}
+  #M: &1{5 6}
+}
+// fixed:
+// λa (~a {#L:3 #M:5})
+// λa (~a {#L:3 #M:6})
+// λa (~a {#L:4 #M:5})
+// λa (~a {#L:4 #M:6})
+
+
