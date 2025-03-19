@@ -18,7 +18,7 @@ import System.IO.Unsafe (unsafeInterleaveIO)
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Map.Strict as MS
 
--- The Collapse Monad
+-- The Collapse Monad 
 -- ------------------
 -- See: https://gist.github.com/VictorTaelin/60d3bc72fb4edefecd42095e44138b41
 
