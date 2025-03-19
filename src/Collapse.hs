@@ -296,7 +296,6 @@ icDupApp dup app = do
 -- &L{~N0{#A:z0 #B: x0 #C: y0} ~N1{#A:z1 #B: x1 #C: y1}}
 icSupMatCtr :: Tag -> Term -> Term -> Word64 -> Word64 -> HVM Term
 icSupMatCtr matTag mat sup matLen supIdx = do
-  putStrLn $ "SUP-MAT-CTR"
   let matLoc = termLoc mat
   let matLab = termLab mat
   let supLab = termLab sup
@@ -354,7 +353,6 @@ collapseSupsTerm book root = do
   let tag = termTag term
   let lab = termLab term
   let loc = termLoc term
-  -- putStrLn $ "SUP TAG: " ++ show (tagT tag)
   case (tagT tag) of
     LAM -> do
       bod <- got (loc + 0)
@@ -444,7 +442,6 @@ collapseDupsTerm book root = do
   term <- reduceC root 0
   let tag = termTag term
   let loc = termLoc term
-  -- putStrLn $ "DUP TAG: " ++ show (tagT tag)
   case (tagT tag) of
     tag | isDup tag -> do
       val <- got loc
@@ -486,14 +483,6 @@ collapseDupsTerm book root = do
       child <- got (loc + 0)
       childCol <- collapseDupsTerm book child
       setOld (loc + 0) childCol
-      return term
-    CTR -> do
-      let cid = termLab term
-      let ctrAri = mget (cidToAri book) cid
-      forM_ [1 .. ctrAri] $ \i -> do
-        ctr <- got (loc + (i - 1))
-        ctrCol <- collapseDupsTerm book ctr
-        setOld (loc + (i - 1)) ctrCol
       return term
     tag | tag == MAT || tag == SWI -> do
       let matLen = if tag == SWI then 2 else mget (cidToLen book) (termLab term)
