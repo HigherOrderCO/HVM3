@@ -1,0 +1,33 @@
+@height = 7
+
+@leaf = (a (* ((a b) b)))
+
+@main = b
+  & @sum ~ (a b)
+  & @make ~ (@height (0 a))
+
+@make = (?((@make_leaf @make__C0) a) a)
+
+@make__C0 = (a b)
+  & @make_node ~ (a b)
+
+@make_leaf = (a b)
+  & @leaf ~ (a b)
+
+@make_node = ({a e} ({b f} j))
+  & @node ~ (d (i j))
+  &!@make ~ (a (c d))
+  & $(b c) ~ [*0x0000002]
+  &!@make ~ (e (h i))
+  & $(g h) ~ [+0x0000001]
+  & $(f g) ~ [*0x0000002]
+
+@node = (a (b ((a (b c)) (* c))))
+
+@sum = ((@sum_node (@sum_leaf a)) a)
+
+@sum_leaf = (a a)
+
+@sum_node = (a (b d))
+  &!@sum ~ (a $([+] $(c d)))
+  &!@sum ~ (b c)
