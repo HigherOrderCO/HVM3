@@ -1,7 +1,7 @@
 -- //./Type.hs//
 -- //./Inject.hs//
 
-module HVML.Extract where
+module Extract where
 
 import Control.Monad (foldM, forM_, forM)
 import Control.Monad.State
@@ -10,9 +10,9 @@ import Data.Char (chr, ord)
 import Data.IORef
 import Data.Word
 import Debug.Trace
-import HVML.Foreign
-import HVML.Show
-import HVML.Type
+import Foreign
+import Show
+import Type
 import System.IO.Unsafe (unsafeInterleaveIO)
 import qualified Data.IntSet as IS
 import qualified Data.Map.Strict as MS

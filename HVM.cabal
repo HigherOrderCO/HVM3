@@ -1,0 +1,41 @@
+cabal-version:      3.0
+name:               HVM
+version:            0.1.0.0
+homepage:           https://higherorderco.com/
+license:            MIT
+license-file:       LICENSE
+author:             Victor Taelin
+maintainer:         victor.taelin@gmail.com
+category:           Language
+build-type:         Simple
+
+common warnings
+    ghc-options: -Wall
+
+executable hvm
+    import:           warnings
+    main-is:          Main.hs
+    other-modules:    Type
+                    , Collapse
+                    , Compile
+                    , Extract
+                    , Foreign
+                    , Inject
+                    , Parse
+                    , Reduce
+                    , Show
+    build-depends:    base ^>=4.21.0.0,
+                      mtl ^>=2.3.1,
+                      containers ^>=0.7,
+                      parsec ^>=3.1.17.0,
+                      hs-highlight ^>= 1.0.3,
+                      ansi-terminal == 1.1.1,
+                      process,
+                      libffi,
+                      unix,
+                      file-embed,
+    hs-source-dirs:   src
+    default-language: GHC2024
+    c-sources:        src/Runtime.c
+    extra-libraries:  c
+    ghc-options:     -Wno-all -threaded

@@ -1,4 +1,4 @@
-module HVML.Type where
+module Type where
 
 import Data.Map.Strict as MS
 import Data.Word

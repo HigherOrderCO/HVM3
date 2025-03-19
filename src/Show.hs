@@ -1,6 +1,6 @@
 -- //./Type.hs//
 
-module HVML.Show where
+module Show where
 
 import Control.Applicative ((<|>))
 import Data.Char (chr, ord)
@@ -8,8 +8,8 @@ import Data.Char (intToDigit)
 import Data.IORef
 import Data.List
 import Data.Word
-import HVML.Foreign
-import HVML.Type
+import Foreign
+import Type
 import Numeric (showIntAtBase)
 import System.IO.Unsafe (unsafePerformIO)
 import qualified Data.Map.Strict as MS

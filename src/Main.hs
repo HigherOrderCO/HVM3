@@ -15,15 +15,15 @@ import Foreign.LibFFI
 import Foreign.LibFFI.Types
 import GHC.Clock
 import GHC.Conc
-import HVML.Collapse
-import HVML.Compile
-import HVML.Extract
-import HVML.Foreign
-import HVML.Inject
-import HVML.Parse
-import HVML.Reduce
-import HVML.Show
-import HVML.Type
+import Collapse
+import Compile
+import Extract
+import Foreign
+import Inject
+import Parse
+import Reduce
+import Show
+import Type
 import System.Environment (getArgs)
 import System.Exit (exitWith, ExitCode(ExitSuccess, ExitFailure))
 import System.IO
@@ -37,7 +37,7 @@ import qualified Data.Map.Strict as MS
 import Text.Read (readMaybe)
 
 runtime_c :: String
-runtime_c = $(embedStringFile "./src/HVML/Runtime.c")
+runtime_c = $(embedStringFile "./src/Runtime.c")
 
 -- Main
 -- ----
@@ -78,9 +78,9 @@ parseCollapseFlag _ = Nothing
 
 printHelp :: IO (Either String ())
 printHelp = do
-  putStrLn "HVM-Lazy usage:"
-  putStrLn "  hvml help       # Shows this help message"
-  putStrLn "  hvml run <file> [flags] [string args...] # Evals main"
+  putStrLn "HVM usage:"
+  putStrLn "  hvm help       # Shows this help message"
+  putStrLn "  hvm run <file> [flags] [string args...] # Evals main"
   putStrLn "    -t  # Returns the type (experimental)"
   putStrLn "    -c  # Runs with compiled mode (fast)"
   putStrLn "    -C  # Collapse the result to a list of λ-Terms"

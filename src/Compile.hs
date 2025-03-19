@@ -1,7 +1,7 @@
 -- //./Type.hs//
 -- //./Inject.hs//
 
-module HVML.Compile where
+module Compile where
 
 import Control.Monad (forM_, forM, foldM, when)
 import Control.Monad.State
@@ -9,9 +9,9 @@ import Data.Bits (shiftL, (.|.))
 import Data.List
 import Data.Word
 import Debug.Trace
-import HVML.Foreign hiding (fresh)
-import HVML.Show
-import HVML.Type
+import Foreign hiding (fresh)
+import Show
+import Type
 import qualified Data.Map.Strict as MS
 
 -- Compilation

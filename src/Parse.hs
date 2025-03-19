@@ -1,6 +1,6 @@
 -- //./Type.hs//
 
-module HVML.Parse where
+module Parse where
 
 import Control.Monad (foldM, forM, forM_, when)
 import Control.Monad.State
@@ -11,8 +11,8 @@ import Data.List
 import Data.Maybe
 import Data.Word
 import Debug.Trace
-import HVML.Show
-import HVML.Type
+import Show
+import Type
 import Highlight (highlightError)
 import System.Console.ANSI
 import System.Exit (exitFailure)

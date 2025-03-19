@@ -1,8 +1,8 @@
-module HVML.Foreign where
+module Foreign where
 
 import Data.Word
 import Foreign.Ptr
-import HVML.Type
+import Type
 
 foreign import ccall unsafe "Runtime.c hvm_init"
   hvmInit :: IO ()

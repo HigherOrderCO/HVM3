@@ -409,7 +409,7 @@ void print_tag(Tag tag) {
 void print_term(Term term) {
   printf("term_new(");
   print_tag(term_tag(term));
-  printf(",0x%04x,0x%010llx)", term_lab(term), term_loc(term));
+  printf(",0x%04llx,0x%010llx)", term_lab(term), term_loc(term));
 }
 
 void print_heap() {

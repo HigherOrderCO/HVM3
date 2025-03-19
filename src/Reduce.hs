@@ -1,15 +1,15 @@
 -- //./Type.hs//
 
-module HVML.Reduce where
+module Reduce where
 
 import Control.Monad (when, forM, forM_)
 import Data.Word
-import HVML.Collapse
-import HVML.Extract
-import HVML.Foreign
-import HVML.Inject
-import HVML.Show
-import HVML.Type
+import Collapse
+import Extract
+import Foreign
+import Inject
+import Show
+import Type
 import System.Exit
 import qualified Data.Map.Strict as MS
 

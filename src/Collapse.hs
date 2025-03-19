@@ -1,7 +1,7 @@
 -- //./Type.hs//
 -- //./Extract.hs//
 
-module HVML.Collapse where
+module Collapse where
 
 import Control.Monad (ap, forM, forM_)
 import Control.Monad.IO.Class
@@ -10,9 +10,9 @@ import Data.IORef
 import Data.Word
 import Debug.Trace
 import GHC.Conc
-import HVML.Foreign
-import HVML.Show
-import HVML.Type
+import Foreign
+import Show
+import Type
 import System.Exit (exitFailure)
 import System.IO.Unsafe (unsafeInterleaveIO)
 import qualified Data.IntMap.Strict as IM
