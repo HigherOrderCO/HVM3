@@ -1,0 +1,87 @@
+name: HVM3 CI
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  hvml-pipeline:
+    name: HVM3 CI (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        
+      - name: Setup cache paths
+        id: cache-paths
+        shell: bash
+        run: |
+          if [ "${{ matrix.os }}" == "macos-latest" ]; then
+            echo "cabal-store-path=$HOME/.cabal/store" >> $GITHUB_OUTPUT
+          else
+            echo "cabal-store-path=~/.cabal/store" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Cache GHC and Cabal installations
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.ghcup
+            ~/.cabal/packages
+            ~/.cabal/config
+          key: ${{ matrix.os }}-ghc-${{ hashFiles('**/*.cabal') }}-${{ hashFiles('cabal.project*') }}
+          restore-keys: |
+            ${{ matrix.os }}-ghc-
+            
+      - name: Set up GHC and Cabal
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.12.2'
+          cabal-version: '3.14.1.1'
+          
+      - name: Update Cabal package list
+        run: cabal update
+        
+      - name: Install system dependencies
+        run: |
+          if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
+            sudo apt-get update
+            sudo apt-get install -y libffi-dev
+          elif [ "${{ matrix.os }}" == "macos-latest" ]; then
+            brew install libffi
+          fi
+        shell: bash
+          
+      - name: Cache Cabal store
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.cache-paths.outputs.cabal-store-path }}
+          key: ${{ matrix.os }}-cabal-store-${{ hashFiles('**/*.cabal') }}-${{ hashFiles('cabal.project*') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ matrix.os }}-cabal-store-${{ hashFiles('**/*.cabal') }}-${{ hashFiles('cabal.project*') }}-
+            ${{ matrix.os }}-cabal-store-${{ hashFiles('**/*.cabal') }}-
+            ${{ matrix.os }}-cabal-store-
+            
+      - name: Build the project
+        run: cabal build
+        
+      - name: Lazy - Run interpreted normalization
+        run: cabal run hvml -- run ./book/feat_hoas.hvml -s
+        
+      - name: Lazy - Run compiled normalization
+        run: cabal run hvml -- run ./book/feat_hoas.hvml -c -s
+        
+      - name: Lazy - Run interpreted collapse
+        run: cabal run hvml -- run ./book/enum_lam_smart.hvml -C -s
+        
+      - name: Lazy - Run compiled collapse
+        run: cabal run hvml -- run ./book/enum_lam_smart.hvml -C -c -s
+        
+      - name: Strict - Run interpreted normalization
+        run: cabal run hvms -- run ./book/bench_parallel_sum_range.hvms -s
