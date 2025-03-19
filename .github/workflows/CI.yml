@@ -17,22 +17,25 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
         
-      - name: Setup cache paths
-        id: cache-paths
-        shell: bash
-        run: |
-          if [ "${{ matrix.os }}" == "macos-latest" ]; then
-            echo "cabal-store-path=$HOME/.cabal/store" >> $GITHUB_OUTPUT
-          else
-            echo "cabal-store-path=$HOME/.cabal/store" >> $GITHUB_OUTPUT
-          fi
+      - name: Cache GHC and Cabal
+        uses: actions/cache@v3
+        id: cache-ghc
+        with:
+          path: |
+            ~/.ghcup
+          key: ${{ runner.os }}-ghcup-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-ghcup-
           
       - name: Set up GHC and Cabal
         uses: haskell-actions/setup@v2
         id: setup-haskell
         with:
-          ghc-version: '9.12.2'
+          ghc-version: '9.12.1'
           cabal-version: '3.14.1.1'
+          setup-haskell-bin: ${{ steps.cache-ghc.outputs.cache-hit != 'true' }}
+          setup-haskell-cabal: ${{ steps.cache-ghc.outputs.cache-hit != 'true' }}
+          setup-haskell-ghc: ${{ steps.cache-ghc.outputs.cache-hit != 'true' }}
           
       - name: Update Cabal package list
         run: cabal update
