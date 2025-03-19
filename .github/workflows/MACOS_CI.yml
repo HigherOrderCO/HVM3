@@ -57,4 +57,4 @@ jobs:
         run: cabal run hvml -- run ./book/enum_lam_smart.hvml -C -c -s
 
       - name: Strict - Run interpreted normalization
-        run: cabal run hvml -- run ./book/bench_parallel_sum_range.hvms -s
+        run: cabal run hvms -- run ./book/bench_parallel_sum_range.hvms -s
