@@ -9,6 +9,11 @@
 #include <unistd.h>
 #include <time.h>
 #include <stdbool.h>
+#include <pthread.h>
+
+// Function prototypes
+static void* worker_thread(void* arg);
+static int parallel_normal_step();
 
 typedef uint8_t  Tag;
 typedef uint16_t Lab;
@@ -19,6 +24,49 @@ typedef uint32_t u32;
 typedef uint64_t u64;
 typedef _Atomic(Term) ATerm;
 typedef struct{Term term; u16 cnt;} Rloc;
+
+// Thread management
+typedef struct {
+    pthread_t thread;
+    int id;
+    bool active;
+    // Local redex bag for this thread
+    Term* local_rbag;
+    u64 local_rbag_size;
+    u64 local_rbag_capacity;
+} WorkerThread;
+
+typedef struct {
+    WorkerThread* workers;
+    int num_workers;
+    pthread_mutex_t global_lock;
+    pthread_cond_t work_available;
+    bool should_stop;
+} ThreadPool;
+
+static ThreadPool thread_pool;
+
+// global RBAG variables with a thread-safe structure
+typedef struct {
+    Term* terms;
+    u64 size;
+    u64 capacity;
+    pthread_mutex_t lock;
+    pthread_cond_t not_empty;
+} RedexBag;
+
+static RedexBag global_rbag;
+
+// thread-safe memory allocation
+static pthread_mutex_t alloc_lock;
+static _Atomic(u64) next_node_loc;
+
+Loc thread_safe_alloc_node(u64 arity) {
+    pthread_mutex_lock(&alloc_lock);
+    Loc loc = atomic_fetch_add(&next_node_loc, arity);
+    pthread_mutex_unlock(&alloc_lock);
+    return loc;
+}
 
 // Runtime Types
 // -------------
@@ -409,7 +457,7 @@ void print_tag(Tag tag) {
 void print_term(Term term) {
   printf("term_new(");
   print_tag(term_tag(term));
-  printf(",0x%04x,0x%010llx)", term_lab(term), term_loc(term));
+  printf(",0x%04llx,0x%010llx)", term_lab(term), term_loc(term));
 }
 
 void print_heap() {
@@ -1498,6 +1546,23 @@ void hvm_init() {
     HVM.cadt[i] = 0;
     HVM.fari[i] = 0;
   }
+
+  // Init thread pool
+  int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+  thread_pool.num_workers = num_cores;
+  thread_pool.workers = calloc(num_cores, sizeof(WorkerThread));
+  
+  pthread_mutex_init(&thread_pool.global_lock, NULL);
+  pthread_mutex_init(&global_rbag.lock, NULL);
+  pthread_cond_init(&global_rbag.not_empty, NULL);
+  
+  // Init worker threads
+  for (int i = 0; i < num_cores; i++) {
+    thread_pool.workers[i].id = i;
+    thread_pool.workers[i].active = true;
+    pthread_create(&thread_pool.workers[i].thread, NULL, worker_thread, 
+                  &thread_pool.workers[i]);
+  }
 }
 
 void hvm_munmap(void *ptr, size_t size, const char *name) {
@@ -1513,12 +1578,26 @@ void hvm_munmap(void *ptr, size_t size, const char *name) {
 }
 
 void hvm_free() {
+    // Signal all threads to stop
+    thread_pool.should_stop = true;
+    pthread_cond_broadcast(&global_rbag.not_empty);
+    
+    // Wait for all threads to finish
+    for (int i = 0; i < thread_pool.num_workers; i++) {
+        pthread_join(thread_pool.workers[i].thread, NULL);
+    }
+    
+    // Cleanup thread pool resources
+    free(thread_pool.workers);
+    pthread_mutex_destroy(&thread_pool.global_lock);
+    pthread_mutex_destroy(&global_rbag.lock);
+    pthread_cond_destroy(&global_rbag.not_empty);
+
     hvm_munmap(HVM.sbuf, (1ULL << 30) * sizeof(Term), "sbuf");
     hvm_munmap(HVM.heap, (1ULL << 30) * sizeof(ATerm), "heap");
     hvm_munmap(HVM.rbuf, (1ULL << 30) * sizeof(Rloc), "rbuf");
     hvm_munmap(HVM.obuf, (1ULL << 30) * sizeof(Loc), "obuf");
     hvm_munmap(HVM.gbuf, (1ULL << 30) * sizeof(Term), "gbuf");
-     
     hvm_munmap(HVM.opos, sizeof(u64), "opos");
     hvm_munmap(HVM.rpos, sizeof(u64), "rpos");
     hvm_munmap(HVM.rlas, sizeof(u64), "rlas");
@@ -1581,4 +1660,38 @@ void hvm_set_clen(u64 cid, u16 cases) {
 }
 void hvm_set_cadt(u64 cid, u16 adt) {
   HVM.cadt[cid] = adt;
+}
+
+static void* worker_thread(void* arg) {
+    WorkerThread* worker = (WorkerThread*)arg;
+    
+    while (!thread_pool.should_stop) {
+        // try -> get work from global redex bag
+        pthread_mutex_lock(&global_rbag.lock);
+        while (global_rbag.size == 0 && !thread_pool.should_stop) {
+            pthread_cond_wait(&global_rbag.not_empty, &global_rbag.lock);
+        }
+        
+        if (thread_pool.should_stop) {
+            pthread_mutex_unlock(&global_rbag.lock);
+            break;
+        }
+        
+        // Get batch of redexes to process
+        Term neg = take(global_rbag.terms[--global_rbag.size]);
+        Term pos = take(global_rbag.terms[--global_rbag.size]);
+        pthread_mutex_unlock(&global_rbag.lock);
+        
+        // Process the redex
+        reduce(neg, pos);
+    }
+    
+    return NULL;
+}
+
+static int parallel_normal_step() {
+    if (global_rbag.size > 0) {
+        pthread_cond_broadcast(&global_rbag.not_empty);
+    }
+    return global_rbag.size > 0;
 }
