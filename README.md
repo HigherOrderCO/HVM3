@@ -1,6 +1,6 @@
 # HVM3 - Work In Progress
 
-The **HVM** is an efficient implementation of the [Interaction Calculus](https://github.com/HigherOrderCO/Interaction-Calculus) (IC).
+The **HVM** is an efficient implementation of the [Interaction Calculus](https://github.com/VictorTaelin/Interaction-Calculus) (IC).
 
 The Interaction Calculus is a new foundation for computing, similar to the
 Lambda Calculus, but theoretically optimal. The HVM is an efficient
