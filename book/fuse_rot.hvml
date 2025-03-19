@@ -15,25 +15,25 @@ data List { #Nil #Cons{head tail} }
   p:!&0{p0 p1}=(+ p 1)
     !&0{fA f0}=f
     !&0{f1 f2}=fA
-    @sqr((/ p0 2) λk(f0 (f1 k)) @rep((% p1 2) f2 x))
+    @sqr((/ p0 2) λk.(f0 (f1 k)) @rep((% p1 2) f2 x))
 }
 
-@O(a b) = λo λi (o a b)
-@I(a b) = λo λi (i a b)
+@O(a b) = λo. λi. (o a b)
+@I(a b) = λo. λi. (i a b)
 @L(x)   = x
 
 @view(&s) = ~&s {
-  0 : λx x
-  &p: λx (x
-    λa λb [0 (@view(&p) a) (@view(&p) b)]
-    λa λb [1 (@view(&p) a) (@view(&p) b)])
+  0 : λx. x
+  &p: λx. (x
+    λa. λb. [0 (@view(&p) a) (@view(&p) b)]
+    λa. λb. [1 (@view(&p) a) (@view(&p) b)])
 }
 
 @read(&s) = ~&s {
-  0 : λx 0
-  &p: λx (x
-    λa λb (+ 0 (* (@read(&p) a) 2))
-    λa λb (+ 1 (* (@read(&p) a) 2)))
+  0 : λx. 0
+  &p: λx. (x
+    λa. λb. (+ 0 (* (@read(&p) a) 2))
+    λa. λb. (+ 1 (* (@read(&p) a) 2)))
 }
 
 @zero(s) = ~s {
@@ -42,49 +42,49 @@ data List { #Nil #Cons{head tail} }
 }
 
 @inc(s) = ~s {
-  0: λx x
-  &p: λx λo λi (x
-    λa λb (i b (@inc(&p) a))
-    λa λb (o b (@inc(&p) a)))
+  0: λx. x
+  &p: λx. λo. λi. (x
+    λa. λb. (i b (@inc(&p) a))
+    λa. λb. (o b (@inc(&p) a)))
 }
 
 @dec(s) = ~s {
-  0: λx x
-  &p: λx λo λi (x
-    λa λb (i (@dec(&p) b) a)
-    λa λb (o (@dec(&p) b) a))
+  0: λx. x
+  &p: λx. λo. λi. (x
+    λa. λb. (i (@dec(&p) b) a)
+    λa. λb. (o (@dec(&p) b) a))
 }
 
 @neg(&s) = ~&s {
-  0: λx x
-  &p: λx λo λi (x
-    λa λb (o (@neg(&p) a) (@neg(&p) b))
-    λa λb (i (@neg(&p) b) (@neg(&p) a)))
+  0: λx. x
+  &p: λx. λo. λi. (x
+    λa. λb. (o (@neg(&p) a) (@neg(&p) b))
+    λa. λb. (i (@neg(&p) b) (@neg(&p) a)))
 }
 
 // What this does?
 @foo(&s) = ~&s {
-  0: λx λy x
-  &p: λx (x
-    λxa λxb !&1{xa0 xa1}=xa !&1{xb0 xb1}=xb λy λo λi (y
-      λya λyb (o (@foo(&p) xa0 ya) (@foo(&p) xb0 yb))
-      λya λyb (i (@foo(&p) xb1 yb) (@foo(&p) xa1 ya)))
-    λxa λxb !&1{xa0 xa1}=xa !&1{xb0 xb1}=xb λy λo λi (y
-      λya λyb (i (@foo(&p) xb0 yb) (@foo(&p) xa0 ya))
-      λya λyb (o (@foo(&p) xa1 ya) (@foo(&p) xb1 yb))))
+  0: λx. λy. x
+  &p: λx. (x
+    λxa. λxb. !&1{xa0 xa1}=xa !&1{xb0 xb1}=xb λy. λo. λi. (y
+      λya. λyb. (o (@foo(&p) xa0 ya) (@foo(&p) xb0 yb))
+      λya. λyb. (i (@foo(&p) xb1 yb) (@foo(&p) xa1 ya)))
+    λxa. λxb. !&1{xa0 xa1}=xa !&1{xb0 xb1}=xb λy. λo. λi. (y
+      λya. λyb. (i (@foo(&p) xb0 yb) (@foo(&p) xa0 ya))
+      λya. λyb. (o (@foo(&p) xa1 ya) (@foo(&p) xb1 yb))))
 }
 
 // Removing the recursive calls to @dec/@inc makes this
 // fuse; but since we can't, it doesn't, making it slow
 @add(&s) = ~&s {
-  0: λx λy y
-  &p: λx (x
-    λxa λxb !&1{xa0 xa1}=xa !&1{xb0 xb1}=xb λy λo λi (y
-      λya λyb (o (@add(&p) xa0 ya) (@add(&p) xb0 yb))
-      λya λyb (i (@add(&p) xb1 ya) (@add(&p) xa1 yb)))
-    λxa λxb !&1{xa0 xa1}=xa !&1{xb0 xb1}=xb λy λo λi (y
-      λya λyb (i (@add(&p) xa0 yb) (@add(&p) xb0 ya))
-      λya λyb (o (@dec(&p) (@add(&p) xb1 yb)) (@inc(&p) (@add(&p) xa1 ya)))))
+  0: λx. λy. y
+  &p: λx. (x
+    λxa. λxb. !&1{xa0 xa1}=xa !&1{xb0 xb1}=xb λy. λo. λi. (y
+      λya. λyb. (o (@add(&p) xa0 ya) (@add(&p) xb0 yb))
+      λya. λyb. (i (@add(&p) xb1 ya) (@add(&p) xa1 yb)))
+    λxa. λxb. !&1{xa0 xa1}=xa !&1{xb0 xb1}=xb λy. λo. λi. (y
+      λya. λyb. (i (@add(&p) xa0 yb) (@add(&p) xb0 ya))
+      λya. λyb. (o (@dec(&p) (@add(&p) xb1 yb)) (@inc(&p) (@add(&p) xa1 ya)))))
 }
 
 @S    = 32

@@ -31,7 +31,7 @@ data Tree { #Leaf #Node{lft rgt} }
 
 // Mutable references
 @mut(ref fn) = !! $new = (fn (ref $new)) *
-@spt(ref fn) = (fn λ$y(ref $z) λ$z($y))
+@spt(ref fn) = (fn λ$y.(ref $z) λ$z.($y))
 
 // Slow Version
 // ------------
@@ -86,7 +86,7 @@ data Tree { #Leaf #Node{lft rgt} }
   // - mutably replace the context by its tail, and extract its head
   // - return just '#Leaf{head}' (no pairs!)
   0: 
-    !! @mut(ctx λctx ~ctx { #Nil:* #Cons{$head tail}:tail })
+    !! @mut(ctx λctx. ~ctx { #Nil:* #Cons{$head tail}:tail })
     #Leaf{$head}
   // Step Case:
   // - split the mutable reference into two
@@ -94,7 +94,7 @@ data Tree { #Leaf #Node{lft rgt} }
   // - return just '#Node{lft rgt}' directly (no pairs!)
   p:
     !&0{pL pR}=p
-    !! @spt(ctx λ$ctxL λ$ctxR *)
+    !! @spt(ctx λ$ctxL. λ$ctxR. *)
     #Node{
       @list_to_tree_fast_mut(pL $ctxL)
       @list_to_tree_fast_mut(pR $ctxR)

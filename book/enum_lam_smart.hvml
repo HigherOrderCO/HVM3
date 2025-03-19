@@ -8,7 +8,7 @@
 // possible. This allows HVM to prune branches and backtrack efficiently as it
 // computes the application of all λ-terms to some expression. The result is a
 // reduction in the interactions needed to solve the equation:
-// > (?X λt(t 1 2)) == λt(t 2 1)
+// > (?X λt.(t 1 2)) == λt.(t 2 1)
 // From ~32 million to just 76k, a 420x speedup*, which increases the harder the
 // problem is. This generator works by synthesizing a λ-term in layers. On each
 // layer, we either generate a lambda and extend a context, or select one of the
@@ -19,9 +19,9 @@
 // right amount of applications, without making a guess.
 // * NOTE: we're actually able to bring the naive approach down to 1.7 million
 // interactions. So, the numbers are:
-// - Enum binary λC with loops (Haskell): 0.992s 
-// - Enum binary λC with sups (HVM): 0.026s (38x speedup)
-// - Enum λC directly with sups (HVM): 0.0011s (862x speedup)
+// - Enum binary λC. with loops (Haskell): 0.992s 
+// - Enum binary λC. with sups (HVM): 0.026s (38x speedup)
+// - Enum λC. directly with sups (HVM): 0.0011s (862x speedup)
 // The main contribution of this file is on the shape of the superposer. There
 // are a few things that one must get right to achieve the desired effect.
 // First, how do we split a linear context? It depends: when generating an
@@ -122,8 +122,8 @@ data Maybe {
 // ---------------
 
 @show_nat(nat) = ~nat { 
-  0: λk #Cons{'Z' k}
-  p: λk #Cons{'S' (@show_nat(p) k)}
+  0: λk. #Cons{'Z' k}
+  p: λk. #Cons{'S' (@show_nat(p) k)}
 }
 
 @show_dec(n r) =
@@ -138,20 +138,20 @@ data Maybe {
 @do_show_dec(n) = @show_dec(n #Nil)
 
 @show_bits(bits) = ~bits {
-  #O{pred}: λk #Cons{'#' #Cons{'O' #Cons{'{' (@show_bits(pred) #Cons{'}' k})}}}
-  #I{pred}: λk #Cons{'#' #Cons{'I' #Cons{'{' (@show_bits(pred) #Cons{'}' k})}}}
-  #E: λk #Cons{'#' #Cons{'E' k}}
+  #O{pred}: λk. #Cons{'#' #Cons{'O' #Cons{'{' (@show_bits(pred) #Cons{'}' k})}}}
+  #I{pred}: λk. #Cons{'#' #Cons{'I' #Cons{'{' (@show_bits(pred) #Cons{'}' k})}}}
+  #E: λk. #Cons{'#' #Cons{'E' k}}
 }
 
 @do_show_bits(bits) = (@show_bits(bits) #Nil)
 
 @show_term(term dep) = ~term !dep {
-  #Var{idx}: λk
+  #Var{idx}: λk.
     @show_dec((- (- dep idx) 1) k)
-  #Lam{bod}: λk
+  #Lam{bod}: λk.
     !&{d0 d1}=dep
     #Cons{'λ' (@show_term((bod #Var{d0}) (+ d1 1)) k)}
-  #App{fun arg}: λk
+  #App{fun arg}: λk.
     !&{d0 d1}=dep
     #Cons{'(' (@show_term(fun d0)
     #Cons{' ' (@show_term(arg d1)
@@ -208,7 +208,7 @@ data Maybe {
 // -------------
 
 @nf(term) = ~ @wnf(term) {
-  #Lam{bod}: #Lam{λx @nf((bod #Sub{x}))}
+  #Lam{bod}: #Lam{λx. @nf((bod #Sub{x}))}
   #App{fun arg}: #App{@nf(fun) @nf(arg)}
   #Var{idx}: #Var{idx}
   #Sub{val}: val
@@ -233,14 +233,14 @@ data Maybe {
     !&L{ctxL ctxR} = ctx
     &L{
       @lam(&L &lim ctxL)
-      @ret(&L (+ &lim 1) ctxR λk(k))
+      @ret(&L (+ &lim 1) ctxR λk.(k))
     }
 }
 
 // Generate a fresh lambda and extend the context with its variable.
 @lam(&L &lim ctx) =
   !&0{ctx bod} = @all(&L &lim #Cons{#Some{$x} ctx})
-  &0{@tail(ctx) #Lam{λ$x(bod)}}
+  &0{@tail(ctx) #Lam{λ$x.(bod)}}
 
 // Return a variable from the context.
 // If the context is empty, destroy this universe.
@@ -255,7 +255,7 @@ data Maybe {
     !&L{ctxL ctxR} = ctx
     &L{
       @app(&L &lim (remL #Cons{#None ctxL}) valL)
-      @ret(&L &lim ctxR λk(remR #Cons{valR k}))
+      @ret(&L &lim ctxR λk.(remR #Cons{valR k}))
     }
 }
 
@@ -289,23 +289,23 @@ data Maybe {
 // Tests
 // -----
 
-//A= λt (t ^1 ^2)
+//A= λt. (t ^1 ^2)
 //A= λ((Z SZ) SSZ)
-@A = #Lam{λt #App{#App{t #Var{1}} #Var{2}}}
+@A = #Lam{λt. #App{#App{t #Var{1}} #Var{2}}}
 
-//B= λt (t ^2 ^1)
+//B= λt. (t ^2 ^1)
 //B= λ((Z SSZ) SZ)
-@B = #Lam{λt #App{#App{t #Var{2}} #Var{1}}}
+@B = #Lam{λt. #App{#App{t #Var{2}} #Var{1}}}
 
-//R= λx (x λa λb λt (t b a))
-//R= λ(Z λλλ((SSSZ SSZ) SZ))
-@R = #Lam{λx #App{x #Lam{λa #Lam{λb #Lam{λt #App{#App{t b} a}}}}}}
+//R= λx. (x λa. λb. λt. (t b a))
+//R= λ(Z λλ.λ.((SSSZ SSZ) SZ))
+@R = #Lam{λx. #App{x #Lam{λa. #Lam{λb. #Lam{λt. #App{#App{t b} a}}}}}}
 
 //X= (all terms)
 @X = @tm1(@all(1 5 #Nil))
 
-// Solves for `?X` in `(?X λt(t A B)) == λt(t B A)`.
-// It finds `?X = λλ(1 λλ((2 0) 1))` in 76k interactions.
+// Solves for `?X` in `(?X λt.(t A B)) == λt.(t B A)`.
+// It finds `?X = λλ.(1 λλ.((2 0) 1))` in 76k interactions.
 @main =
   ! solved = @eq(@nf(#App{@X @A}) @B 0)
   @when(solved @do_show_term(@X))

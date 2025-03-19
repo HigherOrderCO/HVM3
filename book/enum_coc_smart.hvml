@@ -1,5 +1,5 @@
 // Superposes dependently typed λ-terms. With it, solving:
-//   (?X λt(t A B)) == λt(t B A)
+//   (?X λt.(t A B)) == λt.(t B A)
 // Where
 //   ?X : ∀A. (∀P. A -> A -> P) -> (∀P. A -> A -> P)
 // Is down to 3k interactions. Of course, that's not too surprising given there
@@ -80,8 +80,8 @@ data Maybe {
 // ---------------
 
 @show_nat(nat) = ~nat { 
-  0: λk #Cons{'Z' k}
-  p: λk #Cons{'S' (@show_nat(p) k)}
+  0: λk. #Cons{'Z' k}
+  p: λk. #Cons{'S' (@show_nat(p) k)}
 }
 
 @show_dec(n r) =
@@ -96,21 +96,21 @@ data Maybe {
 @do_show_dec(n) = @show_dec(n #Nil)
 
 @show_bits(bits) = ~bits {
-  #O{pred}: λk #Cons{'#' #Cons{'O' #Cons{'{' (@show_bits(pred) #Cons{'}' k})}}}
-  #I{pred}: λk #Cons{'#' #Cons{'I' #Cons{'{' (@show_bits(pred) #Cons{'}' k})}}}
-  #E: λk #Cons{'#' #Cons{'E' k}}
+  #O{pred}: λk. #Cons{'#' #Cons{'O' #Cons{'{' (@show_bits(pred) #Cons{'}' k})}}}
+  #I{pred}: λk. #Cons{'#' #Cons{'I' #Cons{'{' (@show_bits(pred) #Cons{'}' k})}}}
+  #E: λk. #Cons{'#' #Cons{'E' k}}
 }
 
 @do_show_bits(bits) = (@show_bits(bits) #Nil)
 
 @show_term(term dep) = ~term !dep {
-  #Var{idx}: λk
+  #Var{idx}: λk.
     @show_dec(idx k)
-  #Pol{bod}: λk
+  #Pol{bod}: λk.
     !&{dep d0}=dep
     !&{dep d1}=dep
     #Cons{'∀' (@show_term((bod #Var{d0}) (+ d1 1)) k)}
-  #All{inp bod}: λk
+  #All{inp bod}: λk.
     !&{dep d0}=dep
     !&{dep d1}=dep
     !&{dep d2}=dep
@@ -120,17 +120,17 @@ data Maybe {
     #Cons{')'
     (@show_term((bod #Var{d1}) (+ d2 1))
     k)})}}
-  #Lam{bod}: λk
+  #Lam{bod}: λk.
     !&{d0 d1}=dep
     #Cons{'λ' (@show_term((bod #Var{d0}) (+ d1 1)) k)}
-  #App{fun arg}: λk
+  #App{fun arg}: λk.
     !&{d0 d1}=dep
     #Cons{'(' (@show_term(fun d0)
     #Cons{' ' (@show_term(arg d1)
     #Cons{')' k})})}
-  #U32: λk
+  #U32: λk.
     #Cons{'U' k}
-  #Num{val}: λk
+  #Num{val}: λk.
     #Cons{'#' @show_dec(val k)}
 }
 
@@ -216,15 +216,15 @@ data Maybe {
   ~ typ !ctx {
     #All{t_inp t_bod}: 
       !&0{ctx bod} = @all(&L (t_bod #Var{&dep}) (+ &dep 1) #Cons{#Some{&0{$x t_inp}} ctx})
-      &0{@tail(ctx) #Lam{λ$x(bod)}}
+      &0{@tail(ctx) #Lam{λ$x.(bod)}}
     #Pol{t_bod}:
       @intr(&L (t_bod #Var{&dep}) (+ &dep 1) ctx)
     #U32:
-      @pick(&L #U32 &dep ctx λk(k))
+      @pick(&L #U32 &dep ctx λk.(k))
     #Var{idx}:
-      @pick(&L #Var{idx} &dep ctx λk(k))
+      @pick(&L #Var{idx} &dep ctx λk.(k))
     #App{fun arg}:
-      @pick(&L #App{fun arg} &dep ctx λk(k))
+      @pick(&L #App{fun arg} &dep ctx λk.(k))
     #Lam{bod}: *
     #Num{val}: *
   }
@@ -239,7 +239,7 @@ data Maybe {
       !&L{ctxL ctxR} = ctx
       &L{
         @elim(&L typL &dep (remL ctxL) annL)
-        @pick(&L typR &dep ctxR λk(remR #Cons{annR k}))
+        @pick(&L typR &dep ctxR λk.(remR #Cons{annR k}))
       }
   }
 
@@ -268,61 +268,61 @@ data Maybe {
 
 // T0 = Π(x:U32) Π(y:U32) Π(z:U32) U32
 @T0 =
-  #All{#U32 λx
-  #All{#U32 λy
-  #All{#U32 λz
+  #All{#U32 λx.
+  #All{#U32 λy.
+  #All{#U32 λz.
   #U32}}}
 
 // CBool = ∀P Π(x:P) Π(y:P) P
 @CBool =
-  #Pol{λp
+  #Pol{λp.
   !&{p p0}=p
   !&{p p1}=p
   !&{p p2}=p
-  #All{p0 λx
-  #All{p1 λy
+  #All{p0 λx.
+  #All{p1 λy.
   p2}}}
 
 // Tup(A B) = ∀P Π(p: Π(x:A) Π(y:B) P) P
 @Tup(A B) =
-  #Pol{λp
+  #Pol{λp.
   !&{p p0}=p
   !&{p p1}=p
   #All{
-    #All{A λx
-    #All{B λy
-    p0}} λp
+    #All{A λx.
+    #All{B λy.
+    p0}} λp.
   p1}}
 
 // TupF = ∀A Π(x: (Tup A A)) (Tup A A)
 @TupF =
-  #Pol{λA
-  #Pol{λB
+  #Pol{λA.
+  #Pol{λB.
   !&{A A0}=A
   !&{A A1}=A
   !&{A A2}=A
   !&{A A3}=A
-  #All{@Tup(A0 A1) λx
+  #All{@Tup(A0 A1) λx.
   @Tup(A2 A3)}}}
 
 // Tests
 // -----
 
-//A= λt(t 1 2)
-@A = #Lam{λt #App{#App{t #Num{1}} #Num{2}}}
+//A= λt.(t 1 2)
+@A = #Lam{λt. #App{#App{t #Num{1}} #Num{2}}}
 
-//B= λt(t 2 1)
-@B = #Lam{λt #App{#App{t #Num{2}} #Num{1}}}
+//B= λt.(t 2 1)
+@B = #Lam{λt. #App{#App{t #Num{2}} #Num{1}}}
 
-//R= λx(x λaλbλt(t b a))
-@R = #Lam{λx #App{x #Lam{λa #Lam{λb #Lam{λt #App{#App{t b} a}}}}}}
+//R= λx.(x λaλb.λt.(t b a))
+@R = #Lam{λx. #App{x #Lam{λa. #Lam{λb. #Lam{λt. #App{#App{t b} a}}}}}}
 
 // X : ∀A. (Tup A A) -> (Tup A A) = <all terms>
 @T = @TupF
 @X = @tm1(@all(1 @T 0 #Nil))
 
-// Solves for `?X` in `(?X λt(t A B)) == λt(t B A)`.
-// It finds `?X = λλ(0 λλ((1 3) 2))` in 3k interactions.
+// Solves for `?X` in `(?X λt.(t A B)) == λt.(t B A)`.
+// It finds `?X = λλ.(0 λλ.((1 3) 2))` in 3k interactions.
 @main = @when(@eq(#App{@X @A} @B 0) @do_show_term(@X))
 
 //@main = @X

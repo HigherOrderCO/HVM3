@@ -4,24 +4,24 @@
 
 // Squared Application
 (Sqr 0 f x) = x
-(Sqr n f x) = (Sqr (/ n 2) λk(f (f k)) (Rep (% n 2) f x))
+(Sqr n f x) = (Sqr (/ n 2) λk.(f (f k)) (Rep (% n 2) f x))
 
 // Bits (Scott-Encoded)
-(O x) = λo λi λe (o x)
-(I x) = λo λi λe (i x)
-E     = λo λi λe e
+(O x) = λo. λi. λe. (o x)
+(I x) = λo. λi. λe. (i x)
+E     = λo. λi. λe. e
 
 // Bits increment
-(Inc x) = λo λi λe (x i λop(o (Inc op)) e)
+(Inc x) = λo. λi. λe. (x i λop.(o (Inc op)) e)
 
 // Converts a Bits to a U60
 (BitsToU60 x) = (x
-  λp0 (+ (* 2 (BitsToU60 p0)) 0)
-  λp1 (+ (* 2 (BitsToU60 p1)) 1)
+  λp0. (+ (* 2 (BitsToU60 p0)) 0)
+  λp1. (+ (* 2 (BitsToU60 p1)) 1)
   0)
 
 (Zero 0) = E
 (Zero s) = (O (Zero (- s 1)))
 
 // Applies 'Inc' N times to zero
-Main = (BitsToU60 (Sqr 1234567 λx(Inc x) (Zero 60)))
+Main = (BitsToU60 (Sqr 1234567 λx.(Inc x) (Zero 60)))

@@ -97,6 +97,7 @@ parseCore = do
     'λ' -> do
       consume "λ"
       var <- parseName1
+      consume "."
       bod <- bindVars [var] parseCore
       return $ Lam var bod
 
@@ -655,7 +656,7 @@ collectLabels term = case term of
   Op2 _ x y           -> MS.union (collectLabels x) (collectLabels y)
 
 -- Gives unique names to lexically scoped vars, unless they start with '$'.
--- Example: `λx λt (t λx(x) x)` will read as `λx0 λt1 (t1 λx2(x2) x0)`.
+-- Example: `λx. λt. (t λx.(x) x)` will read as `λx0. λt1. (t1 λx2.(x2) x0)`.
 lexify :: Core -> Core
 lexify term = evalState (go term MS.empty) 0 where
   fresh :: String -> State Int String

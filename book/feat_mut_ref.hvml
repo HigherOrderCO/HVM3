@@ -1,13 +1,13 @@
 // Article: https://gist.github.com/VictorTaelin/fb798a5bd182f8c57dd302380f69777a
 
 @mut(ref fn) = !! $new = (fn (ref $new)) *
-@spt(ref fn) = (fn λ$y(ref $z) λ$z($y))
+@spt(ref fn) = (fn λ$y.(ref $z) λ$z.($y))
 
 @main =
-  ! $X = λ$x(0) // u32* X = &0;
-  !! @spt($X λ$X0 λ$X1 *) // u32* X0 = X; u32* X1 = X;
-  !! @mut($X0 λx(+ x 1)) // *X += 1;
-  !! @mut($X1 λx(+ x 1)) // *X += 1;
+  ! $X = λ$x.(0) // u32* X = &0;
+  !! @spt($X λ$X0. λ$X1. *) // u32* X0 = X; u32* X1 = X;
+  !! @mut($X0 λx.(+ x 1)) // *X += 1;
+  !! @mut($X1 λx.(+ x 1)) // *X += 1;
   $x // *X
 
 // The '!! x = val' notation represents a seq operator.

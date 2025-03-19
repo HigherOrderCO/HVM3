@@ -115,12 +115,12 @@ data Pair { #Pair{fst snd} }
     #O{bp}: 1
     #I{bp}: 1
   }
-  #O: λap ~b !ap {
+  #O: λap. ~b !ap {
     #E: 0
     #O{bp}: @lt_go(&k ap bp)
     #I{bp}: @lt_go(1 ap bp)
   }
-  #I: λap ~b !ap {
+  #I: λap. ~b !ap {
     #E: 0
     #O{bp}: @lt_go(0 ap bp)
     #I{bp}: @lt_go(&k ap bp)
@@ -308,4 +308,4 @@ data Pair { #Pair{fst snd} }
 @main = 
   ! cond = @eq(@mul(@X @Y) @P)
   ! not1 = @not(@eq(@X @bin(@S 1)))
-  @if(@and(cond not1) λt(t @u32(@X) @u32(@Y)) *)
+  @if(@and(cond not1) λt.(t @u32(@X) @u32(@Y)) *)
