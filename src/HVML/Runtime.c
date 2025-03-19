@@ -1677,12 +1677,11 @@ static void* worker_thread(void* arg) {
             break;
         }
         
-        // Get batch of redexes to process
         Term neg = take(global_rbag.terms[--global_rbag.size]);
         Term pos = take(global_rbag.terms[--global_rbag.size]);
         pthread_mutex_unlock(&global_rbag.lock);
         
-        // Process the redex
+        // Process redex's
         reduce(neg, pos);
     }
     
