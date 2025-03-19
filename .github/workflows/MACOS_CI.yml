@@ -44,14 +44,17 @@ jobs:
       - name: Build the project
         run: cabal build
         
-      - name: Run interpreted normalization
+      - name: Lazy - Run interpreted normalization
         run: cabal run hvml -- run ./book/feat_hoas.hvml
         
-      - name: Run compiled normalization
+      - name: Lazy - Run compiled normalization
         run: cabal run hvml -- run ./book/feat_hoas.hvml -c
         
-      - name: Run interpreted collapse
+      - name: Lazy - Run interpreted collapse
         run: cabal run hvml -- run ./book/enum_lam_smart.hvml -C
         
-      - name: Run compiled collapse
+      - name: Lazy - Run compiled collapse
         run: cabal run hvml -- run ./book/enum_lam_smart.hvml -C -c
+
+      - name: Strict - Run interpreted normalization
+        run: cabal run hvml -- run ./book/bench_parallel_sum_range.hvms -s

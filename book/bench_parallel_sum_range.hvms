@@ -1,0 +1,31 @@
+@height = 7
+
+@leaf = (a (* ((a b) b)))
+@node = (a (b ((a (b c)) (* c))))
+
+@main = b
+  & (a b) ~ @sum
+  & (@height (0 a)) ~ @make
+
+@make = (?(swi @make_leaf @make_node) swi)
+
+@make_leaf = (a b)
+  & (a b) ~ @leaf
+
+@make_node = ({hm1_0 hm1_1} ({n0 n1} ret))
+  & (rec_lft (rec_rgt ret)) ~ @node
+
+  & (hm1_0 (n_lft rec_lft)) ~ @make
+  & (* n0 n_lft) ~ 2
+
+  & (hm1_1 (n_rgt rec_rgt)) ~ @make
+  & (+ n2_rgt n_rgt) ~ 1
+  & (* n1 n2_rgt) ~ 2
+
+@sum = ((@sum_node (@sum_leaf b)) b)
+
+@sum_node = (a (b sum_ab))
+  & (a (+ sum_b sum_ab)) ~ @sum
+  & (b sum_b) ~ @sum
+
+@sum_leaf = (a a)
