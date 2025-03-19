@@ -1,5 +1,4 @@
-HVM3 - Work In Progress
-=======================
+# HVM3 - Work In Progress
 
 The **HVM** is an efficient implementation of the [Interaction Calculus](https://github.com/HigherOrderCO/Interaction-Calculus) (IC).
 
@@ -30,6 +29,27 @@ It is a WIP under active development.
 - [IC.md](./IC.md): Interaction Calculus, the theoretical foundation behind HVM
 
 - [HVM.md](./HVM.md): the HVM language, which extends IC with pragmatic primitives
+
+## Install
+
+1. Install Cabal.
+
+3. Clone this repository.
+
+3. Run `cabal install`.
+
+## Usage
+
+```bash
+cabal run hvml -- run file.hvml     # runs lazy-mode, interpreted
+cabal run hvml -- run file.hvml -c  # runs lazy-mode, compiled
+
+cabal run hvml -- run file.hvms     # runs strict-mode, interpreted (TODO)
+cabal run hvml -- run file.hvms -c  # runs strict-mode, compiled (TODO)
+```
+
+Note: the `-c` flag will also generate a standalone `.main.c` file, which if you
+want, you can compile and run it independently. See examples on the [book/](book/) directory.
 
 ## Evaluation Modes
 
@@ -70,31 +90,7 @@ and will be merged later.
 
 - Not Lévy Optimal (can waste β-reductions)
 
-Install
--------
-
-1. Install Cabal.
-
-3. Clone this repository.
-
-3. Run `cabal install`.
-
-Usage
------
-
-```bash
-cabal run hvml -- run file.hvml     # runs lazy-mode, interpreted
-cabal run hvml -- run file.hvml -c  # runs lazy-mode, compiled
-
-cabal run hvml -- run file.hvms     # runs strict-mode, interpreted (TODO)
-cabal run hvml -- run file.hvms -c  # runs strict-mode, compiled (TODO)
-```
-
-Note: the `-c` flag will also generate a standalone `.main.c` file, which if you
-want, you can compile and run it independently. See examples on the [book/](book/) directory.
-
-Performance
------------
+## Performance
 
 Benchmarks will be added later. In the few programs tested, HVM3 is up to 42x
 faster single-core than Bend, due to its compiler (Bend was interpreted). It is
