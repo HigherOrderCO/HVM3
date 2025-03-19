@@ -3,6 +3,9 @@
 
 module Collapse where
 
+import HVML.Reduce
+import HVML.Extract
+
 import Control.Monad (ap, forM, forM_, foldM)
 import Control.Monad.IO.Class
 import Data.Char (chr, ord)
@@ -18,24 +21,13 @@ import System.IO.Unsafe (unsafeInterleaveIO)
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Map.Strict as MS
 
---  #C{* * *}
--- -------------- CTR-ERA
--- *
-icEraCtr :: Term -> Term -> HVM Term
-icEraCtr ctr _ = do
-  let ctrLoc = termLoc ctr
-  let eraTerm = termNew _ERA_ 0 0
-  setOld ctrLoc (termSetBit eraTerm)
-  return eraTerm
-
 -- ~ * { K0 K1 K2 ... }
 -- --------------------- MAT-ERA
 -- *
 icEraMat :: Term -> Term -> HVM Term
 icEraMat mat _ = do
-  let matLoc = termLoc mat
+  putStrLn $ "MAT-ERA"
   let eraTerm = termNew _ERA_ 0 0
-  setOld matLoc (termSetBit eraTerm)
   return eraTerm
 
 -- λx.*
@@ -44,6 +36,7 @@ icEraMat mat _ = do
 -- *
 icEraLam :: Term -> Term -> HVM Term
 icEraLam lam _ = do
+  putStrLn $ "LAM-ERA"
   let lamLoc = termLoc lam
   let eraTerm = termNew _ERA_ 0 0
   setOld lamLoc (termSetBit eraTerm)
@@ -54,6 +47,7 @@ icEraLam lam _ = do
 -- *
 icEraApp :: Term -> Term -> HVM Term
 icEraApp app era = do
+  putStrLn $ "APP-ERA"
   return (termNew _ERA_ 0 0)
 
 -- !&L{r,s} = *;
@@ -64,6 +58,7 @@ icEraApp app era = do
 -- K
 icDupEra :: Term -> Term -> HVM Term
 icDupEra dup era = do
+  putStrLn $ "DUP-ERA"
   let dupLoc = termLoc dup
   let dupTag = termTag dup
   let isCo0 = (dupTag == _DP0_)
@@ -79,6 +74,7 @@ icDupEra dup era = do
 -- &L{λx0.f0,λx1.f1}
 icSupLam :: Term -> Term -> HVM Term
 icSupLam lam sup = do
+  putStrLn $ "SUP-LAM"
   let lamLoc = termLoc lam
   let supLoc = termLoc sup
   let supLab = termLab sup
@@ -118,6 +114,7 @@ icSupLam lam sup = do
 -- &L{(f0 x0),(f1 x1)}
 icSupApp :: Term -> Term -> HVM Term
 icSupApp app sup = do
+  putStrLn $ "SUP-APP"
   let appLoc = termLoc app
   let supLoc = termLoc sup
   let supLab = termLab sup
@@ -153,6 +150,7 @@ icSupApp app sup = do
 -- &L{&R{x0,y0},&R{x1,y1}}
 icSupSupX :: Term -> Term -> HVM Term
 icSupSupX outerSup innerSup = do
+  putStrLn $ "SUP-SUP-X"
   let outerLoc = termLoc outerSup 
   let outerLab = termLab outerSup
   let innerLoc = termLoc innerSup
@@ -218,6 +216,7 @@ icSupSupY outerSup innerSup = do
   setNew (resultSupLoc + 0) sup0
   setNew (resultSupLoc + 1) sup1
   return (termNew _SUP_ innerLab resultSupLoc)
+  
 
 -- !&L{x0,x1} = x; K
 -- ----------------- DUP-VAR
@@ -226,6 +225,7 @@ icSupSupY outerSup innerSup = do
 -- K
 icDupVar :: Term -> Term -> HVM Term
 icDupVar dup var = do
+  putStrLn $ "DUP-VAR"
   let dupLoc = termLoc dup
   setOld dupLoc (termSetBit var)
   return var
@@ -239,6 +239,7 @@ icDupVar dup var = do
 -- K
 icDupApp :: Term -> Term -> HVM Term
 icDupApp dup app = do
+  putStrLn $ "DUP-APP"
   let dupLoc = termLoc dup 
   let lab = termLab dup
   let tag = termTag dup
@@ -284,53 +285,8 @@ icDupApp dup app = do
 -- !&L{k10, k11}=k1
 -- !&L{kn0, kn1}=kn
 -- &L{#CTR0{x0 k00 k10 ... kn0} #CTR1{x1 k01 k11 kn1}}
-icSupCtr ::  Term -> Term -> Word64 -> Word64 -> HVM Term
-icSupCtr ctr sup ctrAri supIdx = do
-  -- Extract locations and labels
-  let ctrLoc = termLoc ctr
-  let supLoc = termLoc sup
-  let supLab = termLab sup  -- Label L of the superposition
-  let cid = termLab ctr     -- Constructor ID
+-- icSupCtr ::  Term -> Term -> Word64 -> Word64 -> HVM Term
 
-  -- Get the superposition components x0 and x1
-  x0 <- got (supLoc + 0)
-  x1 <- got (supLoc + 1)
-
-  -- Build field pairs for both constructors
-  fieldPairs <- forM [0 .. ctrAri - 1] $ \j -> do
-    if j == supIdx then
-      -- Superposed field: use x0 and x1 directly
-      return (x0, x1)
-    else do
-      -- Non-superposed field: duplicate it
-      fj <- got (ctrLoc + j)
-      dupFjLoc <- allocNode 1
-      setNew dupFjLoc fj
-      let fj0 = termNew _DP0_ supLab dupFjLoc
-      let fj1 = termNew _DP1_ supLab dupFjLoc
-      return (fj0, fj1)
-
-  -- Extract fields for each constructor
-  let fields0 = map fst fieldPairs  -- Fields for CTR0: x0 at supIdx, fj0 elsewhere
-  let fields1 = map snd fieldPairs  -- Fields for CTR1: x1 at supIdx, fj1 elsewhere
-
-  -- Allocate and populate first constructor (CTR0)
-  ctr0Loc <- allocNode ctrAri
-  forM_ [0 .. ctrAri - 1] $ \j -> do
-    setNew (ctr0Loc + j) (fields0 !! fromIntegral j)
-  let ctr0 = termNew _CTR_ cid ctr0Loc
-
-  -- Allocate and populate second constructor (CTR1)
-  ctr1Loc <- allocNode ctrAri
-  forM_ [0 .. ctrAri - 1] $ \j -> do
-    setNew (ctr1Loc + j) (fields1 !! fromIntegral j)
-  let ctr1 = termNew _CTR_ cid ctr1Loc
-
-  -- Create the resulting superposition
-  newSupLoc <- allocNode 2
-  setNew (newSupLoc + 0) ctr0
-  setNew (newSupLoc + 1) ctr1
-  return (termNew _SUP_ supLab newSupLoc)
 
 -- ~N{#A: &L{z0 z1} #B: x #C: y ...}
 -- --------------------------------- SUP-MAT-CTR
@@ -340,6 +296,7 @@ icSupCtr ctr sup ctrAri supIdx = do
 -- &L{~N0{#A:z0 #B: x0 #C: y0} ~N1{#A:z1 #B: x1 #C: y1}}
 icSupMatCtr :: Tag -> Term -> Term -> Word64 -> Word64 -> HVM Term
 icSupMatCtr matTag mat sup matLen supIdx = do
+  putStrLn $ "SUP-MAT-CTR"
   let matLoc = termLoc mat
   let matLab = termLab mat
   let supLab = termLab sup
@@ -363,15 +320,15 @@ icSupMatCtr matTag mat sup matLen supIdx = do
       return (t0j, t1j)
   mat0Loc <- allocNode (matLen + 1)
   setNew (mat0Loc + 0) n0
-  forM_ [0 .. matLen - 1] $ \j -> do
-    let (u_j, _) = uList !! fromIntegral j
-    setNew (mat0Loc + 1 + j) u_j
+  forM_ [1 .. matLen] $ \j -> do
+    let (u_j, _) = uList !! fromIntegral (j - 1)
+    setNew (mat0Loc + 1 + (j - 1)) u_j
   let mat0 = termNew matTag matLab mat0Loc
   mat1Loc <- allocNode (matLen + 1)
   setNew (mat1Loc + 0) n1
-  forM_ [0 .. matLen - 1] $ \j -> do
-    let (_, v_j) = uList !! fromIntegral j
-    setNew (mat1Loc + 1 + j) v_j
+  forM_ [1 .. matLen] $ \j -> do
+    let (_, v_j) = uList !! fromIntegral (j - 1)
+    setNew (mat1Loc + 1 + (j - 1)) v_j
   let mat1 = termNew matTag matLab mat1Loc
   supLoc <- allocNode 2
   setNew (supLoc + 0) mat0
@@ -397,6 +354,7 @@ collapseSupsTerm book root = do
   let tag = termTag term
   let lab = termLab term
   let loc = termLoc term
+  -- putStrLn $ "SUP TAG: " ++ show (tagT tag)
   case (tagT tag) of
     LAM -> do
       bod <- got (loc + 0)
@@ -416,15 +374,18 @@ collapseSupsTerm book root = do
       rgtCol <- collapseSupsTerm book rgt
       setOld (loc + 0) lftCol
       setOld (loc + 1) rgtCol
-    CTR -> do
-      let cid = termLab term
-      let ctrAri = mget (cidToAri book) cid
-      forM_ [1 .. ctrAri] $ \i -> do
-        ctr <- got (loc + (i - 1))
-        ctrCol <- collapseSupsTerm book ctr
-        setOld (loc + (i - 1)) ctrCol
-      return ()
+
+    MAT -> do
+        let cid = termLab term
+        let matLen = mget (cidToLen book) cid
+        forM_ [1 .. matLen] $ \i -> do
+          ctr <- got (loc + i)
+          ctrCol <- collapseSupsTerm book ctr
+          setOld (loc + i) ctrCol
+        return ()
+
     _ -> return ()
+
   term <- reduceC term 0
   let tag = termTag term
   let lab = termLab term
@@ -458,21 +419,9 @@ collapseSupsTerm book root = do
       else if isSup rgtCol && lab > termLab rgtCol then do
         result <- icSupSupY term rgtCol
         collapseSupsTerm book result
+        return term
       else return term
-    CTR -> do
-      let cid = termLab term
-      let ctrAri = mget (cidToAri book) cid
-      let checkEraOrSup i = if i >= ctrAri then return term else do
-            field <- got (loc + i)
-            if isEra field then do
-              res <- icEraCtr term field
-              collapseSupsTerm book res
-            else if isSup field then do
-              res <- icSupCtr term field ctrAri i
-              collapseSupsTerm book res
-            else checkEraOrSup (i + 1)
-      checkEraOrSup 0
-
+    
     tag | tag == MAT || tag == SWI -> do
       let matLen = if tag == SWI then 2 else mget (cidToLen book) lab
       let matTag = if tag == SWI then _SWI_ else _MAT_
@@ -486,6 +435,7 @@ collapseSupsTerm book root = do
               collapseSupsTerm book res
             else checkEraOrSup (i + 1)
       checkEraOrSup 1
+
     _ -> return term
 
 
@@ -494,6 +444,7 @@ collapseDupsTerm book root = do
   term <- reduceC root 0
   let tag = termTag term
   let loc = termLoc term
+  -- putStrLn $ "DUP TAG: " ++ show (tagT tag)
   case (tagT tag) of
     tag | isDup tag -> do
       val <- got loc
