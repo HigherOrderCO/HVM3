@@ -27,9 +27,9 @@ It is a WIP under active development.
 
 ## Specifications
 
-- [IC.md]: Interaction Calculus, the theoretical foundation behind HVM
+- [IC.md](./IC.md): Interaction Calculus, the theoretical foundation behind HVM
 
-- [HVM.md]: the HVM language, which extends IC with pragmatic primitives
+- [HVM.md](./HVM.md): the HVM language, which extends IC with pragmatic primitives
 
 ## Evaluation Modes
 
