@@ -6,9 +6,9 @@ Lambda Calculus (λC), but with some key differences:
 2. Vars are global: they can occur anywhere in the program.
 3. There is a new core primitive: the superposition.
 
-An HVM core term is defined by the following grammar:
+An Interaction Calculus term is defined by the following grammar:
 
-```
+```haskell
 Term ::=
   | VAR: Name
   | ERA: "*"
@@ -45,7 +45,7 @@ Combinators paper to learn more.
 
 The core interaction rules are listed below:
 
-```
+```haskell
 (* a)
 ----- APP-ERA
 *
@@ -103,7 +103,7 @@ with a single atomic-swap.
 
 Below is a pseudocode implementation of these interaction rules:
 
-```
+```python
 def app_lam(app, lam):
   sub[lam.nam] = app.arg
   return lam.bod
@@ -136,7 +136,7 @@ Terms can be reduced to weak head normal form, which means reducing until the
 outermost constructor is a value (LAM, SUP, etc.), or until no more reductions
 are possible. Example:
 
-```
+```python
 def whnf(term):
   while True:
     match term:
@@ -163,7 +163,7 @@ def whnf(term):
 
 Terms can be reduced to full normal form by recursively taking the whnf:
 
-```
+```python
 def normal(term):
   term = whnf(term)
   match term:
@@ -183,7 +183,7 @@ Below are some normalization examples.
 
 Example 0: (simple λ-term)
 
-```
+```haskell
 (λx.λt.(t x) λy.y)
 ------------------ APP-LAM
 λt.(t λy.y)
@@ -191,7 +191,7 @@ Example 0: (simple λ-term)
 
 Example 1: (larger λ-term)
 
-```
+```haskell
 (λb.λt.λf.((b f) t) λT.λF.T)
 ---------------------------- APP-LAM
 λt.λf.((λT.λF.T f) t)
@@ -203,7 +203,7 @@ Example 1: (larger λ-term)
 
 Example 2: (global scopes)
 
-```
+```haskell
 {x,(λx.λy.y λk.k)}
 ------------------ APP-LAM
 {λk.k,λy.y}
@@ -211,7 +211,7 @@ Example 2: (global scopes)
 
 Example 3: (superposition)
 
-```
+```haskell
 !{a,b} = {λx.x,λy.y}; (a b)
 --------------------------- DUP-SUP
 (λx.x λy.y)
@@ -221,7 +221,7 @@ Example 3: (superposition)
 
 Example 4: (overlap)
 
-```
+```haskell
 ({λx.x,λy.y} λz.z)
 ------------------ APP-SUP  
 ! {x0,x1} = λz.z; {(λx.x x0),(λy.y x1)}  
@@ -239,7 +239,7 @@ Example 5: (default test term)
 
 The following term can be used to test all interactions:
 
-```
+```haskell
 ((λf.λx.!{f0,f1}=f;(f0 (f1 x)) λB.λT.λF.((B F) T)) λa.λb.a)
 ----------------------------------------------------------- 16 interactions
 λa.λb.a
@@ -251,7 +251,7 @@ An Interaction Calculus term can be collapsed to a superposed tree of pure
 Lambda Calculus terms without SUPs and DUPs, by extending the evaluator with the
 following collapse interactions:
 
-```
+```haskell
 λx.*
 ------ ERA-LAM
 x <- *
