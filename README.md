@@ -3,7 +3,7 @@
 The **HVM** is an efficient implementation of the [Interaction Calculus](https://github.com/HigherOrderCO/Interaction-Calculus) (IC).
 
 The Interaction Calculus is a new foundation for computing, similar to the
-Lambda Calculus, but theoretically more efficient. The HVM is an efficient
+Lambda Calculus, but theoretically optimal. The HVM is an efficient
 implementation of this new paradigm, and can be seen as a fast engine for
 symbolic computations.
 
