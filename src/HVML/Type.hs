@@ -7,7 +7,6 @@ import Foreign.Ptr
 -- Core Types
 -- ----------
 
---show--
 data Core
   = Var String -- x
   | Ref String Word64 [Core] -- @fn
@@ -24,21 +23,18 @@ data Core
   | Let Mode String Core Core -- ! x = v body
   deriving (Show, Eq)
 
---show--
 data Mode
   = LAZY
   | STRI
   | PARA
   deriving (Show, Eq, Enum)
 
---show--
 data MatchType
   = Switch
   | Match
   | IfLet
   deriving (Show, Eq, Enum)
 
---show--
 data Oper
   = OP_ADD | OP_SUB | OP_MUL | OP_DIV
   | OP_MOD | OP_EQ  | OP_NE  | OP_LT
@@ -46,7 +42,6 @@ data Oper
   | OP_OR  | OP_XOR | OP_LSH | OP_RSH
   deriving (Show, Eq, Enum)
 
---show--
 -- A top-level function, including:
 -- - copy: true when ref-copy mode is enabled
 -- - args: a list of (isArgStrict, argName) pairs
@@ -69,13 +64,11 @@ data Book = Book
 -- Runtime Types
 -- -------------
 
---show--
 type Tag  = Word64
 type Lab  = Word64
 type Loc  = Word64
 type Term = Word64
 
---show--
 data TAG
   = DP0
   | DP1
@@ -97,16 +90,13 @@ data TAG
   | OPY
   deriving (Eq, Show)
 
---show--
 type HVM = IO
 
---show--
 type ReduceAt = Book -> Loc -> Bool -> HVM Term
 
 -- Constants
 -- ---------
 
---show--
 tagT :: Tag -> TAG
 tagT 0x00 = DP0
 tagT 0x01 = DP1
@@ -182,7 +172,6 @@ _W32_ = 0x11
 _CHR_ :: Tag
 _CHR_ = 0x12
 
---show--
 modeT :: Lab -> Mode
 modeT 0x00 = LAZY
 modeT 0x01 = STRI
