@@ -38,7 +38,7 @@ coreToString core =
         if lab == 0 then
           "λ" ++ vr0 ++ " " ++ bod'
         else
-          "&" ++ show lab ++ " λ" ++ vr0 ++ " " ++ bod'
+          "&" ++ show lab ++ "λ" ++ vr0 ++ " " ++ bod'
 
       App lab fun arg ->
         let fun' = coreToString fun in

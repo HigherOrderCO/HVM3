@@ -52,7 +52,7 @@ reduceAt debug book host gc = do
         CTR -> cont host (reduceAppCtr term fun)
         W32 -> cont host (reduceAppW32 term fun)
         CHR -> cont host (reduceAppW32 term fun)
-        _   -> setOld (loc + 0) fun >> return term
+        _   -> set (loc + 0) fun >> return term
 
     MAT -> do
       val <- reduceAt debug book (loc + 0) gc
@@ -63,7 +63,7 @@ reduceAt debug book host gc = do
         CTR -> cont host (reduceMatCtr term val)
         W32 -> cont host (reduceMatW32 term val)
         CHR -> cont host (reduceMatW32 term val)
-        _   -> setOld (loc + 0) val >> return term
+        _   -> set (loc + 0) val >> return term
 
     IFL -> do
       val <- reduceAt debug book (loc + 0) gc
@@ -74,7 +74,7 @@ reduceAt debug book host gc = do
         CTR -> cont host (reduceMatCtr term val)
         W32 -> cont host (reduceMatW32 term val)
         CHR -> cont host (reduceMatW32 term val)
-        _   -> setOld (loc + 0) val >> return term
+        _   -> set (loc + 0) val >> return term
 
     SWI -> do
       val <- reduceAt debug book (loc + 0) gc
@@ -85,7 +85,7 @@ reduceAt debug book host gc = do
         CTR -> cont host (reduceMatCtr term val)
         W32 -> cont host (reduceMatW32 term val)
         CHR -> cont host (reduceMatW32 term val)
-        _   -> setOld (loc + 0) val >> return term
+        _   -> set (loc + 0) val >> return term
 
     OPX -> do
       val <- reduceAt debug book (loc + 0) gc
@@ -96,7 +96,7 @@ reduceAt debug book host gc = do
         CTR -> cont host (reduceOpxCtr term val)
         W32 -> cont host (reduceOpxW32 term val)
         CHR -> cont host (reduceOpxW32 term val)
-        _   -> setOld (loc + 0) val >> return term
+        _   -> set (loc + 0) val >> return term
 
     OPY -> do
       val <- reduceAt debug book (loc + 1) gc
@@ -107,7 +107,7 @@ reduceAt debug book host gc = do
         CTR -> cont host (reduceOpyCtr term val)
         W32 -> cont host (reduceOpyW32 term val)
         CHR -> cont host (reduceOpyW32 term val)
-        _   -> setOld (loc + 1) val >> return term
+        _   -> set (loc + 1) val >> return term
 
     DP0 -> do
       sb0 <- got (loc + 0)
@@ -121,9 +121,9 @@ reduceAt debug book host gc = do
             CTR -> cont host (reduceDupCtr term val)
             W32 -> cont host (reduceDupW32 term val)
             CHR -> cont host (reduceDupW32 term val)
-            _   -> setOld (loc + 0) val >> return term
+            _   -> set (loc + 0) val >> return term
         else do
-          setOld host (termRemBit sb0)
+          set host (termRemBit sb0)
           reduceAt debug book host gc
 
     DP1 -> do
@@ -138,9 +138,9 @@ reduceAt debug book host gc = do
             CTR -> cont host (reduceDupCtr term val)
             W32 -> cont host (reduceDupW32 term val)
             CHR -> cont host (reduceDupW32 term val)
-            _   -> setOld (loc + 0) val >> return term
+            _   -> set (loc + 0) val >> return term
         else do
-          setOld host (termRemBit sb1)
+          set host (termRemBit sb1)
           reduceAt debug book host gc
 
     VAR -> do
@@ -148,7 +148,7 @@ reduceAt debug book host gc = do
       if termGetBit sub == 0
         then return term
         else do
-          setOld host (termRemBit sub)
+          set host (termRemBit sub)
           reduceAt debug book host gc
 
     REF -> do
@@ -161,7 +161,7 @@ reduceAt debug book host gc = do
   where
     cont host action = do
       ret <- action
-      setOld host ret
+      set host ret
       reduceAt debug book host gc
 
 gotT :: Book -> Loc -> Bool -> HVM Term
@@ -221,17 +221,17 @@ reduceRefAt_DupF book host loc ari = do
       when (termLoc lab > 0xFFFF) $ do
         error "RUNTIME_ERROR: dynamic DUP label too large"
       -- Create the DUP node with value
-      setNew (dup + 0) val
+      set (dup + 0) val
       -- Create first APP node for (APP bod DP0)
       app1 <- allocNode 2
-      setNew (app1 + 0) bod
-      setNew (app1 + 1) (termNew _DP0_ (termLoc lab) dup)
+      set (app1 + 0) bod
+      set (app1 + 1) (termNew _DP0_ (termLoc lab) dup)
       -- Create second APP node for (APP (APP bod DP0) DP1)
       app2 <- allocNode 2
-      setNew (app2 + 0) (termNew _APP_ 0 app1)
-      setNew (app2 + 1) (termNew _DP1_ (termLoc lab) dup)
+      set (app2 + 0) (termNew _APP_ 0 app1)
+      set (app2 + 1) (termNew _DP1_ (termLoc lab) dup)
       let ret = termNew _APP_ 0 app2
-      setOld host ret
+      set host ret
       return ret
     _ -> do
       core <- doExtractCoreAt gotT book (loc + 0)
@@ -255,9 +255,9 @@ reduceRefAt_SupF book host loc ari = do
       when (termLoc lab > 0xFFFF) $ do
         error "RUNTIME_ERROR: dynamic SUP label too large"
       let ret = termNew _SUP_ (termLoc lab) sup
-      setNew (sup + 0) tm0
-      setNew (sup + 1) tm1
-      setOld host ret
+      set (sup + 0) tm0
+      set (sup + 1) tm1
+      set host ret
       return ret
     _ -> error "RUNTIME_ERROR: dynamic SUP without numeric label."
 
@@ -276,7 +276,7 @@ reduceRefAt_LogF book host loc ari = do
   -- forM_ msgs $ \msg -> do
     -- putStrLn $ coreToString msg
   let ret = termNew _W32_ 0 0
-  setOld host ret
+  set host ret
   return ret
 
 -- Primitive: Fresh `@FRESH`
@@ -289,7 +289,7 @@ reduceRefAt_FreshF book host loc ari = do
     exitFailure
   num <- fresh
   let ret = termNew _W32_ 0 num
-  setOld host ret
+  set host ret
   return ret
 
 reduceCAt :: Bool -> ReduceAt

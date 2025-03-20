@@ -79,7 +79,7 @@ instance Monad Collapse where
 
 collapseDupsAt :: IM.IntMap [Int] -> ReduceAt -> Book -> Loc -> HVM Core
 
-collapseDupsAt state@(paths) reduceAt book host = do
+collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
   term <- reduceAt book host True
   case tagT (termTag term) of
 
@@ -90,24 +90,22 @@ collapseDupsAt state@(paths) reduceAt book host = do
       let loc = termLoc term
       let mode = modeT (termLab term)
       name <- return $ "$" ++ show (loc + 0)
-      ridx <- rpush term 2
-      val0 <- collapseDupsAtLazy state reduceAt book ridx 1
-      bod0 <- collapseDupsAtLazy state reduceAt book ridx 2
+      val0 <- collapseDupsAt state reduceAt book (loc + 1)
+      bod0 <- collapseDupsAt state reduceAt book (loc + 2)
       return $ Let mode name val0 bod0
 
     LAM -> do
       let loc = termLoc term
-      name <- return $ "$" ++ show (loc + 0)
-      ridx <- rpush term 1
-      bod0 <- collapseDupsAtLazy state reduceAt book ridx 0
       let lab = termLab term
+      name <- return $ "$" ++ show (loc + 0)
+      bod0 <- collapseDupsAt state reduceAt book (loc + 0)
       return $ Lam lab name bod0
 
     APP -> do
-      ridx <- rpush term 2
-      fun0 <- collapseDupsAtLazy state reduceAt book ridx 0
-      arg0 <- collapseDupsAtLazy state reduceAt book ridx 1
+      let loc = termLoc term
       let lab = termLab term
+      fun0 <- collapseDupsAt state reduceAt book (loc + 0)
+      arg0 <- collapseDupsAt state reduceAt book (loc + 1)
       return $ App lab fun0 arg0
 
     SUP -> do
@@ -118,9 +116,8 @@ collapseDupsAt state@(paths) reduceAt book host = do
           let newPaths = IM.insert (fromIntegral lab) ps paths
           collapseDupsAt (newPaths) reduceAt book (loc + fromIntegral p)
         _ -> do
-          ridx <- rpush term 2
-          tm00 <- collapseDupsAtLazy state reduceAt book ridx 0
-          tm11 <- collapseDupsAtLazy state reduceAt book ridx 1
+          tm00 <- collapseDupsAt state reduceAt book (loc + 0)
+          tm11 <- collapseDupsAt state reduceAt book (loc + 1)
           return $ Sup lab tm00 tm11
 
     VAR -> do
@@ -128,7 +125,7 @@ collapseDupsAt state@(paths) reduceAt book host = do
       sub <- got loc
       if termGetBit sub /= 0
       then do
-        setOld (loc + 0) (termRemBit sub)
+        set (loc + 0) (termRemBit sub)
         collapseDupsAt state reduceAt book (loc + 0)
       else do
         name <- return $ "$" ++ show loc
@@ -140,7 +137,7 @@ collapseDupsAt state@(paths) reduceAt book host = do
       sb0 <- got (loc+0)
       if termGetBit sb0 /= 0
       then do
-        setOld (loc + 0) (termRemBit sb0)
+        set (loc + 0) (termRemBit sb0)
         collapseDupsAt state reduceAt book (loc + 0)
       else do
         let newPaths = IM.alter (Just . maybe [0] (0:)) (fromIntegral lab) paths
@@ -152,7 +149,7 @@ collapseDupsAt state@(paths) reduceAt book host = do
       sb1 <- got (loc+0)
       if termGetBit sb1 /= 0
       then do
-        setOld (loc + 0) (termRemBit sb1)
+        set (loc + 0) (termRemBit sb1)
         collapseDupsAt state reduceAt book (loc + 0)
       else do
         let newPaths = IM.alter (Just . maybe [1] (1:)) (fromIntegral lab) paths
@@ -165,8 +162,7 @@ collapseDupsAt state@(paths) reduceAt book host = do
       let nam = MS.findWithDefault "?" cid (cidToCtr book)
       let ari = mget (cidToAri book) cid
       let aux = if ari == 0 then [] else [0 .. ari-1]
-      ridx <- rpush term (fromIntegral ari)
-      fds0 <- forM aux (collapseDupsAtLazy state reduceAt book ridx)
+      fds0 <- forM aux (\i -> collapseDupsAt state reduceAt book (loc + i))
       return $ Ctr nam fds0
 
     MAT -> do
@@ -174,33 +170,30 @@ collapseDupsAt state@(paths) reduceAt book host = do
       let lab = termLab term
       let cid = lab
       let len = fromIntegral $ mget (cidToLen book) cid
-      ridx <- rpush term (1 + len)
-      val0 <- collapseDupsAtLazy state reduceAt book ridx 0
+      val0 <- collapseDupsAt state reduceAt book (loc + 0)
       css0 <- forM [0..len-1] $ \i -> do
         let ctr = mget (cidToCtr book) (cid + i)
         let ari = fromIntegral $ mget (cidToAri book) (cid + i)
         let fds = if ari == 0 then [] else ["$" ++ show (loc + 1 + j) | j <- [0..ari-1]]
-        bod0 <- collapseDupsAtLazy state reduceAt book ridx (1 + i)
+        bod0 <- collapseDupsAt state reduceAt book (loc + 1 + i)
         return (ctr, fds, bod0)
       return $ Mat val0 [] css0
 
     IFL -> do
       let loc = termLoc term
       let lab = termLab term
-      ridx <- rpush term 3
-      val0 <- collapseDupsAtLazy state reduceAt book ridx 0
-      cs00 <- collapseDupsAtLazy state reduceAt book ridx 1
-      cs10 <- collapseDupsAtLazy state reduceAt book ridx 2
+      val0 <- collapseDupsAt state reduceAt book (loc + 0)
+      cs00 <- collapseDupsAt state reduceAt book (loc + 1)
+      cs10 <- collapseDupsAt state reduceAt book (loc + 2)
       return $ Mat val0 [] [(mget (cidToCtr book) lab, [], cs00), ("_", [], cs10)]
 
     SWI -> do
       let loc = termLoc term
       let lab = termLab term
       let len = fromIntegral lab
-      ridx <- rpush term (1 + len)
-      val0 <- collapseDupsAtLazy state reduceAt book ridx 0
+      val0 <- collapseDupsAt state reduceAt book (loc + 0)
       css0 <- forM [0..len-1] $ \i -> do
-        bod0 <- collapseDupsAtLazy state reduceAt book ridx (1 + i)
+        bod0 <- collapseDupsAt state reduceAt book (loc + 1 + i)
         return (show i, [], bod0)
       return $ Mat val0 [] css0
 
@@ -215,17 +208,15 @@ collapseDupsAt state@(paths) reduceAt book host = do
     OPX -> do
       let loc = termLoc term
       let opr = toEnum (fromIntegral (termLab term))
-      ridx <- rpush term 2
-      nm00 <- collapseDupsAtLazy state reduceAt book ridx 0
-      nm10 <- collapseDupsAtLazy state reduceAt book ridx 1
+      nm00 <- collapseDupsAt state reduceAt book (loc + 0)
+      nm10 <- collapseDupsAt state reduceAt book (loc + 1)
       return $ Op2 opr nm00 nm10
 
     OPY -> do
       let loc = termLoc term
       let opr = toEnum (fromIntegral (termLab term))
-      ridx <- rpush term 2
-      nm00 <- collapseDupsAtLazy state reduceAt book ridx 0
-      nm10 <- collapseDupsAtLazy state reduceAt book ridx 1
+      nm00 <- collapseDupsAt state reduceAt book (loc + 0)
+      nm10 <- collapseDupsAt state reduceAt book (loc + 1)
       return $ Op2 opr nm00 nm10
 
     REF -> do
@@ -233,19 +224,13 @@ collapseDupsAt state@(paths) reduceAt book host = do
       let lab = termLab term
       let fid = lab
       let ari = funArity book fid
-      ridx <- rpush term (fromIntegral ari)
-      arg0 <- forM [0..ari-1] (collapseDupsAtLazy state reduceAt book ridx)
+      arg0 <- forM [0..ari-1] (\i -> collapseDupsAt state reduceAt book (loc + i))
       let name = MS.findWithDefault "?" fid (fidToNam book)
       return $ Ref name fid arg0
 
     tag -> do
       return $ Var "?"
       -- exitFailure
-
-  where
-    collapseDupsAtLazy state reduceAt book ridx off = unsafeInterleaveIO $ do
-      base <- rtake ridx -- get GC-safe location
-      collapseDupsAt state reduceAt book ((termLoc base) + off)
 
 -- Sup Collapser
 -- -------------

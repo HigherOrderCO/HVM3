@@ -89,7 +89,7 @@ compileFull book fid core copy args = do
   st <- get
   forM_ (vars st) $ \ (var,host) -> do
     let varTerm = MS.findWithDefault "" var (bins st)
-    emit $ "set_old(" ++ host ++ ", " ++ varTerm ++ ");"
+    emit $ "set(" ++ host ++ ", " ++ varTerm ++ ");"
   emit $ "return " ++ result ++ ";"
   tabDec
   emit "}"
@@ -116,10 +116,10 @@ compileFullCore book fid (Let mode var val bod) host = do
   letNam <- fresh "let"
   emit $ "Loc " ++ letNam ++ " = alloc_node(2);"
   valT <- compileFullCore book fid val (letNam ++ " + 0")
-  emit $ "set_new(" ++ letNam ++ " + 0, " ++ valT ++ ");"
+  emit $ "set(" ++ letNam ++ " + 0, " ++ valT ++ ");"
   bind var $ "term_new(VAR, 0, " ++ letNam ++ " + 0)"
   bodT <- compileFullCore book fid bod (letNam ++ " + 1")
-  emit $ "set_new(" ++ letNam ++ " + 1, " ++ bodT ++ ");"
+  emit $ "set(" ++ letNam ++ " + 1, " ++ bodT ++ ");"
   return $ "term_new(LET, " ++ show (fromEnum mode) ++ ", " ++ letNam ++ ")"
 
 compileFullCore book fid (Lam lab var bod) host = do
@@ -127,7 +127,7 @@ compileFullCore book fid (Lam lab var bod) host = do
   emit $ "Loc " ++ lamNam ++ " = alloc_node(1);"
   bind var $ "term_new(VAR, 0, " ++ lamNam ++ " + 0)"
   bodT <- compileFullCore book fid bod (lamNam ++ " + 0")
-  emit $ "set_new(" ++ lamNam ++ " + 0, " ++ bodT ++ ");"
+  emit $ "set(" ++ lamNam ++ " + 0, " ++ bodT ++ ");"
   return $ "term_new(LAM, " ++ show lab ++ ", " ++ lamNam ++ ")"
 
 compileFullCore book fid (App lab fun arg) host = do
@@ -135,8 +135,8 @@ compileFullCore book fid (App lab fun arg) host = do
   emit $ "Loc " ++ appNam ++ " = alloc_node(2);"
   funT <- compileFullCore book fid fun (appNam ++ " + 0")
   argT <- compileFullCore book fid arg (appNam ++ " + 1")
-  emit $ "set_new(" ++ appNam ++ " + 0, " ++ funT ++ ");"
-  emit $ "set_new(" ++ appNam ++ " + 1, " ++ argT ++ ");"
+  emit $ "set(" ++ appNam ++ " + 0, " ++ funT ++ ");"
+  emit $ "set(" ++ appNam ++ " + 1, " ++ argT ++ ");"
   return $ "term_new(APP, " ++ show lab ++ ", " ++ appNam ++ ")"
 
 compileFullCore book fid (Sup lab tm0 tm1) host = do
@@ -144,8 +144,8 @@ compileFullCore book fid (Sup lab tm0 tm1) host = do
   emit $ "Loc " ++ supNam ++ " = alloc_node(2);"
   tm0T <- compileFullCore book fid tm0 (supNam ++ " + 0")
   tm1T <- compileFullCore book fid tm1 (supNam ++ " + 1")
-  emit $ "set_new(" ++ supNam ++ " + 0, " ++ tm0T ++ ");"
-  emit $ "set_new(" ++ supNam ++ " + 1, " ++ tm1T ++ ");"
+  emit $ "set(" ++ supNam ++ " + 0, " ++ tm0T ++ ");"
+  emit $ "set(" ++ supNam ++ " + 1, " ++ tm1T ++ ");"
   return $ "term_new(SUP, " ++ show lab ++ ", " ++ supNam ++ ")"
 
 compileFullCore book fid (Dup lab dp0 dp1 val bod) host = do
@@ -154,7 +154,7 @@ compileFullCore book fid (Dup lab dp0 dp1 val bod) host = do
   bind dp0 $ "term_new(DP0, " ++ show lab ++ ", " ++ dupNam ++ " + 0)"
   bind dp1 $ "term_new(DP1, " ++ show lab ++ ", " ++ dupNam ++ " + 0)"
   valT <- compileFullCore book fid val (dupNam ++ " + 0")
-  emit $ "set_new(" ++ dupNam ++ " + 0, " ++ valT ++ ");"
+  emit $ "set(" ++ dupNam ++ " + 0, " ++ valT ++ ");"
   bodT <- compileFullCore book fid bod host
   return bodT
 
@@ -164,7 +164,7 @@ compileFullCore book fid (Ctr nam fds) host = do
   let cid = mget (ctrToCid book) nam
   emit $ "Loc " ++ ctrNam ++ " = alloc_node(" ++ show arity ++ ");"
   fdsT <- mapM (\ (i,fd) -> compileFullCore book fid fd (ctrNam ++ " + " ++ show i)) (zip [0..] fds)
-  sequence_ [emit $ "set_new(" ++ ctrNam ++ " + " ++ show i ++ ", " ++ fdT ++ ");" | (i,fdT) <- zip [0..] fdsT]
+  sequence_ [emit $ "set(" ++ ctrNam ++ " + " ++ show i ++ ", " ++ fdT ++ ");" | (i,fdT) <- zip [0..] fdsT]
   return $ "term_new(CTR, " ++ show cid ++ ", " ++ ctrNam ++ ")"
 
 compileFullCore book fid tm@(Mat val mov css) host = do
@@ -172,11 +172,11 @@ compileFullCore book fid tm@(Mat val mov css) host = do
   matNam <- fresh "mat"
   emit $ "Loc " ++ matNam ++ " = alloc_node(" ++ show (1 + length css) ++ ");"
   valT <- compileFullCore book fid val (matNam ++ " + 0")
-  emit $ "set_new(" ++ matNam ++ " + 0, " ++ valT ++ ");"
+  emit $ "set(" ++ matNam ++ " + 0, " ++ valT ++ ");"
   forM_ (zip [0..] css) $ \ (i,(ctr,fds,bod)) -> do
     let bod' = foldr (\x b -> Lam 0 x b) (foldr (\x b -> Lam 0 x b) bod (map fst mov)) fds
     bodT <- compileFullCore book fid bod' (matNam ++ " + " ++ show (i+1))
-    emit $ "set_new(" ++ matNam ++ " + " ++ show (i+1) ++ ", " ++ bodT ++ ");"
+    emit $ "set(" ++ matNam ++ " + " ++ show (i+1) ++ ", " ++ bodT ++ ");"
   let tag = case typ of { Switch -> "SWI" ; IfLet  -> "IFL" ; Match  -> "MAT" }
   let lab = case typ of { Switch -> fromIntegral (length css) ; _ -> matFirstCid book tm }
   let mat = "term_new(" ++ tag ++ ", " ++ show lab ++ ", " ++ matNam ++ ")"
@@ -184,8 +184,8 @@ compileFullCore book fid tm@(Mat val mov css) host = do
     appNam <- fresh "app"
     emit $ "Loc " ++ appNam ++ " = alloc_node(2);"
     valT <- compileFullCore book fid val (appNam ++ " + 1")
-    emit $ "set_new(" ++ appNam ++ " + 0, " ++ term ++ ");"
-    emit $ "set_new(" ++ appNam ++ " + 1, " ++ valT ++ ");"
+    emit $ "set(" ++ appNam ++ " + 0, " ++ term ++ ");"
+    emit $ "set(" ++ appNam ++ " + 1, " ++ valT ++ ");"
     return $ "term_new(APP, 0, " ++ appNam ++ ")") mat mov
 
 compileFullCore book fid (U32 val) _ =
@@ -199,8 +199,8 @@ compileFullCore book fid (Op2 opr nu0 nu1) host = do
   emit $ "Loc " ++ opxNam ++ " = alloc_node(2);"
   nu0T <- compileFullCore book fid nu0 (opxNam ++ " + 0")
   nu1T <- compileFullCore book fid nu1 (opxNam ++ " + 1")
-  emit $ "set_new(" ++ opxNam ++ " + 0, " ++ nu0T ++ ");"
-  emit $ "set_new(" ++ opxNam ++ " + 1, " ++ nu1T ++ ");"
+  emit $ "set(" ++ opxNam ++ " + 0, " ++ nu0T ++ ");"
+  emit $ "set(" ++ opxNam ++ " + 1, " ++ nu1T ++ ");"
   return $ "term_new(OPX, " ++ show (fromEnum opr) ++ ", " ++ opxNam ++ ")"
 
 compileFullCore book fid t@(Ref rNam rFid rArg) host = do
@@ -209,7 +209,7 @@ compileFullCore book fid t@(Ref rNam rFid rArg) host = do
   let arity = length rArg
   emit $ "Loc " ++ refNam ++ " = alloc_node(" ++ show arity ++ ");"
   argsT <- mapM (\ (i,arg) -> compileFullCore book fid arg (refNam ++ " + " ++ show i)) (zip [0..] rArg)
-  sequence_ [emit $ "set_new(" ++ refNam ++ " + " ++ show i ++ ", " ++ argT ++ ");" | (i,argT) <- zip [0..] argsT]
+  sequence_ [emit $ "set(" ++ refNam ++ " + " ++ show i ++ ", " ++ argT ++ ");" | (i,argT) <- zip [0..] argsT]
   return $ "term_new(REF, " ++ show rFid ++ ", " ++ refNam ++ ")"
 
 -- Fast Compiler
@@ -409,7 +409,7 @@ compileFastBody book fid term@(Dup lab dp0 dp1 val bod) ctx stop itr reuse = do
   dupNam <- fresh "dup"
   dupLoc <- compileFastAlloc 1 reuse
   emit $ "Loc " ++ dupNam ++ " = " ++ dupLoc ++ ";"
-  emit $ "set_new(" ++ dupNam ++ " + 0, " ++ valNam ++ ");"
+  emit $ "set(" ++ dupNam ++ " + 0, " ++ valNam ++ ");"
   emit $ dp0Nam ++ " = term_new(DP0, " ++ show lab ++ ", " ++ dupNam ++ " + 0);"
   emit $ dp1Nam ++ " = term_new(DP1, " ++ show lab ++ ", " ++ dupNam ++ " + 0);"
   tabDec
@@ -458,7 +458,7 @@ compileFastBody book fid term ctx stop itr reuse = do
 compileFastUndo :: Book -> Word64 -> Core -> [String] -> Int -> MS.Map Int [String] -> Compile ()
 compileFastUndo book fid term ctx itr reuse = do
   forM_ (zip [0..] ctx) $ \ (i, arg) -> do
-    emit $ "set_old(term_loc(ref) + "++show i++", " ++ arg ++ ");"
+    emit $ "set(term_loc(ref) + "++show i++", " ++ arg ++ ");"
   emit $ "return " ++ mget (fidToNam book) fid ++ "_t(ref);"
 
 -- Completes a fast mode call
@@ -516,7 +516,7 @@ compileFastCore book fid (Lam lab var bod) reuse = do
   emit $ "Loc " ++ lamNam ++ " = " ++ lamLoc ++ ";"
   bind var $ "term_new(VAR, 0, " ++ lamNam ++ " + 0)"
   bodT <- compileFastCore book fid bod reuse
-  emit $ "set_new(" ++ lamNam ++ " + 0, " ++ bodT ++ ");"
+  emit $ "set(" ++ lamNam ++ " + 0, " ++ bodT ++ ");"
   return $ "term_new(LAM, " ++ show lab ++ ", " ++ lamNam ++ ")"
 
 compileFastCore book fid (App lab fun arg) reuse = do
@@ -525,8 +525,8 @@ compileFastCore book fid (App lab fun arg) reuse = do
   emit $ "Loc " ++ appNam ++ " = " ++ appLoc ++ ";"
   funT <- compileFastCore book fid fun reuse
   argT <- compileFastCore book fid arg reuse
-  emit $ "set_new(" ++ appNam ++ " + 0, " ++ funT ++ ");"
-  emit $ "set_new(" ++ appNam ++ " + 1, " ++ argT ++ ");"
+  emit $ "set(" ++ appNam ++ " + 0, " ++ funT ++ ");"
+  emit $ "set(" ++ appNam ++ " + 1, " ++ argT ++ ");"
   return $ "term_new(APP, " ++ show lab ++ ", " ++ appNam ++ ")"
 
 compileFastCore book fid (Sup lab tm0 tm1) reuse = do
@@ -535,8 +535,8 @@ compileFastCore book fid (Sup lab tm0 tm1) reuse = do
   emit $ "Loc " ++ supNam ++ " = " ++ supLoc ++ ";"
   tm0T <- compileFastCore book fid tm0 reuse
   tm1T <- compileFastCore book fid tm1 reuse
-  emit $ "set_new(" ++ supNam ++ " + 0, " ++ tm0T ++ ");"
-  emit $ "set_new(" ++ supNam ++ " + 1, " ++ tm1T ++ ");"
+  emit $ "set(" ++ supNam ++ " + 0, " ++ tm0T ++ ");"
+  emit $ "set(" ++ supNam ++ " + 1, " ++ tm1T ++ ");"
   return $ "term_new(SUP, " ++ show lab ++ ", " ++ supNam ++ ")"
 
 compileFastCore book fid (Dup lab dp0 dp1 val bod) reuse = do
@@ -558,7 +558,7 @@ compileFastCore book fid (Dup lab dp0 dp1 val bod) reuse = do
   tabInc
   dupLoc <- compileFastAlloc 1 reuse
   emit $ "Loc " ++ dupNam ++ " = " ++ dupLoc ++ ";"
-  emit $ "set_new(" ++ dupNam ++ " + 0, " ++ valNam ++ ");"
+  emit $ "set(" ++ dupNam ++ " + 0, " ++ valNam ++ ");"
   emit $ dp0Nam ++ " = term_new(DP0, " ++ show lab ++ ", " ++ dupNam ++ " + 0);"
   emit $ dp1Nam ++ " = term_new(DP1, " ++ show lab ++ ", " ++ dupNam ++ " + 0);"
   tabDec
@@ -574,7 +574,7 @@ compileFastCore book fid (Ctr nam fds) reuse = do
   ctrLoc <- compileFastAlloc arity reuse
   emit $ "Loc " ++ ctrNam ++ " = " ++ ctrLoc ++ ";"
   fdsT <- mapM (\ (i,fd) -> compileFastCore book fid fd reuse) (zip [0..] fds)
-  sequence_ [emit $ "set_new(" ++ ctrNam ++ " + " ++ show i ++ ", " ++ fdT ++ ");" | (i,fdT) <- zip [0..] fdsT]
+  sequence_ [emit $ "set(" ++ ctrNam ++ " + " ++ show i ++ ", " ++ fdT ++ ");" | (i,fdT) <- zip [0..] fdsT]
   return $ "term_new(CTR, " ++ show cid ++ ", " ++ ctrNam ++ ")"
 
 compileFastCore book fid tm@(Mat val mov css) reuse = do
@@ -583,11 +583,11 @@ compileFastCore book fid tm@(Mat val mov css) reuse = do
   matLoc <- compileFastAlloc (1 + length css) reuse
   emit $ "Loc " ++ matNam ++ " = " ++ matLoc ++ ";"
   valT <- compileFastCore book fid val reuse
-  emit $ "set_new(" ++ matNam ++ " + 0, " ++ valT ++ ");"
+  emit $ "set(" ++ matNam ++ " + 0, " ++ valT ++ ");"
   forM_ (zip [0..] css) $ \(i,(ctr,fds,bod)) -> do
     let bod' = foldr (\x b -> Lam 0 x b) (foldr (\x b -> Lam 0 x b) bod (map fst mov)) fds
     bodT <- compileFastCore book fid bod' reuse
-    emit $ "set_new(" ++ matNam ++ " + " ++ show (i+1) ++ ", " ++ bodT ++ ");"
+    emit $ "set(" ++ matNam ++ " + " ++ show (i+1) ++ ", " ++ bodT ++ ");"
   let tag = case typ of { Switch -> "SWI" ; IfLet -> "IFL" ; Match -> "MAT" }
   let lab = case typ of { Switch -> fromIntegral (length css) ; _ -> matFirstCid book tm }
   retNam <- fresh "ret"
@@ -596,9 +596,9 @@ compileFastCore book fid tm@(Mat val mov css) reuse = do
     appNam <- fresh "app"
     appLoc <- compileFastAlloc 2 reuse
     emit $ "Loc " ++ appNam ++ " = " ++ appLoc ++ ";"
-    emit $ "set_new(" ++ appNam ++ " + 0, " ++ acc ++ ");"
+    emit $ "set(" ++ appNam ++ " + 0, " ++ acc ++ ");"
     valT <- compileFastCore book fid val reuse
-    emit $ "set_new(" ++ appNam ++ " + 1, " ++ valT ++ ");"
+    emit $ "set(" ++ appNam ++ " + 1, " ++ valT ++ ");"
     return $ "term_new(APP, 0, " ++ appNam ++ ")") retNam mov
 
 compileFastCore book fid (U32 val) reuse =
@@ -640,8 +640,8 @@ compileFastCore book fid (Op2 opr nu0 nu1) reuse = do
   emit $ "} else {"
   opxLoc <- compileFastAlloc 2 reuse
   emit $ "  Loc " ++ opxNam ++ " = " ++ opxLoc ++ ";"
-  emit $ "  set_new(" ++ opxNam ++ " + 0, " ++ nu0Nam ++ ");"
-  emit $ "  set_new(" ++ opxNam ++ " + 1, " ++ nu1Nam ++ ");"
+  emit $ "  set(" ++ opxNam ++ " + 0, " ++ nu0Nam ++ ");"
+  emit $ "  set(" ++ opxNam ++ " + 1, " ++ nu1Nam ++ ");"
   emit $ "  " ++ retNam ++ " = term_new(OPX, " ++ show (fromEnum opr) ++ ", " ++ opxNam ++ ");"
   emit $ "}"
   return $ retNam
@@ -664,8 +664,8 @@ compileFastCore book fid t@(Ref rNam rFid rArg) reuse = do
     emit $ "Loc " ++ supNam ++ " = " ++ supLoc ++ ";"
     tm0T <- compileFastCore book fid tm0 reuse
     tm1T <- compileFastCore book fid tm1 reuse
-    emit $ "set_new(" ++ supNam ++ " + 0, " ++ tm0T ++ ");"
-    emit $ "set_new(" ++ supNam ++ " + 1, " ++ tm1T ++ ");"
+    emit $ "set(" ++ supNam ++ " + 0, " ++ tm0T ++ ");"
+    emit $ "set(" ++ supNam ++ " + 1, " ++ tm1T ++ ");"
     return $ "term_new(SUP, term_loc(" ++ labNam ++ "), " ++ supNam ++ ")"
 
   -- Inline Dynamic DUP
@@ -682,7 +682,7 @@ compileFastCore book fid t@(Ref rNam rFid rArg) reuse = do
     emit $ "itrs += 3;"
     emit $ "Loc " ++ dupNam ++ " = " ++ dupLoc ++ ";"
     valT <- compileFastCore book fid val reuse
-    emit $ "set_new(" ++ dupNam ++ " + 0, " ++ valT ++ ");"
+    emit $ "set(" ++ dupNam ++ " + 0, " ++ valT ++ ");"
     bind x $ "term_new(DP0, term_loc(" ++ labNam ++ "), " ++ dupNam ++ " + 0)"
     bind y $ "term_new(DP1, term_loc(" ++ labNam ++ "), " ++ dupNam ++ " + 0)"
     compileFastCore book fid body reuse
@@ -694,7 +694,7 @@ compileFastCore book fid t@(Ref rNam rFid rArg) reuse = do
     refLoc <- compileFastAlloc arity reuse
     emit $ "Loc " ++ refNam ++ " = " ++ refLoc ++ ";"
     argsT <- mapM (\ (i,arg) -> compileFastCore book fid arg reuse) (zip [0..] rArg)
-    sequence_ [emit $ "set_new(" ++ refNam ++ " + " ++ show i ++ ", " ++ argT ++ ");" | (i,argT) <- zip [0..] argsT]
+    sequence_ [emit $ "set(" ++ refNam ++ " + " ++ show i ++ ", " ++ argT ++ ");" | (i,argT) <- zip [0..] argsT]
     return $ "term_new(REF, " ++ show rFid ++ ", " ++ refNam ++ ")"
 
 -- Compiles a variable in fast mode
