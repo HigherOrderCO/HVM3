@@ -2,14 +2,45 @@
 
 The HVM is a extension, and efficient runtime, for the Interaction Calculus.
 
-On HVM, each Term is represented as a 64-bit word, with the following fields:
+## Project Organization
 
-- sub (1-bit): true if this is a substitution
-- tag (7-bit): the tag identifying the term type
-- lab (16-bit): a label, used to trigger commutations
-- val (40-bit): the value (a node address, or an unboxed number)
+- `README.md`: introduction and general information
 
-Below is a table with all term pointers, and what they point to / store.
+- `IC.md`: full spec of the Interaction Calculus (read it!)
+
+- `HVM.md`: full spec of the HVM runtime (read it!)
+
+- `examples/`: many example `.hvm` files
+
+- `src/`: Haskell and C implementation
+  - `Type.hs`: defines the Term and Book types, used in all files (read it!)
+  - `Show.hs`: converts a Term to a String
+  - `Parse.hs`: converts a String to a Term
+  - `Reduce.hs`: evaluates a Term to weak head normal form (WHNF)
+  - `Inject.hs`: converts a Haskell-side Term to a C-side Term
+  - `Extract.hs`: normalize and extracts a C-side Term into a Haskell-side IC Term
+  - `Collapse.hs`: normalizes and collapses a C-side Term into a list of Haskell-side λC (i.e., dup/sup-free) Terms
+  - `Foreign.hs`: imports C-side functions on Haskell-side
+  - `Runtime.c`: the complete C runtime, including memory types, interactions, and a faster WHNF evaluator
+  - `Compile.hs`: converts a top-level Book into a list of optimized, native C-code
+
+- `dist/`, `dist-newstyle`: Haskell artifacts
+
+## Memory Layout
+
+On HVM, each Term is represented as a word, with the following fields:
+
+- `sub`: true if this is a substitution
+- `tag`: the tag identifying the term type
+- `lab`: a label, used to trigger commutations
+- `val`: the value (a node address, or an unboxed number)
+
+The length of each field depends on the version:
+
+- **32-bit**: 1-bit sub | 5-bit tag | 2-bit lab | 24-bit val
+- **64-bit**: 1-bit sub | 5-bit tag | 18-bit lab | 40-bit val
+
+The meaning of the val field depends on the term's tag, as follows:
 
 Tag | ID   | Value points to / stores ...
 --- | ---- | --------------------------------------
@@ -83,12 +114,141 @@ def dup_sup(dup, sup):
     return (su0_val if (dup.tag & 0x4) == 0 else su1_val)
 ```
 
+## C FFI and Compiler
 
-# Parsing HVM
+In this project, Terms have two representations:
+
+- A Haskell-side representation (the Term type on `Type.hs`)
+
+- A C-side representation (the pointer format specified on `HVM.md`)
+
+Functions are implemented on Haskell, C, or both:
+
+- Interactions are exclusively implemented on C, except for CALL.
+
+- The WHNF function is implemented on both Haskell and C.
+
+- All other functions are implemented on Haskell only.
+
+There are two evaluation modes:
+
+- Interpreted Mode:
+  - uses Haskell-side parser, WHNF, collapser, and stringifier
+  - uses Haskell-side CALL interaction
+  - uses C-side for other interactions
+
+- Compiled Mode:
+  - uses Haskell-side parser, collapser and strinigifier
+  - uses C-side CALL interaction
+  - uses C-side WHNF and interactions
+
+To run HVM3 on Compiled Mode, we generate a new copy of `Runtime.c` with the
+compiled functions inlined, and then compile with GCC and reload as a dylib.
+This allows the C-side WHNF to dispatch CALL interactions to native C
+procedures, which run much faster than `inject`.
+
+## The CALL interaction
+
+The CALL interaction performs a global function call. For example, given:
+
+```
+@mul2(x) = ~ x { 0:0 p:(+ 2 @mul2(p)) }
+```
+
+When we evaluate the expression:
+
+```
+@foo(4)
+```
+
+It will expand to:
+
+```
+~ 4 { 0:0 p:(+ 2 @mul2(p)) }
+```
+
+On Interpreted Mode, this is done by `inject`, which allocates the body of the
+function, substituting variables by the respective arguments.
+
+On Compiled Mode, this is done by calling a native C function, via two paths:
+
+`Slow Path`: a C function that just allocates the body, like `inject`. Example:
+
+```c
+Term mul2_t(Term ref) {
+  Term arg0 = got(term_loc(ref) + 0);
+  Loc mat1 = alloc_node(3);
+  set_new(mat1 + 0, arg0);
+  set_new(mat1 + 1, term_new(W32, 0, 0));
+  Loc lam2 = alloc_node(1);
+  Loc opx3 = alloc_node(2);
+  Loc ref4 = alloc_node(1);
+  set_new(ref4 + 0, term_new(VAR, 0, lam2 + 0));
+  set_new(opx3 + 0, term_new(W32, 0, 2));
+  set_new(opx3 + 1, term_new(REF, 0, ref4));
+  set_new(lam2 + 0, term_new(OPX, 0, opx3));
+  set_new(mat1 + 2, term_new(LAM, 0, lam2));
+  return term_new(SWI, 2, mat1);
+}
+```
+
+`Fast Path`: a C function that attempts to perform *inline interactions*,
+avoiding allocating extra memory. For example, in the `mul2` case, it will check
+if the argument is a number. If so, it will perform a native C switch, instead
+of allocating a `SWI` node. It also performs inline arithmetic and even loops,
+when the function is tail-call recursive. Example:
+
+```c
+Term mul2_f(Term ref) {
+  u64 itrs = 0;
+  Term arg0 = got(term_loc(ref) + 0);
+  while (1) {
+    Term val1 = (arg0);
+    if (term_tag(val1) == W32) {
+      u32 num2 = term_loc(val1);
+      switch (num2) {
+        case 0: {
+          itrs += 1;
+          *HVM.itrs += itrs;
+          return term_new(W32, 0, 0);
+          break;
+        }
+        default: {
+          Term pre3 = term_new(W32, 0, num2 - 1);
+          itrs += 2;
+          Loc ref8 = alloc_node(1);
+          set_new(ref8 + 0, pre3);
+          Term nu06 = (term_new(W32, 0, 2));
+          Term nu17 = (term_new(REF, 0, ref8));
+          Term ret5;
+          if (term_tag(nu06) == W32 && term_tag(nu17) == W32) {
+            itrs += 2;
+            ret5 = term_new(W32, 0, term_loc(nu06) + term_loc(nu17));
+          } else {
+            Loc opx4 = alloc_node(2);
+            set_new(opx4 + 0, nu06);
+            set_new(opx4 + 1, nu17);
+            ret5 = term_new(OPX, 0, opx4);
+          }
+          *HVM.itrs += itrs;
+          return ret5;
+          break;
+        }
+      }
+    }
+    set_old(term_loc(ref) + 0, arg0);
+    return mul2_t(ref);
+  }
+}
+```
+
+# Parser
 
 On HVM, all bound variables have global range. For example, consider the term:
 
+```
 λt.((t x) λx.λy.y)
+```
 
 Here, the `x` variable appears before its binder, `λx`. Since runtime variables
 must point to their bound λ's, linking them correctly requires caution. A way to
@@ -101,7 +261,7 @@ to it to the 'vars' map. Then, once the parsing is done, we run iterate through
 the 'uses' array, and write, to each location, the corresponding term. Below
 are some example parsers using this strategy:
 
-```
+```python
 def parse_var(loc):
   nam = parse_name()
   uses.push((nam,loc))
@@ -127,7 +287,7 @@ def parse_app(loc):
 ...
 ```
 
-# Stringifying HVM
+# Stringifier
 
 Converting HVM terms to strings faces two challenges:
 
