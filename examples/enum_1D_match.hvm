@@ -6,6 +6,7 @@
 // - How to fuse the tree rotation (rotr/rotl) operations
 // - How to recursively perform a bit-reversal permutation of a tree
 // - How to implement equality efficiently assuming normalized trees
+// Read: https://discord.com/channels/912426566838013994/915345481675186197/1351306002699390976
 
 data Bool { #T #F }
 data Pair { #P{x y} }
