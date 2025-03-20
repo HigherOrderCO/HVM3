@@ -510,8 +510,8 @@ Term reduce_let(Term let, Term val) {
   return bod;
 }
 
-// (* a)
-// ----- APP-ERA
+// &L(* a)
+// ------- APP-ERA
 // *
 Term reduce_app_era(Term app, Term era) {
   //printf("reduce_app_era "); print_term(app); printf("\n");
@@ -519,8 +519,8 @@ Term reduce_app_era(Term app, Term era) {
   return era;
 }
 
-// (λx(body) a)
-// ------------ APP-LAM
+// &L(&Rλx(body) a)
+// ---------------- APP-LAM
 // x <- a
 // body
 Term reduce_app_lam(Term app, Term lam) {
@@ -534,14 +534,15 @@ Term reduce_app_lam(Term app, Term lam) {
   return bod;
 }
 
-// (&L{a b} c)
-// ----------------- APP-SUP
+// &R(&L{a b} c)
+// --------------------- APP-SUP
 // ! &L{x0 x1} = c
-// &L{(a x0) (b x1)}
+// &L{&R(a x0) &R(b x1)}
 Term reduce_app_sup(Term app, Term sup) {
   //printf("reduce_app_sup "); print_term(app); printf("\n");
   inc_itr();
   Loc app_loc = term_loc(app);
+  Lab app_lab = term_lab(app);
   Loc sup_loc = term_loc(sup);
   Lab sup_lab = term_lab(sup);
   Term arg    = got(app_loc + 1);
@@ -558,13 +559,13 @@ Term reduce_app_sup(Term app, Term sup) {
   set_old(ap0 + 1, term_new(DP0, sup_lab, du0));
   set_new(ap1 + 0, tm1);
   set_new(ap1 + 1, term_new(DP1, sup_lab, du0));
-  set_old(su0 + 0, term_new(APP, 0, ap0));
-  set_old(su0 + 1, term_new(APP, 0, ap1));
+  set_old(su0 + 0, term_new(APP, app_lab, ap0));
+  set_old(su0 + 1, term_new(APP, app_lab, ap1));
   return term_new(SUP, sup_lab, su0);
 }
 
-// (#{x y z ...} a)
-// ---------------- APP-CTR
+// &L(#{x y z ...} a)
+// ------------------ APP-CTR
 // ⊥
 Term reduce_app_ctr(Term app, Term ctr) {
   //printf("reduce_app_ctr "); print_term(app); printf("\n");
@@ -572,8 +573,8 @@ Term reduce_app_ctr(Term app, Term ctr) {
   exit(0);
 }
 
-// (123 a)
-// ------- APP-W32
+// &L(123 a)
+// --------- APP-W32
 // ⊥
 Term reduce_app_w32(Term app, Term w32) {
   //printf("reduce_app_w32 "); print_term(app); printf("\n");
@@ -593,11 +594,11 @@ Term reduce_dup_era(Term dup, Term era) {
   return term_rem_bit(era);
 }
 
-// ! &L{r s} = λx(f)
-// ----------------- DUP-LAM
+// ! &L{r s} = &Rλx(f)
+// ------------------- DUP-LAM
 // ! &L{f0 f1} = f
-// r <- λx0(f0)
-// s <- λx1(f1)
+// r <- &Rλx0(f0)
+// s <- &Rλx1(f1)
 // x <- &L{x0 x1}
 Term reduce_dup_lam(Term dup, Term lam) {
   //printf("reduce_dup_lam "); print_term(dup); printf("\n");
@@ -605,6 +606,7 @@ Term reduce_dup_lam(Term dup, Term lam) {
   Loc dup_loc = term_loc(dup);
   Lab dup_lab = term_lab(dup);
   Loc lam_loc = term_loc(lam);
+  Lab lam_lab = term_lab(lam);
   Term bod    = got(lam_loc + 0);
   Loc du0     = alloc_node(1);
   Loc lm0     = alloc_node(1);
@@ -617,11 +619,11 @@ Term reduce_dup_lam(Term dup, Term lam) {
   set_new(su0 + 1, term_new(VAR, 0, lm1));
   sub(lam_loc + 0, term_new(SUP, dup_lab, su0));
   if (term_tag(dup) == DP0) {
-    sub(dup_loc + 0, term_new(LAM, 0, lm1));
-    return term_new(LAM, 0, lm0);
+    sub(dup_loc + 0, term_new(LAM, lam_lab, lm1));
+    return term_new(LAM, lam_lab, lm0);
   } else {
-    sub(dup_loc + 0, term_new(LAM, 0, lm0));
-    return term_new(LAM, 0, lm1);
+    sub(dup_loc + 0, term_new(LAM, lam_lab, lm0));
+    return term_new(LAM, lam_lab, lm1);
   }
 }
 
@@ -765,8 +767,8 @@ Term reduce_mat_era(Term mat, Term era) {
   return era;
 }
 
-// ~ λx(x) {K0 K1 K2 ...}
-// ---------------------- MAT-LAM
+// ~ &Lλx(x) {K0 K1 K2 ...}
+// ------------------------ MAT-LAM
 // ⊥
 Term reduce_mat_lam(Term mat, Term lam) {
   //printf("reduce_mat_lam "); print_term(mat); printf("\n");
@@ -890,8 +892,8 @@ Term reduce_opx_era(Term opx, Term era) {
   return era;
 }
 
-// <op(λx(B) y)
-// ------------ OPX-LAM
+// <op(&Lλx(B) y)
+// --------------- OPX-LAM
 // ⊥
 Term reduce_opx_lam(Term opx, Term lam) {
   //printf("reduce_opx_lam "); print_term(opx); printf("\n");
