@@ -4,7 +4,7 @@ module Reduce where
 
 import Control.Monad (when, forM, forM_)
 import Data.Word
-import Collapse
+-- import Collapse
 import Extract
 import Foreign
 import Inject

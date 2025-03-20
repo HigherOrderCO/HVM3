@@ -80,8 +80,7 @@ foreign import ccall unsafe "Runtime.c reduce"
   reduceC :: Term -> Word64 -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_at"
-  reduceAtC :: Term -> Word64 -> IO Term
-
+  reduceAtC :: Loc -> Word64 -> IO Term
 foreign import ccall unsafe "Runtime.c reduce_let"
   reduceLet :: Term -> Term -> IO Term
 
