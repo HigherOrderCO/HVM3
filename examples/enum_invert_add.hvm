@@ -1,4 +1,4 @@
-// This file shows how we can use superpositiosn to apply multiple functions to
+// This file shows how we can use superpositionn to apply multiple functions to
 // the same input, in a way that "shares computations" across different calls.
 // In this example, we apply `add(0)`, `add(1)`, ..., `add(2^64-1)` - i.e., 2^64
 // different functions, to the same input, 10,000,000. Then, we check
