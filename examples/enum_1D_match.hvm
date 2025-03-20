@@ -1,0 +1,363 @@
+// This is similar to `enum_invert_add`, except the goal is harder:
+// > Can we find a displacement (rotations) that will make two arrays equal?
+// This file includes interesting insights, such as:
+// - How to represent a space that can be rotated with binary trees
+// - How to compress such space by compacting identical values
+// - How to fuse the tree rotation (rotr/rotl) operations
+// - How to recursively perform a bit-reversal permutation of a tree
+// - How to implement equality efficiently assuming normalized trees
+
+data Bool { #T #F }
+data Pair { #P{x y} }
+data Bin { #O{p} #I{p} #E }
+data Nat { #S{p} #Z }
+data Map { #BR{x y} #M0 #M1 }
+
+// Prelude
+// -------
+
+// If/Exit
+@when(!c t) = ~ c {
+  0: *
+  p: t
+}
+
+// And
+!@and(!a b) = ~ a {
+  0: 0
+  p: b
+}
+
+// Repeated Application
+@rep(n f x) = ~ n !f !x {
+  0: x
+  p: !&0{f0 f1}=f (f0 @rep(p f1 x))
+}
+
+// Squared Application
+@sqr(n f x) = ~ n !f !x {
+  0: x
+  p: !&0{p0 p1}=(+ p 1)
+     !&0{fA f0}=f
+     !&0{f1 f2}=fA
+     @sqr((/ p0 2) λk(f0 (f1 k)) @rep((% p1 2) f2 x))
+}
+
+// Church Nat (with fusion)
+@nat(n) = λs λz @sqr(n s z)
+
+// Fixed Point
+@fix(f) = !&{f f0}=f !&{f f1}=f (f0 @fix(f1))
+
+// λ-Encoded Booleans
+// ------------------
+
+// Booleans
+@tru = λt λf t
+@fal = λt λf f
+@idf = λb λt λf (b t f)
+@not = λb λt λf (b f t)
+
+// Below, '@foo' represents two possible functions:
+// - @foo(N x) = match N !x { #Z:x #S{n}:@foo(n (id  x)) }
+// - @foo(N x) = match N !x { #Z:x #S{n}:@foo(n (not x)) }
+// The question is: if we apply @foo to a large N, how long will it take to
+// compute? In particular, will it fuse `not` and `id` correctly, even though
+// they're behind a superposition?
+@foo = λN
+  ! step = λfoo_N λx
+    // Universe 1-L: apply 'id' to 'x'
+    // Universe 1-R: apply 'not' to 'x'
+    ! &1{F0 F1} = foo_N
+    ! &1{x0 x1} = x
+    &1{
+      (F0 (@idf x0))
+      (F1 (@not x1))
+    }
+  ! base = λx x
+  (N step base)
+
+//@main = (@foo @nat(100001) @tru)
+
+// λ-Encoded Nats
+// --------------
+
+// Constructors
+@S(n) = λs λz (s n)
+@Z    = λs λz z
+
+// Nat
+@nat_all = &1{@Z @S(@nat_all)}
+
+// Nat → Nat
+@nat_view(n) =
+  ! case_s = λp #S{@nat_view(p)}
+  ! case_z = #Z
+  (n case_s case_z)
+
+// U32 → Nat
+@nat(n) = ~ n {
+  0: @Z
+  n: @S(@nat(n))
+}
+
+// λ-Encoded Bitstrings
+// --------------------
+
+// Constructors
+@E     = λo λi λe e
+@O(xs) = λo λi λe (o xs)
+@I(xs) = λo λi λe (i xs)
+
+// Bin
+@bin_zero(n) = ~ n {
+  0: @E
+  n: @O(@bin_zero(n))
+}
+
+// U32 → U32 → Bin
+@bin(l n) =
+  @sqr(n λx@bin_inc(x) @bin_zero(l))
+
+// Bin → U32
+@bin_to_u32(x) =
+  ! case_o = λp (+ (* @bin_to_u32(p) 2) 0)
+  ! case_i = λp (+ (* @bin_to_u32(p) 2) 1)
+  ! case_e = 0
+  (x case_o case_i case_e)
+
+// Bin → Bin
+@bin_id(x) = λo λi λe
+  (x o i e)
+
+// Bin → Bin
+@bin_inc(x) = λo λi λe 
+  ! case_o = λp (i p)
+  ! case_i = λp (o @bin_inc(p))
+  ! case_e = e
+  (x case_o case_i case_e)
+
+// Bin → Bin → Bin
+@bin_add(a b) =
+  !case_o = λaP λb λo λi λe
+    !case_o = λbP λaP (o @bin_add(aP bP))
+    !case_i = λbP λaP (i @bin_add(aP bP))
+    !case_e = λaP e
+    (b case_o case_i case_e aP)
+  !case_i = λaP λb λo λi λe
+    !case_o = λbP λaP (i @bin_add(aP bP))
+    !case_i = λbP λaP (o @bin_inc(@bin_add(aP bP)))
+    !case_e = λaP e
+    (b case_o case_i case_e aP)
+  !case_e = λb b
+  (a case_o case_i case_e b)
+
+// Bin → Bin → Bin
+@bin_add_2(a b) =
+  @bin_sqr(a λx(@bin_inc(x)) b)
+
+// Bin → Bin -> Bool
+@bin_eql(a b) =
+  !case_o = λaP λb
+    !case_o = λbP λaP @bin_eql(aP bP)
+    !case_i = λbP λaP 0
+    !case_e = λaP 0
+    (b case_o case_i case_e aP)
+  !case_i = λaP λb
+    !case_o = λbP λaP 0
+    !case_i = λbP λaP @bin_eql(aP bP)
+    !case_e = λaP 0
+    (b case_o case_i case_e aP)
+  !case_e = λb
+    !case_o = λbP 0
+    !case_i = λbP 0
+    !case_e = 1
+    (b case_o case_i case_e)
+  (a case_o case_i case_e b)
+
+// Bin → Bin
+@bin_view(x) =
+  ! case_o = λp #O{@bin_view(p)}
+  ! case_i = λp #I{@bin_view(p)}
+  ! case_e = #E
+  (x case_o case_i case_e)
+
+// U32 → Bin
+@bin_all(n) = ~ n {
+  0: λo λi λe e
+  n:
+    ! &1{n0 n1} = n
+    &1{
+      λo λi λe (o @bin_all(n0))
+      λo λi λe (i @bin_all(n1))
+    }
+}
+
+// Bin → U32
+@bin_len(xs) =
+  ! case_o = λxs (+ 1 @bin_len(xs))
+  ! case_i = λxs (+ 1 @bin_len(xs))
+  ! case_e = 0
+  (xs case_o case_i case_e)
+
+// Squared Application (with a bitstring)
+@bin_sqr(xs f x) =
+  ! case_o = λxs λf λx !&{f0 f1}=f @bin_sqr(xs λk(f0 (f1 k)) x)
+  ! case_i = λxs λf λx !&{F f01}=f !&{f0 f1}=f01 @bin_sqr(xs λk(f0 (f1 k)) (F x))
+  ! case_e = λf λx x
+  (xs case_o case_i case_e f x)
+
+////Test:
+//@L = 64
+//@A = @bin(@L 10000000)
+//@X = @bin_all(@L)
+//@B = @bin(@L 99999999)
+//@main =
+  //! solved = @bin_eql(@bin_add_2(@A @X) @B) // A + X = B
+  //@when(solved @bin_to_u32(@X)) // Prints X
+
+// λ-Encoded Bit Maps
+// ------------------
+
+// Constructors
+@M0 = λbr λm0 λm1 m0
+@M1 = λbr λm0 λm1 m1
+@Br(a b) = λbr λm0 λm1 (br a b)
+@BR(a b) =
+  ! case_br_a = λax λay λb @Br(@Br(ax ay) b)
+  ! case_m0_a = λb
+    ! case_br_b = λbx λby @Br(@M0 @Br(bx by))
+    ! case_m0_b = @M0
+    ! case_m1_b = @Br(@M0 @M1)
+    (b case_br_b case_m0_b case_m1_b)
+  ! case_m1_a = λb
+    ! case_br_b = λbx λby @Br(@M1 @Br(bx by))
+    ! case_m0_b = @Br(@M1 @M0)
+    ! case_m1_b = @M1
+    (b case_br_b case_m0_b case_m1_b)
+  (a case_br_a case_m0_a case_m1_a b)
+
+// map_view : U32 → Map → Map
+@map_view(map) =
+  ! case_br = λx λy #BR{@map_view(x) @map_view(y)}
+  ! case_m0 = #M0
+  ! case_m1 = #M1
+  (map case_br case_m0 case_m1)
+
+// map_set : Bin → Map → Map
+@map_set(bs map) =
+  ! case_o = λbsP λmap 
+    ! case_br = λx λy λbsP @BR((@map_set(bsP x)) y)
+    ! case_m0 = λbsP @BR((@map_set(bsP @M0)) @M0)
+    ! case_m1 = λbsP @BR((@map_set(bsP @M1)) @M1)
+    (map case_br case_m0 case_m1 bsP)
+  ! case_i = λbsP λmap 
+    ! case_br = λx λy λbsP @BR(x (@map_set(bsP y)))
+    ! case_m0 = λbsP @BR(@M0 (@map_set(bsP @M0)))
+    ! case_m1 = λbsP @BR(@M1 (@map_set(bsP @M1)))
+    (map case_br case_m0 case_m1 bsP)
+  ! case_e = λmap @M1
+  (bs case_o case_i case_e map)
+
+// map_get : Bin → Map → U32
+@map_get(bs map) =
+  ! case_o = λbsP λmap 
+    ! case_br = λx λy @map_get(bsP x)
+    ! case_m0 = 0
+    ! case_m1 = 1
+    (map case_br case_m0 case_m1)
+  ! case_i = λbsP λmap 
+    ! case_br = λx λy @map_get(bsP y)
+    ! case_m0 = 0
+    ! case_m1 = 1
+    (map case_br case_m0 case_m1)
+  ! case_e = λmap 
+    ! case_br = λx λy 0
+    ! case_m0 = 0
+    ! case_m1 = 1
+    (map case_br case_m0 case_m1)
+  (bs case_o case_i case_e map)
+
+// map_eql : Map → Map → Bool
+@map_eql(a b) =
+  ! case_br_a = λax λay λb 
+    ! case_br_b = λbx λby @and(@map_eql(ax bx) @map_eql(ay by))
+    ! case_m0_b = 0
+    ! case_m1_b = 0
+    (b case_br_b case_m0_b case_m1_b)
+  ! case_m0_a = λb
+    ! case_br_b = λbx λby 0
+    ! case_m0_b = 1
+    ! case_m1_b = 0
+    (b case_br_b case_m0_b case_m1_b)
+  ! case_m1_a = λb 
+    ! case_br_b = λbx λby 0
+    ! case_m0_b = 0
+    ! case_m1_b = 1
+    (b case_br_b case_m0_b case_m1_b)
+  (a case_br_a case_m0_a case_m1_a b)
+
+// map_zero : Map
+@map_zero = @M0
+
+// map_alloc : U32 → Map
+@map_alloc(d) = ~ d {
+  0: @M0
+  d: !&{d0 d1}=d @BR(@map_alloc(d0) @map_alloc(d1))
+}
+
+// map_swp : Map → Map
+@map_swp(map) =
+  ! case_br = λa λb
+    ! case_br_a = λax λay λb
+      ! case_br_b = λbx λby λax λay @BR(@BR(ax bx) @BR(ay by))
+      ! case_m0_b = λax λay 0 // TODO
+      ! case_m1_b = λax λay 0 // TODO
+      (@map_swp(b) case_br_b case_m0_b case_m1_b ax ay)
+    ! case_m0_a = λb
+      ! case_br_b = λbx λby 0 // TODO
+      ! case_m0_b = @BR(@M0 @M0)
+      ! case_m1_b = @BR(@M0 @M1)
+      (@map_swp(b) case_br_b case_m0_b case_m1_b)
+    ! case_m1_a = λb
+      ! case_br_b = λbx λby 0 // TODO
+      ! case_m0_b = @BR(@M1 @M0)
+      ! case_m1_b = @BR(@M1 @M1)
+      (@map_swp(b) case_br_b case_m0_b case_m1_b)
+    (@map_swp(a) case_br_a case_m0_a case_m1_a b)
+  ! case_m0 = @M0
+  ! case_m1 = @M1
+  (map case_br case_m0 case_m1)
+
+// map_inv : Map → Map
+@map_inv(map) = λbr λm0 λm1
+  ! case_br = λx λy (br @map_inv(x) @map_inv(y))
+  ! case_m0 = m0
+  ! case_m1 = m1
+  (@map_swp(map) case_br case_m0 case_m1)
+
+// map_rotr : Map → Map
+@map_rotr(map) = λbr λm0 λm1
+  ! case_br = λx λy (br @map_rotr(y) x)
+  ! case_m0 = m0
+  ! case_m1 = m1
+  (map case_br case_m0 case_m1)
+
+// map_rotl : Map → Map
+@map_rotl(map) = λbr λm0 λm1
+  ! case_br = λx λy (br y @map_rotl(x))
+  ! case_m0 = m0
+  ! case_m1 = m1
+  (map case_br case_m0 case_m1)
+
+// map_spinr : Bin → Map → Map
+@map_spinr(xs map) =
+  @bin_sqr(xs λx(@map_rotr(x)) map)
+
+@L = 16
+@A = @map_set(@bin(@L 0x00) @map_set(@bin(@L 0x80) @map_zero))
+@B = @map_set(@bin(@L 0x40) @map_set(@bin(@L 0xC0) @map_zero))
+
+@main =
+  ! solved = @map_eql(@map_spinr(@bin_all(@L) @A) @B)
+  @when(solved @bin_to_u32(@bin_all(@L)))
