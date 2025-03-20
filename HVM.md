@@ -10,6 +10,8 @@ The HVM is a extension, and efficient runtime, for the Interaction Calculus.
 
 - `HVM.md`: full spec of the HVM runtime (read it!)
 
+- `Inters.md`: the complete interaction table
+
 - `examples/`: many example `.hvm` files
 
 - `src/`: Haskell and C implementation
@@ -113,6 +115,9 @@ def dup_sup(dup, sup):
     heap[dup.loc] = as_sub(su1_val if (dup.tag & 0x4) == 0 else su0_val)
     return (su0_val if (dup.tag & 0x4) == 0 else su1_val)
 ```
+
+Note that HVM extends the Interaction Calculus with many new types and
+interactions. The complete Interaction Table is at INTERS.md.
 
 ## C FFI and Compiler
 
