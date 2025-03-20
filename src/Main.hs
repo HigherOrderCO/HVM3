@@ -164,6 +164,7 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
       setOld 0 term
       core <- doExtractCoreAt rxAt book 0
       return (flattenDFS core)
+
     Normalize -> do
       core <- doExtractCoreAt rxAt book 0
       return [(doLiftDups core)]

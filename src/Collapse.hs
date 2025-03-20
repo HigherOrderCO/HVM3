@@ -1,10 +1,6 @@
 -- //./Type.hs//
--- //./Extract.hs//
 
 module Collapse where
-
-import Reduce
-import Extract
 
 import Control.Monad (ap, forM, forM_, foldM)
 import Control.Monad.IO.Class
@@ -43,7 +39,6 @@ icEraCtr ctr _ = do
 -- *
 icEraLam :: Term -> Term -> HVM Term
 icEraLam lam _ = do
-  putStrLn $ "LAM-ERA"
   let lamLoc = termLoc lam
   let eraTerm = termNew _ERA_ 0 0
   setOld lamLoc (termSetBit eraTerm)
@@ -54,7 +49,6 @@ icEraLam lam _ = do
 -- *
 icEraApp :: Term -> Term -> HVM Term
 icEraApp app era = do
-  putStrLn $ "APP-ERA"
   return (termNew _ERA_ 0 0)
 
 -- !&L{r,s} = *;
@@ -65,7 +59,6 @@ icEraApp app era = do
 -- K
 icDupEra :: Term -> Term -> HVM Term
 icDupEra dup era = do
-  putStrLn $ "DUP-ERA"
   let dupLoc = termLoc dup
   let dupTag = termTag dup
   let isCo0 = (dupTag == _DP0_)
@@ -81,7 +74,6 @@ icDupEra dup era = do
 -- &L{λx0.f0,λx1.f1}
 icSupLam :: Term -> Term -> HVM Term
 icSupLam lam sup = do
-  putStrLn $ "SUP-LAM"
   let lamLoc = termLoc lam
   let supLoc = termLoc sup
   let supLab = termLab sup
@@ -121,7 +113,6 @@ icSupLam lam sup = do
 -- &L{(f0 x0),(f1 x1)}
 icSupApp :: Term -> Term -> HVM Term
 icSupApp app sup = do
-  putStrLn $ "SUP-APP"
   let appLoc = termLoc app
   let supLoc = termLoc sup
   let supLab = termLab sup
@@ -157,7 +148,6 @@ icSupApp app sup = do
 -- &L{&R{x0,y0},&R{x1,y1}}
 icSupSupX :: Term -> Term -> HVM Term
 icSupSupX outerSup innerSup = do
-  putStrLn $ "SUP-SUP-X"
   let outerLoc = termLoc outerSup 
   let outerLab = termLab outerSup
   let innerLoc = termLoc innerSup
@@ -194,7 +184,6 @@ icSupSupX outerSup innerSup = do
 -- &L{&R{x0,y0},&R{x1,y1}}
 icSupSupY :: Term -> Term -> HVM Term
 icSupSupY outerSup innerSup = do
-  putStrLn $ "SUP-SUP-Y"
   let outerLoc = termLoc outerSup
   let outerLab = termLab outerSup
   let innerLoc = termLoc innerSup
@@ -233,7 +222,6 @@ icSupSupY outerSup innerSup = do
 -- K
 icDupVar :: Term -> Term -> HVM Term
 icDupVar dup var = do
-  putStrLn $ "DUP-VAR"
   let dupLoc = termLoc dup
   setOld dupLoc (termSetBit var)
   return var
@@ -247,7 +235,6 @@ icDupVar dup var = do
 -- K
 icDupApp :: Term -> Term -> HVM Term
 icDupApp dup app = do
-  putStrLn $ "DUP-APP"
   let dupLoc = termLoc dup 
   let lab = termLab dup
   let tag = termTag dup
@@ -410,7 +397,6 @@ collapseSupsTerm book root = do
   let tag = termTag term
   let lab = termLab term
   let loc = termLoc term
-  -- putStrLn $ show (tagT tag)
   case (tagT tag) of
     LAM -> do
       bod <- got (loc + 0)
@@ -538,11 +524,13 @@ collapseDupsTerm book root = do
           result <- icDupEra term valCol
           collapseDupsTerm book result
         _ -> return term
+
     LAM -> do
       bod <- got (loc + 0)
       bodCol <- collapseDupsTerm book bod
       setOld (loc + 0) bodCol
       return term
+
     APP -> do
       fun <- got (loc + 0)
       arg <- got (loc + 1)
@@ -551,6 +539,7 @@ collapseDupsTerm book root = do
       setOld (loc + 0) funCol
       setOld (loc + 1) argCol
       return term
+
     SUP -> do
       lft <- got (loc + 0)
       rgt <- got (loc + 1)
@@ -559,11 +548,22 @@ collapseDupsTerm book root = do
       setOld (loc + 0) lftCol
       setOld (loc + 1) rgtCol
       return term
+
     OPX -> do
       child <- got (loc + 0)
       childCol <- collapseDupsTerm book child
       setOld (loc + 0) childCol
       return term
+
+    CTR -> do
+      let cid = termLab term
+      let ctrAri = mget (cidToAri book) cid
+      forM_ [1 .. ctrAri] $ \i -> do
+        field <- got (loc + i - 1)
+        fieldCol <- collapseDupsTerm book field
+        setOld (loc + i - 1) fieldCol
+      return term
+
     tag | tag == MAT || tag == SWI -> do
       let matLen = if tag == SWI then 2 else mget (cidToLen book) (termLab term)
       scrutinee <- got (loc + 0)
