@@ -25,12 +25,6 @@ foreign import ccall unsafe "Runtime.c take"
 foreign import ccall unsafe "Runtime.c swap"
   swap :: Word64 -> IO Term
 
-foreign import ccall unsafe "Runtime.c spush"
-  spush :: Term -> IO ()
-
-foreign import ccall unsafe "Runtime.c spop"
-  spop :: IO Term
-
 foreign import ccall unsafe "Runtime.c term_new"
   termNew :: Tag -> Lab -> Loc -> Term
 
@@ -51,9 +45,6 @@ foreign import ccall unsafe "Runtime.c term_set_bit"
 
 foreign import ccall unsafe "Runtime.c term_rem_bit"
   termRemBit :: Term -> Tag
-
-foreign import ccall unsafe "Runtime.c term_size"
-  term_size :: Term -> Word64
 
 foreign import ccall unsafe "Runtime.c get_len"
   getLen :: IO Word64
