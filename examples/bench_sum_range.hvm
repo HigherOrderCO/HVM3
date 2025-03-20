@@ -10,7 +10,7 @@ data List { #Nil #Cons{ head tail } }
   p: !&0{p0 p1}=p @range(p0 #Cons{p1 xs})
 }
 
-@main = @sum(@range(1_000_000 #Nil) 0)
+@main = @sum(@range(50_000_000 #Nil) 0)
 
 //WORK: 600000007 interactions
 //TIME: 0.1968570 seconds

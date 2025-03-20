@@ -50,7 +50,7 @@ data Bin { #O{p} #I{p} #E }
 // Booleans
 @tru = λt λf t
 @fal = λt λf f
-@id  = λb λt λf (b t f)
+@idf = λb λt λf (b t f)
 @not = λb λt λf (b f t)
 
 // Below, '@foo' represents two possible functions:
@@ -66,7 +66,7 @@ data Bin { #O{p} #I{p} #E }
     ! &1{F0 F1} = foo_N
     ! &1{x0 x1} = x
     &1{
-      (F0 (@id  x0))
+      (F0 (@idf x0))
       (F1 (@not x1))
     }
   ! base = λx x
