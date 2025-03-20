@@ -1,4 +1,7 @@
 //./Type.hs//
+//./../IC.md//
+//./../HVM.md//
+//./../GOAL//
 
 #include <inttypes.h>
 #include <stdatomic.h>
@@ -521,17 +524,56 @@ Term reduce_app_era(Term app, Term era) {
 
 // &L(&Rλx(body) a)
 // ---------------- APP-LAM
-// x <- a
-// body
+// if &L == &R:
+//   x <- a
+//   body
+// else:
+//   x <- &Lλy(z)
+//   &Rλz&L(bod &R(arg y))
 Term reduce_app_lam(Term app, Term lam) {
-  //printf("reduce_app_lam "); print_term(app); printf("\n");
   inc_itr();
   Loc app_loc = term_loc(app);
+  Lab app_lab = term_lab(app);
   Loc lam_loc = term_loc(lam);
+  Lab lam_lab = term_lab(lam);
   Term arg    = got(app_loc + 1);
   Term bod    = got(lam_loc + 0);
-  sub(lam_loc + 0, arg);
-  return bod;
+  if (app_lab == lam_lab) {
+    // If labels match, perform standard substitution
+    sub(lam_loc + 0, arg);
+    return bod;
+  } else {
+    printf("swap\n");
+    // If labels differ, create new structures
+    Loc lam_y = alloc_node(1); // Will be &Lλy(z)
+    Loc lam_z = alloc_node(1); // Will be &Rλz(...)
+    
+    // Create a variable that will be bound by lam_z
+    Term var_y = term_new(VAR, 0, lam_y);
+    Term var_z = term_new(VAR, 0, lam_z);
+    
+    // Set up the new lambda that will replace x
+    set_new(lam_y + 0, var_z);
+    
+    // Substitute x with &Lλy(z)
+    sub(lam_loc + 0, term_new(LAM, app_lab, lam_y));
+    
+    // Create the inner application: &R(arg y)
+    Loc inn_app = alloc_node(2);
+    set_new(inn_app + 0, arg);
+    set_new(inn_app + 1, var_y);
+    
+    // Create the out application: &L(body &R(arg y))
+    Loc out_app = alloc_node(2);
+    set_new(out_app + 0, bod);
+    set_new(out_app + 1, term_new(APP, lam_lab, inn_app));
+    
+    // Set up the out lambda's body
+    set_new(lam_z + 0, term_new(APP, app_lab, out_app));
+    
+    // Return &Rλz(...)
+    return term_new(LAM, lam_lab, lam_z);
+  }
 }
 
 // &R(&L{a b} c)
