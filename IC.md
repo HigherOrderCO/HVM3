@@ -1,7 +1,8 @@
 # The Interaction Calculus
 
-The Interaction Calculus is a minimal term rewriting system inspired by the
-Lambda Calculus (λC), but with some key differences:
+The [Interaction Calculus](https://github.com/VictorTaelin/Interaction-Calculus)
+is a minimal term rewriting system inspired by the Lambda Calculus (λC), but
+with some key differences:
 1. Vars are affine: they can only occur up to one time.
 2. Vars are global: they can occur anywhere in the program.
 3. There is a new core primitive: the superposition.
