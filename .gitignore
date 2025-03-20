@@ -21,3 +21,4 @@ tmp/
 TIMES/
 .main*
 .build/
+dist/
