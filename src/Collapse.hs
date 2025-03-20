@@ -100,13 +100,15 @@ collapseDupsAt state@(paths) reduceAt book host = do
       name <- return $ "$" ++ show (loc + 0)
       ridx <- rpush term 1
       bod0 <- collapseDupsAtLazy state reduceAt book ridx 0
-      return $ Lam name bod0
+      let lab = termLab term
+      return $ Lam lab name bod0
 
     APP -> do
       ridx <- rpush term 2
       fun0 <- collapseDupsAtLazy state reduceAt book ridx 0
       arg0 <- collapseDupsAtLazy state reduceAt book ridx 1
-      return $ App fun0 arg0
+      let lab = termLab term
+      return $ App lab fun0 arg0
 
     SUP -> do
       let loc = termLoc term
@@ -259,14 +261,14 @@ collapseSups book core = case core of
     args <- mapM (collapseSups book) args
     return $ Ref name fid args
 
-  Lam name body -> do
+  Lam lab name body -> do
     body <- collapseSups book body
-    return $ Lam name body
+    return $ Lam lab name body
 
-  App fun arg -> do
+  App lab fun arg -> do
     fun <- collapseSups book fun
     arg <- collapseSups book arg
-    return $ App fun arg
+    return $ App lab fun arg
 
   Dup lab x y val body -> do
     val <- collapseSups book val

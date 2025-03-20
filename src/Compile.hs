@@ -122,22 +122,22 @@ compileFullCore book fid (Let mode var val bod) host = do
   emit $ "set_new(" ++ letNam ++ " + 1, " ++ bodT ++ ");"
   return $ "term_new(LET, " ++ show (fromEnum mode) ++ ", " ++ letNam ++ ")"
 
-compileFullCore book fid (Lam var bod) host = do
+compileFullCore book fid (Lam lab var bod) host = do
   lamNam <- fresh "lam"
   emit $ "Loc " ++ lamNam ++ " = alloc_node(1);"
   bind var $ "term_new(VAR, 0, " ++ lamNam ++ " + 0)"
   bodT <- compileFullCore book fid bod (lamNam ++ " + 0")
   emit $ "set_new(" ++ lamNam ++ " + 0, " ++ bodT ++ ");"
-  return $ "term_new(LAM, 0, " ++ lamNam ++ ")"
+  return $ "term_new(LAM, " ++ show lab ++ ", " ++ lamNam ++ ")"
 
-compileFullCore book fid (App fun arg) host = do
+compileFullCore book fid (App lab fun arg) host = do
   appNam <- fresh "app"
   emit $ "Loc " ++ appNam ++ " = alloc_node(2);"
   funT <- compileFullCore book fid fun (appNam ++ " + 0")
   argT <- compileFullCore book fid arg (appNam ++ " + 1")
   emit $ "set_new(" ++ appNam ++ " + 0, " ++ funT ++ ");"
   emit $ "set_new(" ++ appNam ++ " + 1, " ++ argT ++ ");"
-  return $ "term_new(APP, 0, " ++ appNam ++ ")"
+  return $ "term_new(APP, " ++ show lab ++ ", " ++ appNam ++ ")"
 
 compileFullCore book fid (Sup lab tm0 tm1) host = do
   supNam <- fresh "sup"
@@ -174,7 +174,7 @@ compileFullCore book fid tm@(Mat val mov css) host = do
   valT <- compileFullCore book fid val (matNam ++ " + 0")
   emit $ "set_new(" ++ matNam ++ " + 0, " ++ valT ++ ");"
   forM_ (zip [0..] css) $ \ (i,(ctr,fds,bod)) -> do
-    let bod' = foldr Lam (foldr Lam bod (map fst mov)) fds
+    let bod' = foldr (\x b -> Lam 0 x b) (foldr (\x b -> Lam 0 x b) bod (map fst mov)) fds
     bodT <- compileFullCore book fid bod' (matNam ++ " + " ++ show (i+1))
     emit $ "set_new(" ++ matNam ++ " + " ++ show (i+1) ++ ", " ++ bodT ++ ");"
   let tag = case typ of { Switch -> "SWI" ; IfLet  -> "IFL" ; Match  -> "MAT" }
@@ -510,16 +510,16 @@ compileFastCore book fid (Let mode var val bod) reuse = do
 compileFastCore book fid (Var name) reuse = do
   compileFastVar name
 
-compileFastCore book fid (Lam var bod) reuse = do
+compileFastCore book fid (Lam lab var bod) reuse = do
   lamNam <- fresh "lam"
   lamLoc <- compileFastAlloc 1 reuse
   emit $ "Loc " ++ lamNam ++ " = " ++ lamLoc ++ ";"
   bind var $ "term_new(VAR, 0, " ++ lamNam ++ " + 0)"
   bodT <- compileFastCore book fid bod reuse
   emit $ "set_new(" ++ lamNam ++ " + 0, " ++ bodT ++ ");"
-  return $ "term_new(LAM, 0, " ++ lamNam ++ ")"
+  return $ "term_new(LAM, " ++ show lab ++ ", " ++ lamNam ++ ")"
 
-compileFastCore book fid (App fun arg) reuse = do
+compileFastCore book fid (App lab fun arg) reuse = do
   appNam <- fresh "app"
   appLoc <- compileFastAlloc 2 reuse
   emit $ "Loc " ++ appNam ++ " = " ++ appLoc ++ ";"
@@ -527,7 +527,7 @@ compileFastCore book fid (App fun arg) reuse = do
   argT <- compileFastCore book fid arg reuse
   emit $ "set_new(" ++ appNam ++ " + 0, " ++ funT ++ ");"
   emit $ "set_new(" ++ appNam ++ " + 1, " ++ argT ++ ");"
-  return $ "term_new(APP, 0, " ++ appNam ++ ")"
+  return $ "term_new(APP, " ++ show lab ++ ", " ++ appNam ++ ")"
 
 compileFastCore book fid (Sup lab tm0 tm1) reuse = do
   supNam <- fresh "sup"
@@ -585,7 +585,7 @@ compileFastCore book fid tm@(Mat val mov css) reuse = do
   valT <- compileFastCore book fid val reuse
   emit $ "set_new(" ++ matNam ++ " + 0, " ++ valT ++ ");"
   forM_ (zip [0..] css) $ \(i,(ctr,fds,bod)) -> do
-    let bod' = foldr Lam (foldr Lam bod (map fst mov)) fds
+    let bod' = foldr (\x b -> Lam 0 x b) (foldr (\x b -> Lam 0 x b) bod (map fst mov)) fds
     bodT <- compileFastCore book fid bod' reuse
     emit $ "set_new(" ++ matNam ++ " + " ++ show (i+1) ++ ", " ++ bodT ++ ");"
   let tag = case typ of { Switch -> "SWI" ; IfLet -> "IFL" ; Match -> "MAT" }
@@ -669,8 +669,8 @@ compileFastCore book fid t@(Ref rNam rFid rArg) reuse = do
     return $ "term_new(SUP, term_loc(" ++ labNam ++ "), " ++ supNam ++ ")"
 
   -- Inline Dynamic DUP
-  else if rNam == "DUP" && (case rArg of [_, _, Lam _ (Lam _ _)] -> True ; _ -> False) then do
-    let [lab, val, Lam x (Lam y body)] = rArg
+  else if rNam == "DUP" && (case rArg of [_, _, Lam _ _ (Lam _ _ _)] -> True ; _ -> False) then do
+    let [lab, val, Lam lx x (Lam ly y body)] = rArg
     dupNam <- fresh "dup"
     labNam <- fresh "lab"
     dupLoc <- compileFastAlloc 1 reuse

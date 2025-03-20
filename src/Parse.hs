@@ -40,6 +40,7 @@ data ParserState = ParserState
 
 type ParserM = ParsecT String ParserState IO
 
+-- Variable binding and usage
 bindVars :: [String] -> ParserM m -> ParserM m
 bindVars vars parse = do
   st <- getState
@@ -84,150 +85,146 @@ checkVar var = do
     (_,       Just Used)  -> fail $ "Variable " ++ show var ++ " used more than once"
     (_,       Nothing)    -> fail $ "Unbound var " ++ show var
 
+-- Main parser
 parseCore :: ParserM Core
 parseCore = do
   skip
   head <- lookAhead anyChar
   case head of
+    '*'  -> parseEra
+    'λ'  -> parseLam
+    '('  -> parseExpression
+    '@'  -> parseRef
+    '&'  -> parseLabeled
+    '!'  -> parseLet
+    '#'  -> parseCtr
+    '~'  -> parseMat
+    '['  -> parseLst
+    '\'' -> parseChr
+    '"'  -> parseStr '"'
+    '`'  -> parseStr '`'
+    _    -> parseVarOrU32
 
-    '*' -> do
-      consume "*"
-      return Era
+-- Parsers for individual term types
+parseEra :: ParserM Core
+parseEra = do
+  consume "*"
+  return Era
 
-    'λ' -> do
-      consume "λ"
-      var <- parseName1
-      bod <- bindVars [var] parseCore
-      return $ Lam var bod
+parseLam :: ParserM Core
+parseLam = do
+  consume "λ"
+  var <- parseName1
+  bod <- bindVars [var] parseCore
+  return $ Lam 0 var bod
 
-    '(' -> do
-      next <- lookAhead (anyChar >> anyChar)
+parseLabeled :: ParserM Core
+parseLabeled = do
+  consume "&"
+  
+  -- Try to parse a numeric label first
+  num <- optionMaybe $ try $ do
+    digits <- many1 digit
+    case reads digits of
+      [(num :: Word64, "")] -> return num
+      _                     -> fail "Not a number"
+  
+  case num of
+    -- Successfully read a numeric label
+    Just label -> do
+      -- Skip spaces after the label
+      skip
+      
+      -- Check what follows the label
+      next <- lookAhead anyChar
       case next of
-        '+' -> parseOper OP_ADD
-        '-' -> parseOper OP_SUB
-        '*' -> parseOper OP_MUL
-        '/' -> parseOper OP_DIV
-        '%' -> parseOper OP_MOD
-        '=' -> parseOper OP_EQ
-        '!' -> parseOper OP_NE
-        '&' -> parseOper OP_AND
-        '|' -> parseOper OP_OR
-        '^' -> parseOper OP_XOR
-        '<' -> do
-          next <- lookAhead (anyChar >> anyChar >> anyChar)
-          case next of
-            '<' -> parseOper OP_LSH
-            '=' -> parseOper OP_LTE
-            _   -> parseOper OP_LT
-        '>' -> do
-          next <- lookAhead (anyChar >> anyChar >> anyChar)
-          case next of
-            '>' -> parseOper OP_RSH
-            '=' -> parseOper OP_GTE
-            _   -> parseOper OP_GT
-        _ -> do
+        -- Labeled superposition &123 {a b}
+        '{' -> do
+          consume "{"
+          tm0 <- parseCore
+          tm1 <- parseCore
+          consume "}"
+          return $ Sup label tm0 tm1
+          
+        -- Labeled lambda &123 λx(body)
+        'λ' -> do
+          consume "λ"
+          var <- parseName1
+          bod <- bindVars [var] parseCore
+          return $ Lam label var bod
+          
+        -- Labeled application &123 (f x)
+        '(' -> do
           consume "("
           fun <- parseCore
           args <- many $ do
             closeWith ")"
             parseCore
           char ')'
-          return $ foldl App fun args
-
-    '@' -> do
-      parseRef
-
-    '&' -> do
-      consume "&"
+          return $ foldl (\f a -> App label f a) fun args
+        
+        -- This shouldn't happen with a numeric label
+        _ -> fail $ "Expected '{', 'λ' or '(' after &" ++ show label
+    
+    -- No numeric label found, parse as a normal variable or Sup
+    Nothing -> do
       name <- parseName
-      next <- optionMaybe $ try $ char '{'
+      next <- optionMaybe $ try $ lookAhead anyChar
       case next of
-        Just _ -> do
+        -- Dynamic superposition with variable name &name{a b}
+        Just '{' -> do
+          consume "{"
           tm0 <- parseCore
           tm1 <- parseCore
           consume "}"
           if null name then do
             num <- genFreshLabel
             return $ Sup num tm0 tm1
-          else case reads name of
-            [(num :: Word64, "")] -> do
-              return $ Sup num tm0 tm1
-            otherwise -> do
-              checkVar ("&" ++ name)
-              return $ Ref "SUP" _SUP_F_ [Var ("&" ++ name), tm0, tm1]
-        Nothing -> do
+          else do  
+            checkVar ("&" ++ name)
+            return $ Ref "SUP" _SUP_F_ [Var ("&" ++ name), tm0, tm1]
+        
+        -- Regular variable &name
+        _ -> do
           checkVar ("&" ++ name)
           return $ Var ("&" ++ name)
 
-    '!' -> do
-      consume "!"
-      skip
-      next <- lookAhead anyChar
+parseExpression :: ParserM Core
+parseExpression = do
+  next <- lookAhead (anyChar >> anyChar)
+  -- Handle operators
+  case next of
+    '+' -> parseOper OP_ADD
+    '-' -> parseOper OP_SUB
+    '*' -> parseOper OP_MUL
+    '/' -> parseOper OP_DIV
+    '%' -> parseOper OP_MOD
+    '=' -> parseOper OP_EQ
+    '!' -> parseOper OP_NE
+    '&' -> parseOper OP_AND
+    '|' -> parseOper OP_OR
+    '^' -> parseOper OP_XOR
+    '<' -> do
+      next <- lookAhead (anyChar >> anyChar >> anyChar)
       case next of
-
-        '&' -> do
-          consume "&"
-          nam <- parseName
-          consume "{"
-          dp0 <- parseName1
-          dp1 <- parseName1
-          consume "}"
-          consume "="
-          val <- parseCore
-          bod <- bindVars [dp0, dp1] parseCore
-
-          if null nam then do
-            num <- genFreshLabel
-            return $ Dup num dp0 dp1 val bod
-          else case reads nam of
-            [(num :: Word64, "")] -> do
-              return $ Dup num dp0 dp1 val bod
-            otherwise -> do
-              return $ Ref "DUP" _DUP_F_ [Var ("&" ++ nam), val, Lam dp0 (Lam dp1 bod)]
-
-        '!' -> do
-          consume "!"
-          nam <- optionMaybe $ try $ do
-            nam <- parseName1
-            consume "="
-            return nam
-          val <- parseCore
-          bod <- bindVars [fromMaybe "_" nam] parseCore
-          case nam of
-            Just nam -> return $ Let STRI nam val bod
-            Nothing  -> return $ Let STRI "_" val bod
-
-        '^' -> do
-          consume "^"
-          nam <- parseName1
-          consume "="
-          val <- parseCore
-          bod <- bindVars [nam] parseCore
-          return $ Let PARA nam val bod
-
-        _ -> do
-          nam <- parseName1
-          consume "="
-          val <- parseCore
-          bod <- bindVars [nam] parseCore
-          return $ Let LAZY nam val bod
-
-    '#' -> parseCtr
-
-    '~' -> parseMat
-
-    '[' -> parseLst
-
-    '\'' -> parseChr
-
-    '"' -> parseStr '"'
-    '`' -> parseStr '`'
-
+        '<' -> parseOper OP_LSH
+        '=' -> parseOper OP_LTE
+        _   -> parseOper OP_LT
+    '>' -> do
+      next <- lookAhead (anyChar >> anyChar >> anyChar)
+      case next of
+        '>' -> parseOper OP_RSH
+        '=' -> parseOper OP_GTE
+        _   -> parseOper OP_GT
+    -- Regular application (f x)
     _ -> do
-      name <- parseName1
-      case reads (filter (/= '_') name) of
-        [(num, "")] -> return $ U32 (fromIntegral (num :: Integer))
-        _           -> checkVar name >>= \_ -> return $ Var name
+      consume "("
+      fun <- parseCore
+      args <- many $ do
+        closeWith ")"
+        parseCore
+      char ')'
+      return $ foldl (\f a -> App 0 f a) fun args
 
 parseRef :: ParserM Core
 parseRef = do
@@ -344,6 +341,68 @@ intoIfLetChain val mov ((ctr,fds,bod):css) defName defCase =
   let rest = intoIfLetChain val mov css defName defCase in 
   Mat val mov [(ctr, fds, bod), ("_", [defName], rest)]
 
+parseLet :: ParserM Core
+parseLet = do
+  consume "!"
+  skip
+  next <- lookAhead anyChar
+  case next of
+    -- Duplication: ! &L{a b} = val body
+    '&' -> do
+      consume "&"
+      nam <- parseName
+      consume "{"
+      dp0 <- parseName1
+      dp1 <- parseName1
+      consume "}"
+      consume "="
+      val <- parseCore
+      bod <- bindVars [dp0, dp1] parseCore
+
+      if null nam then do
+        num <- genFreshLabel
+        return $ Dup num dp0 dp1 val bod
+      else case reads nam of
+        [(num :: Word64, "")] -> return $ Dup num dp0 dp1 val bod
+        otherwise -> return $ Ref "DUP" _DUP_F_ [Var ("&" ++ nam), val, Lam 0 dp0 (Lam 0 dp1 bod)]
+    
+    -- Strict Let: !! x = val body
+    '!' -> do
+      consume "!"
+      nam <- optionMaybe $ try $ do
+        nam <- parseName1
+        consume "="
+        return nam
+      val <- parseCore
+      bod <- bindVars [fromMaybe "_" nam] parseCore
+      case nam of
+        Just nam -> return $ Let STRI nam val bod
+        Nothing  -> return $ Let STRI "_" val bod
+    
+    -- Parallel Let: !^ x = val body
+    '^' -> do
+      consume "^"
+      nam <- parseName1
+      consume "="
+      val <- parseCore
+      bod <- bindVars [nam] parseCore
+      return $ Let PARA nam val bod
+    
+    -- Lazy Let: ! x = val body
+    _ -> do
+      nam <- parseName1
+      consume "="
+      val <- parseCore
+      bod <- bindVars [nam] parseCore
+      return $ Let LAZY nam val bod
+
+parseVarOrU32 :: ParserM Core
+parseVarOrU32 = do
+  name <- parseName1
+  case reads (filter (/= '_') name) of
+    [(num, "")] -> return $ U32 (fromIntegral (num :: Integer))
+    _           -> checkVar name >>= \_ -> return $ Var name
+
 parseOper :: Oper -> ParserM Core
 parseOper op = do
   consume "("
@@ -402,12 +461,7 @@ parseLst = do
   char ']'
   return $ foldr (\x acc -> Ctr "#Cons" [x, acc]) (Ctr "#Nil" []) elems
 
-parseName :: ParserM String
-parseName = skip >> many (alphaNum <|> char '_' <|> char '$' <|> char '&')
-
-parseName1 :: ParserM String
-parseName1 = skip >> many1 (alphaNum <|> char '_' <|> char '$' <|> char '&')
-
+-- Definitions and Data Type parsers
 parseDef :: ParserM (String, ((Bool, [(Bool, String)]), Core))
 parseDef = do
   copy <- option False $ do
@@ -432,7 +486,6 @@ parseDef = do
   skip
   consume "="
   core <- bindVars (map snd args) parseCore
-  -- trace ("parsed: " ++ showCore core) $ do
   return (name, ((copy,args), core))
 
 parseADT :: ParserM ()
@@ -473,6 +526,7 @@ parseADTCtr = do
   skip
   return ('#':name, fields)
 
+-- Parse a complete book (file)
 parseBook :: ParserM [(String, ((Bool, [(Bool,String)]), Core))]
 parseBook = do
   skip
@@ -511,7 +565,7 @@ parseTopImp = do
     then return []  -- Already imported? do nothing
     else importFile path
 
--- | Helper function: Handle the actual file import logic
+-- Helper functions for file imports
 importFile :: String -> ParserM [(String, ((Bool, [(Bool,String)]), Core))]
 importFile path = do
   -- Mark the file as imported
@@ -525,19 +579,17 @@ importFile path = do
   case result of
     Left err -> handleParseError path contents err
     Right (importedDefs, importedState) -> do
-      -- Update parser state w/t the state from imported file
+      -- Update parser state with the state from imported file
       putState importedState
       skip
       return importedDefs
 
--- | Helper function: Handle parse errors in imported files
 handleParseError :: String -> String -> ParseError -> ParserM a
 handleParseError path contents err = do
   liftIO $ showParseError path contents err
   fail $ "Error importing file " ++ show path ++ ": parse failed"
 
-
--- doParseBook
+-- Parse Book and Core
 doParseBook filePath code = do
   result <- runParserT p (ParserState MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty 0) "" code
   case result of
@@ -561,8 +613,12 @@ doParseCore code = do
       showParseError "" code err
       return $ Ref "⊥" 0 []
 
--- Helper Parsers
--- --------------
+-- Helper functions
+parseName :: ParserM String
+parseName = skip >> many (alphaNum <|> char '_' <|> char '$' <|> char '&')
+
+parseName1 :: ParserM String
+parseName1 = skip >> many1 (alphaNum <|> char '_' <|> char '$' <|> char '&')
 
 consume :: String -> ParserM String
 consume str = skip >> string str
@@ -592,9 +648,7 @@ genFreshLabel = do
     error "Label overflow: generated label would be too large"
   return $ lbl + 0x8000
 
--- Adjusting
--- ---------
-
+-- Book creation and setup functions
 createBook :: [(String, ((Bool,[(Bool,String)]), Core))] -> MS.Map String Word64 -> MS.Map Word64 Word64 -> MS.Map Word64 Word64 -> MS.Map Word64 Word64 -> Book
 createBook defs ctrToCid cidToAri cidToLen cidToADT =
   let withPrims = \n2i -> MS.union n2i (MS.fromList primitives)
@@ -621,8 +675,8 @@ setRefIds :: MS.Map String Word64 -> Core -> Core
 setRefIds fids term = case term of
   Var nam       -> Var nam
   Let m x v b   -> Let m x (setRefIds fids v) (setRefIds fids b)
-  Lam x bod     -> Lam x (setRefIds fids bod)
-  App f x       -> App (setRefIds fids f) (setRefIds fids x)
+  Lam l x bod   -> Lam l x (setRefIds fids bod)
+  App l f x     -> App l (setRefIds fids f) (setRefIds fids x)
   Sup l x y     -> Sup l (setRefIds fids x) (setRefIds fids y)
   Dup l x y v b -> Dup l x y (setRefIds fids v) (setRefIds fids b)
   Ctr nam fds   -> Ctr nam (map (setRefIds fids) fds)
@@ -637,7 +691,7 @@ setRefIds fids term = case term of
       putStrLn $ "error:unbound-ref @" ++ nam
       exitFailure
 
--- Collects all SUP/DUP labels used
+-- Collects all labels used
 collectLabels :: Core -> MS.Map Word64 ()
 collectLabels term = case term of
   Var _               -> MS.empty
@@ -646,8 +700,8 @@ collectLabels term = case term of
   Era                 -> MS.empty
   Ref _ _ args        -> MS.unions $ map collectLabels args
   Let _ _ val bod     -> MS.union (collectLabels val) (collectLabels bod)
-  Lam _ bod           -> collectLabels bod
-  App fun arg         -> MS.union (collectLabels fun) (collectLabels arg)
+  Lam lab _ bod       -> if lab == 0 then collectLabels bod else MS.insert lab () $ collectLabels bod
+  App lab fun arg     -> if lab == 0 then MS.union (collectLabels fun) (collectLabels arg) else MS.insert lab () $ MS.union (collectLabels fun) (collectLabels arg)
   Sup lab tm0 tm1     -> MS.insert lab () $ MS.union (collectLabels tm0) (collectLabels tm1)
   Dup lab _ _ val bod -> MS.insert lab () $ MS.union (collectLabels val) (collectLabels bod)
   Ctr _ fds           -> MS.unions $ map collectLabels fds
@@ -684,16 +738,16 @@ lexify term = evalState (go term MS.empty) 0 where
       bod  <- go bod ctx
       return $ Let mod nam' val bod
 
-    Lam nam bod -> do
+    Lam lab nam bod -> do
       nam' <- fresh nam
       ctx  <- extend nam nam' ctx
       bod  <- go bod ctx
-      return $ Lam nam' bod
+      return $ Lam lab nam' bod
 
-    App fun arg -> do
+    App lab fun arg -> do
       fun <- go fun ctx
       arg <- go arg ctx
-      return $ App fun arg
+      return $ App lab fun arg
 
     Sup lab tm0 tm1 -> do
       tm0 <- go tm0 ctx
@@ -741,9 +795,6 @@ lexify term = evalState (go term MS.empty) 0 where
     Era -> 
       return Era
 
--- Errors
--- ------
-
 -- Error handling
 extractExpectedTokens :: ParseError -> String
 extractExpectedTokens err =
@@ -777,8 +828,6 @@ showParseError filename input err = do
     isMessage _ = False
 
 -- Debug
--- -----
-
 parseLog :: String -> ParserM ()
 parseLog msg = do
   pos <- getPosition

@@ -33,14 +33,20 @@ coreToString core =
       Era ->
         "*"
 
-      Lam vr0 bod ->
+      Lam lab vr0 bod ->
         let bod' = coreToString bod in
-        "λ" ++ vr0 ++ " " ++ bod'
+        if lab == 0 then
+          "λ" ++ vr0 ++ " " ++ bod'
+        else
+          "&" ++ show lab ++ " λ" ++ vr0 ++ " " ++ bod'
 
-      App fun arg ->
+      App lab fun arg ->
         let fun' = coreToString fun in
         let arg' = coreToString arg in
-        "(" ++ fun' ++ " " ++ arg' ++ ")"
+        if lab == 0 then
+          "(" ++ fun' ++ " " ++ arg' ++ ")"
+        else
+          "&" ++ show lab ++ "(" ++ fun' ++ " " ++ arg' ++ ")"
 
       Sup lab tm0 tm1 ->
         let tm0' = coreToString tm0 in
@@ -143,10 +149,10 @@ prettyRename core = unsafePerformIO $ do
         name' <- genName namesRef name
         return $ Var name'
 
-      Lam name body -> do
+      Lam lab name body -> do
         name' <- genName namesRef name
         body' <- go namesRef body
-        return $ Lam name' body'
+        return $ Lam lab name' body'
 
       Let mode name val body -> do
         name' <- genName namesRef name
@@ -154,10 +160,10 @@ prettyRename core = unsafePerformIO $ do
         body' <- go namesRef body
         return $ Let mode name' val' body'
 
-      App fun arg -> do
+      App lab fun arg -> do
         fun' <- go namesRef fun
         arg' <- go namesRef arg
-        return $ App fun' arg'
+        return $ App lab fun' arg'
 
       Sup lab x y -> do
         x' <- go namesRef x

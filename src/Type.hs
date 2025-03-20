@@ -11,8 +11,8 @@ data Core
   = Var String -- x
   | Ref String Word64 [Core] -- @fn
   | Era -- *
-  | Lam String Core -- λx(F)
-  | App Core Core -- (f x)
+  | Lam Word64 String Core -- &L λx(F)
+  | App Word64 Core Core -- &L (f x)
   | Sup Word64 Core Core -- &L{a b}
   | Dup Word64 String String Core Core -- ! &L{a b} = v body
   | Ctr String [Core] -- #Ctr{a b ...}

@@ -38,17 +38,19 @@ extractCoreAt dupsRef reduceAt book host = do
 
     LAM -> do
       let loc = termLoc term
+      let lab = termLab term
       name <- return $ "$" ++ show (loc + 0)
       ridx <- rpush term 1
       bod  <- extractCoreAtLazy dupsRef reduceAt book ridx 0
-      return $ Lam name bod
+      return $ Lam lab name bod
 
     APP -> do
       let loc = termLoc term
+      let lab = termLab term
       ridx <- rpush term 2
       fun <- extractCoreAtLazy dupsRef reduceAt book ridx 0
       arg <- extractCoreAtLazy dupsRef reduceAt book ridx 1
-      return $ App fun arg
+      return $ App lab fun arg
 
     SUP -> do
       let loc = termLoc term
@@ -212,14 +214,14 @@ liftDups (Ref nam fid arg) =
 liftDups Era =
   (Era, id)
 
-liftDups (Lam str bod) =
+liftDups (Lam lab str bod) =
   let (bodT, bodD) = liftDups bod
-  in (Lam str bodT, bodD)
+  in (Lam lab str bodT, bodD)
 
-liftDups (App fun arg) =
+liftDups (App lab fun arg) =
   let (funT, funD) = liftDups fun
       (argT, argD) = liftDups arg
-  in (App funT argT, funD . argD)
+  in (App lab funT argT, funD . argD)
 
 liftDups (Sup lab tm0 tm1) =
   let (tm0T, tm0D) = liftDups tm0
