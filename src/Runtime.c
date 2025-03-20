@@ -918,7 +918,7 @@ Term reduce_opy_w32(Term opy, Term w32) {
   return term_new(t, 0, result);
 }
 
-Term reduce(Term term, _Bool gc) {
+Term reduce(Term term) {
   if (term_tag(term) >= ERA) return term;
   Term next = term;
   u64  stop = *HVM.spos;
@@ -1132,18 +1132,18 @@ Term reduce(Term term, _Bool gc) {
   return 0;
 }
 
-Term reduce_at(Loc host, _Bool gc) {
+Term reduce_at(Loc host) {
   Term tm0 = got(host);
   if (term_tag(tm0) >= ERA) {
     return tm0;
   }
-  Term tm1 = reduce(tm0, gc);
+  Term tm1 = reduce(tm0);
   set(term_loc(host), tm1);
   return tm1;
 }
 
 Term normal(Term term) {
-  Term wnf = reduce(term, 1);
+  Term wnf = reduce(term);
   Tag tag = term_tag(wnf);
   Lab lab = term_lab(wnf);
   Loc loc = term_loc(wnf);
@@ -1220,7 +1220,7 @@ Term normal(Term term) {
 // Allocates a new SUP node with given label.
 Term SUP_f(Term ref) {
   Loc ref_loc = term_loc(ref);
-  Term lab = reduce(got(ref_loc + 0), 0);
+  Term lab = reduce(got(ref_loc + 0));
   Term lab_val = term_loc(lab);
   if (term_tag(lab) != W32) {
     printf("ERROR:non-numeric-sup-label\n");
@@ -1242,7 +1242,7 @@ Term SUP_f(Term ref) {
 // Creates a DUP node with given label.
 Term DUP_f(Term ref) {
   Loc ref_loc = term_loc(ref);
-  Term lab = reduce(got(ref_loc + 0), 0);
+  Term lab = reduce(got(ref_loc + 0));
   Term lab_val = term_loc(lab);
   if (term_tag(lab) != W32) {
     printf("ERROR:non-numeric-dup-label\n");

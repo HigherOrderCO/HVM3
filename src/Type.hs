@@ -92,7 +92,7 @@ data TAG
 
 type HVM = IO
 
-type ReduceAt = Book -> Loc -> Bool -> HVM Term
+type ReduceAt = Book -> Loc -> HVM Term
 
 -- Constants
 -- ---------

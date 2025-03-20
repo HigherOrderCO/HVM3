@@ -68,10 +68,10 @@ foreign import ccall unsafe "Runtime.c fresh"
   fresh :: IO Word64
 
 foreign import ccall unsafe "Runtime.c reduce"
-  reduceC :: Term -> Word64 -> IO Term
+  reduceC :: Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_at"
-  reduceAtC :: Term -> Word64 -> IO Term
+  reduceAtC :: Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_let"
   reduceLet :: Term -> Term -> IO Term

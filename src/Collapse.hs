@@ -80,7 +80,7 @@ instance Monad Collapse where
 collapseDupsAt :: IM.IntMap [Int] -> ReduceAt -> Book -> Loc -> HVM Core
 
 collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
-  term <- reduceAt book host True
+  term <- reduceAt book host
   case tagT (termTag term) of
 
     ERA -> do

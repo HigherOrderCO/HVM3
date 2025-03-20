@@ -15,7 +15,7 @@ import qualified Data.Map.Strict as MS
 
 reduceAt :: Bool -> ReduceAt
 
-reduceAt debug book host gc = do 
+reduceAt debug book host = do 
   term <- got host
   let tag = termTag term
   let lab = termLab term
@@ -38,13 +38,13 @@ reduceAt debug book host gc = do
           val <- got (loc + 0)
           cont host (reduceLet term val)
         STRI -> do
-          val <- reduceAt debug book (loc + 0) gc
+          val <- reduceAt debug book (loc + 0)
           cont host (reduceLet term val)
         PARA -> do
           error "TODO"
 
     APP -> do
-      fun <- reduceAt debug book (loc + 0) gc
+      fun <- reduceAt debug book (loc + 0)
       case tagT (termTag fun) of
         ERA -> cont host (reduceAppEra term fun)
         LAM -> cont host (reduceAppLam term fun)
@@ -55,7 +55,7 @@ reduceAt debug book host gc = do
         _   -> set (loc + 0) fun >> return term
 
     MAT -> do
-      val <- reduceAt debug book (loc + 0) gc
+      val <- reduceAt debug book (loc + 0)
       case tagT (termTag val) of
         ERA -> cont host (reduceMatEra term val)
         LAM -> cont host (reduceMatLam term val)
@@ -66,7 +66,7 @@ reduceAt debug book host gc = do
         _   -> set (loc + 0) val >> return term
 
     IFL -> do
-      val <- reduceAt debug book (loc + 0) gc
+      val <- reduceAt debug book (loc + 0)
       case tagT (termTag val) of
         ERA -> cont host (reduceMatEra term val)
         LAM -> cont host (reduceMatLam term val)
@@ -77,7 +77,7 @@ reduceAt debug book host gc = do
         _   -> set (loc + 0) val >> return term
 
     SWI -> do
-      val <- reduceAt debug book (loc + 0) gc
+      val <- reduceAt debug book (loc + 0)
       case tagT (termTag val) of
         ERA -> cont host (reduceMatEra term val)
         LAM -> cont host (reduceMatLam term val)
@@ -88,7 +88,7 @@ reduceAt debug book host gc = do
         _   -> set (loc + 0) val >> return term
 
     OPX -> do
-      val <- reduceAt debug book (loc + 0) gc
+      val <- reduceAt debug book (loc + 0)
       case tagT (termTag val) of
         ERA -> cont host (reduceOpxEra term val)
         LAM -> cont host (reduceOpxLam term val)
@@ -99,7 +99,7 @@ reduceAt debug book host gc = do
         _   -> set (loc + 0) val >> return term
 
     OPY -> do
-      val <- reduceAt debug book (loc + 1) gc
+      val <- reduceAt debug book (loc + 1)
       case tagT (termTag val) of
         ERA -> cont host (reduceOpyEra term val)
         LAM -> cont host (reduceOpyLam term val)
@@ -113,7 +113,7 @@ reduceAt debug book host gc = do
       sb0 <- got (loc + 0)
       if termGetBit sb0 == 0
         then do
-          val <- reduceAt debug book (loc + 0) gc
+          val <- reduceAt debug book (loc + 0)
           case tagT (termTag val) of
             ERA -> cont host (reduceDupEra term val)
             LAM -> cont host (reduceDupLam term val)
@@ -124,13 +124,13 @@ reduceAt debug book host gc = do
             _   -> set (loc + 0) val >> return term
         else do
           set host (termRemBit sb0)
-          reduceAt debug book host gc
+          reduceAt debug book host
 
     DP1 -> do
       sb1 <- got (loc + 0)
       if termGetBit sb1 == 0
         then do
-          val <- reduceAt debug book (loc + 0) gc
+          val <- reduceAt debug book (loc + 0)
           case tagT (termTag val) of
             ERA -> cont host (reduceDupEra term val)
             LAM -> cont host (reduceDupLam term val)
@@ -141,7 +141,7 @@ reduceAt debug book host gc = do
             _   -> set (loc + 0) val >> return term
         else do
           set host (termRemBit sb1)
-          reduceAt debug book host gc
+          reduceAt debug book host
 
     VAR -> do
       sub <- got (loc + 0)
@@ -149,11 +149,11 @@ reduceAt debug book host gc = do
         then return term
         else do
           set host (termRemBit sub)
-          reduceAt debug book host gc
+          reduceAt debug book host
 
     REF -> do
       reduceRefAt book host
-      reduceAt debug book host gc
+      reduceAt debug book host
 
     otherwise -> do
       return term
@@ -162,10 +162,10 @@ reduceAt debug book host gc = do
     cont host action = do
       ret <- action
       set host ret
-      reduceAt debug book host gc
+      reduceAt debug book host
 
-gotT :: Book -> Loc -> Bool -> HVM Term
-gotT book host gc = got host
+gotT :: Book -> Loc -> HVM Term
+gotT book host = got host
 
 reduceRefAt :: Book -> Loc -> HVM Term
 reduceRefAt book host = do
@@ -190,7 +190,7 @@ reduceRefAt book host = do
             else forM (zip [0..] args) $ \(i, (strict, _)) -> do
               term <- got (loc + i)
               if strict
-                then reduceAt False book (loc + i) False
+                then reduceAt False book (loc + i)
                 else return term
           doInjectCoreAt book core host $ zip (map snd args) argTerms
         Nothing -> do
@@ -212,7 +212,7 @@ reduceRefAt_DupF book host loc ari = do
   when (ari /= 3) $ do
     putStrLn $ "RUNTIME_ERROR: arity mismatch on call to '@DUP'."
     exitFailure
-  lab <- reduceAt False book (loc + 0) False
+  lab <- reduceAt False book (loc + 0)
   val <- got (loc + 1)
   bod <- got (loc + 2)
   dup <- allocNode 1
@@ -246,7 +246,7 @@ reduceRefAt_SupF book host loc ari = do
   when (ari /= 3) $ do
     putStrLn $ "RUNTIME_ERROR: arity mismatch on call to '@SUP'."
     exitFailure
-  lab <- reduceAt False book (loc + 0) False
+  lab <- reduceAt False book (loc + 0)
   tm0 <- got (loc + 1)
   tm1 <- got (loc + 2)
   sup <- allocNode 2
@@ -293,7 +293,7 @@ reduceRefAt_FreshF book host loc ari = do
   return ret
 
 reduceCAt :: Bool -> ReduceAt
-reduceCAt = \ _ _ host gc -> reduceAtC host (if gc then 1 else 0)
+reduceCAt = \ _ _ host -> reduceAtC host
 
 -- normalAtWith :: (Book -> Term -> HVM Term) -> Book -> Loc -> HVM Term
 -- normalAtWith reduceAt book host = do
