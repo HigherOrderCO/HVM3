@@ -199,7 +199,7 @@ primitives =
 -- -----
 
 -- Getter function for maps
--- TODO: add the type annotatino for mget
+-- TODO: add the type annotation for mget
 mget :: (Ord k, Show k) => MS.Map k a -> k -> a
 mget map key =
   case MS.lookup key map of
