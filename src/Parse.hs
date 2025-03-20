@@ -5,15 +5,14 @@ module Parse where
 import Control.Monad (foldM, forM, forM_, when)
 import Control.Monad.State
 import Data.Either (isLeft)
-import Data.Maybe (fromMaybe)
 import Data.IORef
 import Data.List
 import Data.Maybe
+import Data.Maybe (fromMaybe)
 import Data.Word
 import Debug.Trace
-import Show
-import Type
 import Highlight (highlightError)
+import Show
 import System.Console.ANSI
 import System.Exit (exitFailure)
 import System.IO.Unsafe (unsafePerformIO)
@@ -21,6 +20,7 @@ import Text.Parsec hiding (State)
 import Text.Parsec.Error
 import Text.Parsec.Pos
 import Text.Parsec.String
+import Type
 import qualified Data.Map.Strict as MS
 
 -- Core Parsers

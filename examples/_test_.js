@@ -103,7 +103,12 @@ const tests = [
     file: 'fuse_rot.hvm',
     intr: { main: '@main = (@read(@S) @sqr(12345 (@add(@S) @KA) @KB))', norm: '209865' },
     comp: { main: '@main = (@read(@S) @sqr(54321 (@add(@S) @KA) @KB))', norm: '923457' }
-  }
+  },
+  {
+    file: 'enum_1D_match.hvm',
+    intr: { main: '@main = @solve(16)', norm: '64' },
+    comp: { main: '@main = @solve(18)', norm: '64' }
+  },
 ];
 
 // ### Load Previous Performance Data
