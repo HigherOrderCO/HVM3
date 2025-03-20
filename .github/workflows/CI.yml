@@ -69,16 +69,13 @@ jobs:
         run: cabal build
         
       - name: Lazy - Run interpreted normalization
-        run: cabal run hvml -- run ./book/feat_hoas.hvml -s
+        run: cabal run hvm -- run ./examples/feat_hoas.hvm -s
         
       - name: Lazy - Run compiled normalization
-        run: cabal run hvml -- run ./book/feat_hoas.hvml -c -s
+        run: cabal run hvm -- run ./examples/feat_hoas.hvm -c -s
         
       - name: Lazy - Run interpreted collapse
-        run: cabal run hvml -- run ./book/enum_lam_smart.hvml -C -s
+        run: cabal run hvm -- run ./examples/enum_lam_smart.hvm -C -s
         
       - name: Lazy - Run compiled collapse
-        run: cabal run hvml -- run ./book/enum_lam_smart.hvml -C -c -s
-        
-      - name: Strict - Run interpreted normalization
-        run: cabal run hvms -- run ./book/bench_parallel_sum_range.hvms -s
+        run: cabal run hvm -- run ./examples/enum_lam_smart.hvm -C -c -s
