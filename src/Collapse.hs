@@ -3,8 +3,8 @@
 
 module Collapse where
 
-import HVML.Reduce
-import HVML.Extract
+import Reduce
+import Extract
 
 import Control.Monad (ap, forM, forM_, foldM)
 import Control.Monad.IO.Class
@@ -26,7 +26,14 @@ import qualified Data.Map.Strict as MS
 -- *
 icEraMat :: Term -> Term -> HVM Term
 icEraMat mat _ = do
-  putStrLn $ "MAT-ERA"
+  let eraTerm = termNew _ERA_ 0 0
+  return eraTerm
+
+-- #C{* K0 K1}
+-- -------------- CTR-ERA (if already in normal form)
+-- *
+icEraCtr :: Term -> Term -> HVM Term
+icEraCtr ctr _ = do
   let eraTerm = termNew _ERA_ 0 0
   return eraTerm
 
@@ -187,6 +194,7 @@ icSupSupX outerSup innerSup = do
 -- &L{&R{x0,y0},&R{x1,y1}}
 icSupSupY :: Term -> Term -> HVM Term
 icSupSupY outerSup innerSup = do
+  putStrLn $ "SUP-SUP-Y"
   let outerLoc = termLoc outerSup
   let outerLab = termLab outerSup
   let innerLoc = termLoc innerSup
@@ -285,8 +293,57 @@ icDupApp dup app = do
 -- !&L{k10, k11}=k1
 -- !&L{kn0, kn1}=kn
 -- &L{#CTR0{x0 k00 k10 ... kn0} #CTR1{x1 k01 k11 kn1}}
--- icSupCtr ::  Term -> Term -> Word64 -> Word64 -> HVM Term
+icSupCtr :: Term -> Term -> Word64 -> Word64 -> Word64 -> HVM Term
+icSupCtr ctr sup cid len idx = do
+  -- Extract locations and label
+  let ctrLoc = termLoc ctr
+  let supLoc = termLoc sup
+  let supLab = termLab sup
 
+  -- Get superposition components
+  x0 <- got (supLoc + 0)
+  x1 <- got (supLoc + 1)
+
+  -- Duplicate all arguments except the one at idx
+  aList <- forM [0 .. len - 1] $ \j -> do
+    if j == idx then
+      return Nothing  -- Don’t duplicate the superposition
+    else do
+      aj <- got (ctrLoc + j)              -- Get argument aj
+      dupAjLoc <- allocNode 1             -- Allocate space for duplication
+      setNew dupAjLoc aj                  -- Store aj
+      let aj0 = termNew _DP0_ supLab dupAjLoc  -- First duplicate
+      let aj1 = termNew _DP1_ supLab dupAjLoc  -- Second duplicate
+      return (Just (aj0, aj1))            -- Return pair (aj0, aj1)
+
+  -- Create CTR0: #CTR{a0' a1' ... x0 ... a_{len-1}'}
+  ctr0Loc <- allocNode len
+  forM_ [0 .. len - 1] $ \j -> do
+    if j == idx then
+      setNew (ctr0Loc + j) x0             -- Use x0 at idx
+    else do
+      let Just (aj0, _) = aList !! fromIntegral j  -- Get aj0
+      setNew (ctr0Loc + j) aj0            -- Use duplicate aj0
+  let ctr0 = termNew _CTR_ cid ctr0Loc    -- Construct CTR0
+
+  -- Create CTR1: #CTR{a0'' a1'' ... x1 ... a_{len-1}''}
+  ctr1Loc <- allocNode len
+  forM_ [0 .. len - 1] $ \j -> do
+    if j == idx then
+      setNew (ctr1Loc + j) x1             -- Use x1 at idx
+    else do
+      let Just (_, aj1) = aList !! fromIntegral j  -- Get aj1
+      setNew (ctr1Loc + j) aj1            -- Use duplicate aj1
+  let ctr1 = termNew _CTR_ cid ctr1Loc    -- Construct CTR1
+
+  -- Create resulting superposition: &L{CTR0 CTR1}
+  supResultLoc <- allocNode 2
+  setNew (supResultLoc + 0) ctr0
+  setNew (supResultLoc + 1) ctr1
+  let supResult = termNew _SUP_ supLab supResultLoc
+
+  -- Return the new superposition
+  return supResult
 
 -- ~N{#A: &L{z0 z1} #B: x #C: y ...}
 -- --------------------------------- SUP-MAT-CTR
@@ -353,6 +410,7 @@ collapseSupsTerm book root = do
   let tag = termTag term
   let lab = termLab term
   let loc = termLoc term
+  -- putStrLn $ show (tagT tag)
   case (tagT tag) of
     LAM -> do
       bod <- got (loc + 0)
@@ -381,6 +439,15 @@ collapseSupsTerm book root = do
           ctrCol <- collapseSupsTerm book ctr
           setOld (loc + i) ctrCol
         return ()
+
+    CTR -> do
+      let cid = termLab term
+      let ctrAri = mget (cidToAri book) cid
+      forM_ [1 .. ctrAri] $ \i -> do
+        field <- got (loc + i - 1)
+        fieldCol <- collapseSupsTerm book field
+        setOld (loc + i - 1) fieldCol
+      return ()
 
     _ -> return ()
 
@@ -417,9 +484,22 @@ collapseSupsTerm book root = do
       else if isSup rgtCol && lab > termLab rgtCol then do
         result <- icSupSupY term rgtCol
         collapseSupsTerm book result
-        return term
       else return term
-    
+
+    CTR -> do
+      let cid = termLab term
+      let ctrAri = mget (cidToAri book) cid
+      let checkSupOrEra i = if i > ctrAri then return term else do
+            trm <- got (loc + i - 1)
+            if isSup trm then do
+              res <- icSupCtr term trm cid ctrAri (i - 1)
+              collapseSupsTerm book res
+            else if isEra trm then do
+              res <- icEraCtr term trm 
+              collapseSupsTerm book res
+            else checkSupOrEra (i + 1)
+      checkSupOrEra 1
+
     tag | tag == MAT || tag == SWI -> do
       let matLen = if tag == SWI then 2 else mget (cidToLen book) lab
       let matTag = if tag == SWI then _SWI_ else _MAT_
@@ -525,3 +605,4 @@ flattenBFS root = bfs (sqPut root (SQ [] [])) []
             Sup _ a b -> bfs (sqPut b (sqPut a sq')) acc
             Era -> bfs sq' acc
             x -> bfs sq' (x : acc)
+
