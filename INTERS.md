@@ -99,7 +99,7 @@ K
 
 These interactions are NOT part of the WHNF. They're called by the collapser.
 
-```
+```haskell
 λx.*
 ------ ERA-LAM
 x <- *
