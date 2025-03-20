@@ -1,0 +1,175 @@
+// This file shows how we can use superpositionn to apply multiple functions to
+// the same input, in a way that "shares computations" across different calls.
+// In this example, we apply `add(0)`, `add(1)`, ..., `add(2^64-1)` - i.e., 2^64
+// different functions, to the same input, 10,000,000. Then, we check
+// `addN(10,000,000) = 99,999,999`, and eliminate all universes that don't
+// satisfy this equation. Since `inc` fuses, and since `addN` is a superposition
+// of every function, there is a *massive* amount of sharing between different
+// universes (i.e., the universe where we check `add1(10,000,00) = 99,999,999`,
+// the universe where we check `add2(10,000,00) = 99,999,999`, and so on). Thus,
+// after trying all possible universes, we eventually find out that the only
+// universe that is *not* destroyed is `add89999999(10,000,00) = 99,999,999`.
+// We then use this information to output `89,999,999`, which is the solution to
+// the `10,000,000 + X = 99,999,999` equation. And the magic is: this happens in
+// just 196411 interactions (0.001 seconds). In any other language, this would
+// take *at least* enough time to call `add` 2^64 times, which is probably
+// weeks. In other words, we effectivelly implemented 'sub' efficiently, by
+// using superpositions to enumerate the domain of 'add(N,x)', inverting it.  Of
+// course, 'add' is a very simple function. Can this technique be used to invert
+// more complex functions efficiently? See 'enum_1D_match.hvml' for an attempt.
+
+data Bin { #O{p} #I{p} #E }
+
+// If/Exit
+@when(!c t) = ~ c {
+  0: *
+  p: t
+}
+
+// Repeated Application
+@rep(n f x) = ~ n !f !x {
+  0: x
+  p: !&0{f0 f1}=f (f0 @rep(p f1 x))
+}
+
+// Squared Application
+@sqr(n f x) = ~ n !f !x {
+  0: x
+  p: !&0{p0 p1}=(+ p 1)
+     !&0{fA f0}=f
+     !&0{f1 f2}=fA
+     @sqr((/ p0 2) λk(f0 (f1 k)) @rep((% p1 2) f2 x))
+}
+
+// Church Nat (with fusion)
+@nat(n) = λs λz @sqr(n s z)
+
+// Fixed Point
+@fix1(f) = !&{f f0}=f !&{f f1}=f (f0 @fix1(f1))
+
+// Booleans
+@tru = λt λf t
+@fal = λt λf f
+@id  = λb λt λf (b t f)
+@not = λb λt λf (b f t)
+
+// Below, '@foo' represents two possible functions:
+// - @foo(N x) = match N !x { #Z:x #S{n}:@foo(n (id  x)) }
+// - @foo(N x) = match N !x { #Z:x #S{n}:@foo(n (not x)) }
+// The question is: if we apply @foo to a large N, how long will it take to
+// compute? In particular, will it fuse `not` and `id` correctly, even though
+// they're behind a superposition?
+@foo = λN
+  ! step = λfoo_N λx
+    // Universe 1-L: apply 'id' to 'x'
+    // Universe 1-R: apply 'not' to 'x'
+    ! &1{F0 F1} = foo_N
+    ! &1{x0 x1} = x
+    &1{
+      (F0 (@id  x0))
+      (F1 (@not x1))
+    }
+  ! base = λx x
+  (N step base)
+
+//@main = (@foo @nat(100001) @tru)
+
+// λ-Encoded Bitstrings
+// --------------------
+
+// Constructors
+@E     = λo λi λe e
+@O(xs) = λo λi λe (o xs)
+@I(xs) = λo λi λe (i xs)
+
+// Bits
+@zero(n) = ~ n {
+  0: λo λi λe e
+  n: λo λi λe (o @zero(n))
+}
+
+// U32 → U32 → Bits
+@num(l n) = @sqr(n λx@inc(x) @zero(l))
+
+// Bits → U32
+@val(x) =
+  ! case_o = λp (+ (* @val(p) 2) 0)
+  ! case_i = λp (+ (* @val(p) 2) 1)
+  ! case_e = 0
+  (x case_o case_i case_e)
+
+// Bits → Bits
+@bid(x) = λo λi λe
+  (x o i e)
+
+// Bits → Bits
+@inc(x) = λo λi λe 
+  ! case_o = λp (i p)
+  ! case_i = λp (o @inc(p))
+  ! case_e = e
+  (x case_o case_i case_e)
+
+// Bits → Bits → Bits
+@add(a b) =
+  !case_o = λaP λb λo λi λe
+    !case_o = λbP λaP (o @add(aP bP))
+    !case_i = λbP λaP (i @add(aP bP))
+    !case_e = λaP e
+    (b case_o case_i case_e aP)
+  !case_i = λaP λb λo λi λe
+    !case_o = λbP λaP (i @add(aP bP))
+    !case_i = λbP λaP (o @inc(@add(aP bP)))
+    !case_e = λaP e
+    (b case_o case_i case_e aP)
+  !case_e = λb b
+  (a case_o case_i case_e b)
+
+// Bits → Bits -> Bool
+@eql(a b) =
+  !case_o = λaP λb
+    !case_o = λbP λaP @eql(aP bP)
+    !case_i = λbP λaP 0
+    !case_e = λaP 0
+    (b case_o case_i case_e aP)
+  !case_i = λaP λb
+    !case_o = λbP λaP 0
+    !case_i = λbP λaP @eql(aP bP)
+    !case_e = λaP 0
+    (b case_o case_i case_e aP)
+  !case_e = λb
+    !case_o = λbP 0
+    !case_i = λbP 0
+    !case_e = 1
+    (b case_o case_i case_e)
+  (a case_o case_i case_e b)
+
+// Bits → Bits
+@view(x) =
+  ! case_o = λp #O{@view(p)}
+  ! case_i = λp #I{@view(p)}
+  ! case_e = #E
+  (x case_o case_i case_e)
+
+// U32 → Bits
+@all(n) = ~ n {
+  0: λo λi λe e
+  n:
+    ! &1{n0 n1} = n
+    &1{
+      λo λi λe (o @all(n0))
+      λo λi λe (i @all(n1))
+    }
+}
+
+// Applies all 'add_N' functions to an argument, to reverse it
+
+@L = 64
+@A = @num(@L 10000000)
+@X = @all(@L)
+@B = @num(@L 99999999)
+
+// This is solved in just 196411 interactions. Conclusing:
+// We can efficiently invert `add` by enumeration, resulting in a fast `sub`!
+@main =
+  ! solved = @eql(@add(@A @X) @B) // A + X = B
+  @when(solved @val(@X)) // Prints X
