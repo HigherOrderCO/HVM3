@@ -95,6 +95,9 @@ printHelp = do
 
 cliRun :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> [String] -> IO (Either String ())
 cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
+  
+  compTimeInit <- getMonotonicTimeNSec
+
   -- Initialize the HVM
   hvmInit
   code <- readFile' filePath
@@ -147,7 +150,8 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
               ++ " arguments, found " ++ show (length strArgs)
     exitWith (ExitFailure 1)
   -- Normalize main
-  init <- getMonotonicTimeNSec
+  compTimeEnd <- getMonotonicTimeNSec
+  runtimeInit <- getMonotonicTimeNSec
   -- Convert string arguments to Core terms and inject them at runtime
   let args = map (\str -> foldr (\c acc -> Ctr "#Cons" [Chr c, acc]) (Ctr "#Nil" []) str) strArgs
   root <- doInjectCoreAt book (Ref "main" (mget (namToFid book) "main") args) 0 []
@@ -159,6 +163,7 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
     Normalize -> do
       core <- doExtractCoreAt rxAt book 0
       return [(doLiftDups core)]
+  runtimeEnd <- getMonotonicTimeNSec
   -- Print results
   case mode of
     Collapse limit -> do
@@ -177,15 +182,17 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
                    else showCore (head vals)
       putStrLn output
   -- Prints total time
-  end <- getMonotonicTimeNSec
+  -- end <- getMonotonicTimeNSec
   -- Show stats
   when showStats $ do
     itrs <- getItr
     size <- getLen
-    let time = fromIntegral (end - init) / (10^9) :: Double
-    let mips = (fromIntegral itrs / 1000000.0) / time
+    let runtime = fromIntegral (runtimeEnd - runtimeInit) / (10^9) :: Double
+    let comptime = fromIntegral (compTimeEnd - compTimeInit) / (10^9) :: Double
+    let mips = (fromIntegral itrs / 1000000.0) / runtime
     printf "WORK: %llu interactions\n" itrs
-    printf "TIME: %.7f seconds\n" time
+    printf "COMPTIME: %.7f seconds\n" comptime
+    printf "RUNTIME: %.7f seconds\n" runtime
     printf "SIZE: %llu nodes\n" size
     printf "PERF: %.3f MIPS\n" mips
     return ()
