@@ -18,12 +18,25 @@
 // course, 'add' is a very simple function. Can this technique be used to invert
 // more complex functions efficiently? See 'enum_1D_match.hvml' for an attempt.
 
+data Bool { #T #F }
+data Pair { #P{x y} }
 data Bin { #O{p} #I{p} #E }
+data Nat { #S{p} #Z }
+data Map { #BR{x y} #M0 #M1 }
+
+// Prelude
+// -------
 
 // If/Exit
 @when(!c t) = ~ c {
   0: *
   p: t
+}
+
+// And
+!@and(!a b) = ~ a {
+  0: 0
+  p: b
 }
 
 // Repeated Application
@@ -45,34 +58,29 @@ data Bin { #O{p} #I{p} #E }
 @nat(n) = λs λz @sqr(n s z)
 
 // Fixed Point
-@fix1(f) = !&{f f0}=f !&{f f1}=f (f0 @fix1(f1))
+@fix(f) = !&{f f0}=f !&{f f1}=f (f0 @fix(f1))
 
-// Booleans
-@tru = λt λf t
-@fal = λt λf f
-@idf = λb λt λf (b t f)
-@not = λb λt λf (b f t)
+// λ-Encoded Nats
+// --------------
 
-// Below, '@foo' represents two possible functions:
-// - @foo(N x) = match N !x { #Z:x #S{n}:@foo(n (id  x)) }
-// - @foo(N x) = match N !x { #Z:x #S{n}:@foo(n (not x)) }
-// The question is: if we apply @foo to a large N, how long will it take to
-// compute? In particular, will it fuse `not` and `id` correctly, even though
-// they're behind a superposition?
-@foo = λN
-  ! step = λfoo_N λx
-    // Universe 1-L: apply 'id' to 'x'
-    // Universe 1-R: apply 'not' to 'x'
-    ! &1{F0 F1} = foo_N
-    ! &1{x0 x1} = x
-    &1{
-      (F0 (@idf x0))
-      (F1 (@not x1))
-    }
-  ! base = λx x
-  (N step base)
+// Constructors
+@S(n) = λs λz (s n)
+@Z    = λs λz z
 
-//@main = (@foo @nat(100001) @tru)
+// Nat
+@nat_all = &1{@Z @S(@nat_all)}
+
+// Nat → Nat
+@nat_view(n) =
+  ! case_s = λp #S{@nat_view(p)}
+  ! case_z = #Z
+  (n case_s case_z)
+
+// U32 → Nat
+@nat(n) = ~ n {
+  0: @Z
+  n: @S(@nat(n))
+}
 
 // λ-Encoded Bitstrings
 // --------------------
@@ -82,58 +90,63 @@ data Bin { #O{p} #I{p} #E }
 @O(xs) = λo λi λe (o xs)
 @I(xs) = λo λi λe (i xs)
 
-// Bits
-@zero(n) = ~ n {
-  0: λo λi λe e
-  n: λo λi λe (o @zero(n))
+// Bin
+@bin_zero(n) = ~ n {
+  0: @E
+  n: @O(@bin_zero(n))
 }
 
-// U32 → U32 → Bits
-@num(l n) = @sqr(n λx@inc(x) @zero(l))
+// U32 → U32 → Bin
+@bin(l n) =
+  @sqr(n λx@bin_inc(x) @bin_zero(l))
 
-// Bits → U32
-@val(x) =
-  ! case_o = λp (+ (* @val(p) 2) 0)
-  ! case_i = λp (+ (* @val(p) 2) 1)
+// Bin → U32
+@bin_to_u32(x) =
+  ! case_o = λp (+ (* @bin_to_u32(p) 2) 0)
+  ! case_i = λp (+ (* @bin_to_u32(p) 2) 1)
   ! case_e = 0
   (x case_o case_i case_e)
 
-// Bits → Bits
-@bid(x) = λo λi λe
+// Bin → Bin
+@bin_id(x) = λo λi λe
   (x o i e)
 
-// Bits → Bits
-@inc(x) = λo λi λe 
+// Bin → Bin
+@bin_inc(x) = λo λi λe 
   ! case_o = λp (i p)
-  ! case_i = λp (o @inc(p))
+  ! case_i = λp (o @bin_inc(p))
   ! case_e = e
   (x case_o case_i case_e)
 
-// Bits → Bits → Bits
-@add(a b) =
+// Bin → Bin → Bin
+@bin_add(a b) =
   !case_o = λaP λb λo λi λe
-    !case_o = λbP λaP (o @add(aP bP))
-    !case_i = λbP λaP (i @add(aP bP))
+    !case_o = λbP λaP (o @bin_add(aP bP))
+    !case_i = λbP λaP (i @bin_add(aP bP))
     !case_e = λaP e
     (b case_o case_i case_e aP)
   !case_i = λaP λb λo λi λe
-    !case_o = λbP λaP (i @add(aP bP))
-    !case_i = λbP λaP (o @inc(@add(aP bP)))
+    !case_o = λbP λaP (i @bin_add(aP bP))
+    !case_i = λbP λaP (o @bin_inc(@bin_add(aP bP)))
     !case_e = λaP e
     (b case_o case_i case_e aP)
   !case_e = λb b
   (a case_o case_i case_e b)
 
-// Bits → Bits -> Bool
-@eql(a b) =
+// Bin → Bin → Bin
+@bin_add_2(a b) =
+  @bin_sqr(a λx(@bin_inc(x)) b)
+
+// Bin → Bin -> Bool
+@bin_eql(a b) =
   !case_o = λaP λb
-    !case_o = λbP λaP @eql(aP bP)
+    !case_o = λbP λaP @bin_eql(aP bP)
     !case_i = λbP λaP 0
     !case_e = λaP 0
     (b case_o case_i case_e aP)
   !case_i = λaP λb
     !case_o = λbP λaP 0
-    !case_i = λbP λaP @eql(aP bP)
+    !case_i = λbP λaP @bin_eql(aP bP)
     !case_e = λaP 0
     (b case_o case_i case_e aP)
   !case_e = λb
@@ -143,33 +156,43 @@ data Bin { #O{p} #I{p} #E }
     (b case_o case_i case_e)
   (a case_o case_i case_e b)
 
-// Bits → Bits
-@view(x) =
-  ! case_o = λp #O{@view(p)}
-  ! case_i = λp #I{@view(p)}
+// Bin → Bin
+@bin_view(x) =
+  ! case_o = λp #O{@bin_view(p)}
+  ! case_i = λp #I{@bin_view(p)}
   ! case_e = #E
   (x case_o case_i case_e)
 
-// U32 → Bits
-@all(n) = ~ n {
+// U32 → Bin
+@bin_all(n) = ~ n {
   0: λo λi λe e
   n:
     ! &1{n0 n1} = n
     &1{
-      λo λi λe (o @all(n0))
-      λo λi λe (i @all(n1))
+      λo λi λe (o @bin_all(n0))
+      λo λi λe (i @bin_all(n1))
     }
 }
 
-// Applies all 'add_N' functions to an argument, to reverse it
+// Bin → U32
+@bin_len(xs) =
+  ! case_o = λxs (+ 1 @bin_len(xs))
+  ! case_i = λxs (+ 1 @bin_len(xs))
+  ! case_e = 0
+  (xs case_o case_i case_e)
 
+// Squared Application (with a bitstring)
+@bin_sqr(xs f x) =
+  ! case_o = λxs λf λx !&{f0 f1}=f @bin_sqr(xs λk(f0 (f1 k)) x)
+  ! case_i = λxs λf λx !&{F f01}=f !&{f0 f1}=f01 @bin_sqr(xs λk(f0 (f1 k)) (F x))
+  ! case_e = λf λx x
+  (xs case_o case_i case_e f x)
+
+//Test:
 @L = 64
-@A = @num(@L 10000000)
-@X = @all(@L)
-@B = @num(@L 99999999)
-
-// This is solved in just 196411 interactions. Conclusing:
-// We can efficiently invert `add` by enumeration, resulting in a fast `sub`!
+@A = @bin(@L 10000000)
+@X = @bin_all(@L)
+@B = @bin(@L 99999999)
 @main =
-  ! solved = @eql(@add(@A @X) @B) // A + X = B
-  @when(solved @val(@X)) // Prints X
+  ! solved = @bin_eql(@bin_add_2(@A @X) @B) // A + X = B
+  @when(solved @bin_to_u32(@X)) // Prints X
