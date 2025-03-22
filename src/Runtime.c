@@ -1225,7 +1225,7 @@ Term SUP_f(Term ref) {
   if (term_tag(lab) != W32) {
     printf("ERROR:non-numeric-sup-label\n");
   }
-  if (lab_val > 0x7FFF) {
+  if (lab_val > 0xFFFF) {
     printf("ERROR:sup-label-too-large\n");
   }
   Term tm0 = got(ref_loc + 1);
@@ -1247,7 +1247,7 @@ Term DUP_f(Term ref) {
   if (term_tag(lab) != W32) {
     printf("ERROR:non-numeric-dup-label\n");
   }
-  if (lab_val > 0x7FFF) {
+  if (lab_val > 0xFFFF) {
     printf("ERROR:dup-label-too-large\n");
   }
   Term val = got(ref_loc + 1);
