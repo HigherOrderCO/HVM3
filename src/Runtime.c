@@ -1138,7 +1138,7 @@ Term reduce_at(Loc host) {
     return tm0;
   }
   Term tm1 = reduce(tm0);
-  set(term_loc(host), tm1);
+  set(host, tm1);
   return tm1;
 }
 
