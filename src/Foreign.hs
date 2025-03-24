@@ -41,10 +41,10 @@ foreign import ccall unsafe "Runtime.c term_loc"
   termLoc :: Term -> Loc
 
 foreign import ccall unsafe "Runtime.c term_set_bit"
-  termSetBit :: Term -> Tag
+  termSetBit :: Term -> Term
 
 foreign import ccall unsafe "Runtime.c term_rem_bit"
-  termRemBit :: Term -> Tag
+  termRemBit :: Term -> Term
 
 foreign import ccall unsafe "Runtime.c get_len"
   getLen :: IO Word64

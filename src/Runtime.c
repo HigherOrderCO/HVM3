@@ -14,8 +14,8 @@
 #include <stdbool.h>
 
 typedef uint8_t  Tag;
-typedef uint16_t Lab;
-typedef uint64_t Loc;
+typedef uint32_t Lab;
+typedef uint32_t Loc;
 typedef uint64_t Term;
 typedef uint16_t u16;
 typedef uint32_t u32;
@@ -102,16 +102,10 @@ static State HVM = {
 
 #define VOID 0x00000000000000
 
-#define GC_THR (1ULL << 29)
-
-// Logging Macros
-#define CHECK_ALLOC(ptr, name) if (!(ptr)) { printf(name " alloc failed\n"); allocs_failed++; }
-int allocs_failed = 0; // Track if any allocation failed
-
 // Heap
 // ----
 
-Loc get_len() {
+u64 get_len() {
   return *HVM.size;
 }
 
@@ -129,20 +123,21 @@ u64 fresh() {
 Term term_new(Tag tag, Lab lab, Loc loc) {
   Term tag_enc = tag;
   Term lab_enc = ((Term)lab) << 8;
-  Term loc_enc = ((Term)loc) << 24;
+  Term loc_enc = ((Term)loc) << 32;
   return tag_enc | lab_enc | loc_enc;
 }
 
+// Must return a u64 to be read as Word64 in Haskell
 u64 term_tag(Term x) {
   return x & 0x7F;
 }
 
 u64 term_lab(Term x) {
-  return (x >> 8) & 0xFFFF;
+  return (x >> 8) & 0xFFFFFF;
 }
 
 u64 term_loc(Term x) {
-  return (x >> 24) & 0xFFFFFFFFFF;
+  return (x >> 32) & 0xFFFFFFFF;
 }
 
 u64 term_get_bit(Term x) {
@@ -158,7 +153,7 @@ Term term_rem_bit(Term term) {
 }
 
 Term term_set_loc(Term x, Loc loc) {
-  return (x & 0x0000000000FFFFFF) | (loc << 24);
+  return (x & 0x00000000FFFFFFFF) | (((Term)loc) << 32);
 }
 
 _Bool term_is_atom(Term term) {
@@ -176,7 +171,7 @@ _Bool term_is_atom(Term term) {
 Term swap(Loc loc, Term term) {
   Term val = atomic_exchange_explicit(&HVM.heap[loc], term, memory_order_relaxed);
   if (val == 0) {
-    printf("SWAP 0 at %llx\n", loc);
+    printf("SWAP 0 at %08llx\n", (u64)loc);
     exit(0);
   }
   return val;
@@ -185,7 +180,7 @@ Term swap(Loc loc, Term term) {
 Term got(Loc loc) {
   Term val = atomic_load_explicit(&HVM.heap[loc], memory_order_relaxed);
   if (val == 0) {
-    printf("GOT 0 at %010llx\n", loc);
+    printf("GOT 0 at %08llx\n", (u64)loc);
     exit(0);
   }
   return val;
@@ -258,14 +253,14 @@ void print_tag(Tag tag) {
 void print_term(Term term) {
   printf("term_new(");
   print_tag(term_tag(term));
-  printf(",0x%04llx,0x%010llx)", term_lab(term), term_loc(term));
+  printf(",0x%06llx,0x%08llx)", term_lab(term), term_loc(term));
 }
 
 void print_heap() {
   for (Loc i = 0; i < *HVM.size; i++) {
     Term term = got(i);
     if (term != 0) {
-      printf("set(0x%010llx, ", i);
+      printf("set(0x%08llx, ", (u64)i);
       print_term(term);
       printf(");\n");
     }
@@ -281,12 +276,12 @@ void print_heap() {
 // ! &L{cx cy} = b
 // ...
 // &L{@foo(ax bx cx ...) @foo(ay by cy ...)}
-Term reduce_ref_sup(Term ref, u32 idx) {
+Term reduce_ref_sup(Term ref, u16 idx) {
   inc_itr();
   Loc ref_loc = term_loc(ref);
   Lab ref_lab = term_lab(ref);
-  u64 fun_id = ref_lab;
-  u64 arity  = HVM.fari[fun_id];
+  u16 fun_id = ref_lab;
+  u16 arity  = HVM.fari[fun_id];
   if (idx >= arity) {
     printf("ERROR: Invalid index in reduce_ref_sup\n");
     exit(1);
@@ -889,7 +884,7 @@ Term reduce_opy_w32(Term opy, Term w32) {
   //printf("reduce_opy_w32 "); print_term(opy); printf("\n");
   inc_itr();
   Loc opy_loc = term_loc(opy);
-  u32 t = term_tag(w32);
+  Tag t = term_tag(w32);
   u32 x = term_loc(got(opy_loc + 0));
   u32 y = term_loc(w32);
   u32 result;
@@ -1296,12 +1291,15 @@ void *alloc_huge(size_t size) {
 // --------------
 
 void hvm_init() {
-  HVM.sbuf = alloc_huge((1ULL << 40) * sizeof(Term)); 
-  HVM.heap = alloc_huge((1ULL << 40) * sizeof(ATerm));
+  HVM.sbuf = alloc_huge((1ULL << 32) * sizeof(Term)); 
+  HVM.heap = alloc_huge((1ULL << 32) * sizeof(ATerm));
   HVM.spos = alloc_huge(sizeof(u64));
   HVM.size = alloc_huge(sizeof(u64));
   HVM.itrs = alloc_huge(sizeof(u64));
   HVM.frsh = alloc_huge(sizeof(u64));
+
+  #define CHECK_ALLOC(ptr, name) if (!(ptr)) { printf(name " alloc failed\n"); allocs_failed++; }
+  int allocs_failed = 0; // Track if any allocation failed
 
   CHECK_ALLOC(HVM.sbuf, "sbuf");
   CHECK_ALLOC(HVM.heap, "heap");
@@ -1314,6 +1312,7 @@ void hvm_init() {
     printf("hvm_init alloc's failed: %d allocations failed\n", allocs_failed);
     exit(1);
   }
+  #undef CHECK_ALLOC
 
   *HVM.spos = 0;
   *HVM.size = 1;
@@ -1343,8 +1342,8 @@ void hvm_munmap(void *ptr, size_t size, const char *name) {
 }
 
 void hvm_free() {
-    hvm_munmap(HVM.sbuf, (1ULL << 40) * sizeof(Term), "sbuf");
-    hvm_munmap(HVM.heap, (1ULL << 40) * sizeof(ATerm), "heap");
+    hvm_munmap(HVM.sbuf, (1ULL << 32) * sizeof(Term), "sbuf");
+    hvm_munmap(HVM.heap, (1ULL << 32) * sizeof(ATerm), "heap");
     hvm_munmap(HVM.spos, sizeof(u64), "spos");
     hvm_munmap(HVM.size, sizeof(u64), "size");
     hvm_munmap(HVM.itrs, sizeof(u64), "itrs");
