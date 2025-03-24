@@ -29,13 +29,13 @@ import qualified Data.Map.Strict as MS
 data VarUsage = Bound | Used
 
 data ParserState = ParserState
-  { pCidToAri  :: MS.Map Word64 Word64
-  , pCidToLen  :: MS.Map Word64 Word64
-  , pCtrToCid  :: MS.Map String Word64
-  , pCidToADT  :: MS.Map Word64 Word64
+  { pCidToAri  :: MS.Map Word16 Word16
+  , pCidToLen  :: MS.Map Word16 Word16
+  , pCtrToCid  :: MS.Map String Word16
+  , pCidToADT  :: MS.Map Word16 Word16
   , imported   :: MS.Map String ()
   , varUsages  :: MS.Map String VarUsage
-  , freshLabel :: Word64
+  , freshLabel :: Lab
   }
 
 type ParserM = ParsecT String ParserState IO
@@ -121,13 +121,13 @@ parseLam = do
 parseLabeled :: ParserM Core
 parseLabeled = do
   consume "&"
-  
+
   -- Try to parse a numeric label first
   num <- optionMaybe $ try $ do
     digits <- many1 digit
     case reads digits of
-      [(num :: Word64, "")] -> return num
-      _                     -> fail "Not a number"
+      [(num :: Lab, "")] -> return num
+      _                  -> fail "Not a number"
   
   case num of
     -- Successfully read a numeric label
@@ -182,7 +182,7 @@ parseLabeled = do
             return $ Sup num tm0 tm1
           else do  
             checkVar ("&" ++ name)
-            return $ Ref "SUP" _SUP_F_ [Var ("&" ++ name), tm0, tm1]
+            return $ Ref "SUP" (fromIntegral _SUP_F_) [Var ("&" ++ name), tm0, tm1]
         
         -- Regular variable &name
         _ -> do
@@ -310,7 +310,7 @@ parseMat = do
         Nothing  -> fail $ "Constructor not defined: " ++ ctr
         Just cid -> return $ cid -- Constructor Case: sort by CID
       _ -> case reads ctr of
-        [(num :: Word64, "")] -> return $ num -- Numeric Case: sort by value
+        [(num :: Word16, "")] -> return $ num -- Numeric Case: sort by value
         _                     -> return $ maxBound -- Default Case: always last
     return (cid, (ctr, fds, bod))
   css <- return $ map snd $ sortOn fst css
@@ -363,8 +363,8 @@ parseLet = do
         num <- genFreshLabel
         return $ Dup num dp0 dp1 val bod
       else case reads nam of
-        [(num :: Word64, "")] -> return $ Dup num dp0 dp1 val bod
-        otherwise -> return $ Ref "DUP" _DUP_F_ [Var ("&" ++ nam), val, Lam 0 dp0 (Lam 0 dp1 bod)]
+        [(num :: Lab, "")] -> return $ Dup num dp0 dp1 val bod
+        otherwise -> return $ Ref "DUP" (fromIntegral _DUP_F_) [Var ("&" ++ nam), val, Lam 0 dp0 (Lam 0 dp1 bod)]
     
     -- Strict Let: !! x = val body
     '!' -> do
@@ -639,20 +639,20 @@ skip = skipMany (parseSpace <|> parseComment) where
     (char '\n' >> return ()) <|> eof
     return ()) <?> "Comment"
 
-genFreshLabel :: ParserM Word64
+genFreshLabel :: ParserM Lab
 genFreshLabel = do
   st <- getState
   let lbl = freshLabel st
   putState st { freshLabel = lbl + 1 }
-  when (lbl > 0x7FFF) $ do
+  when (lbl > 0x7FFFFF) $ do
     error "Label overflow: generated label would be too large"
-  return $ lbl + 0x8000
+  return $ lbl + 0x800000
 
 -- Book creation and setup functions
-createBook :: [(String, ((Bool,[(Bool,String)]), Core))] -> MS.Map String Word64 -> MS.Map Word64 Word64 -> MS.Map Word64 Word64 -> MS.Map Word64 Word64 -> Book
+createBook :: [(String, ((Bool,[(Bool,String)]), Core))] -> MS.Map String Word16 -> MS.Map Word16 Word16 -> MS.Map Word16 Word16 -> MS.Map Word16 Word16 -> Book
 createBook defs ctrToCid cidToAri cidToLen cidToADT =
   let withPrims = \n2i -> MS.union n2i (MS.fromList primitives)
-      nameList  = zip (map fst defs) (map fromIntegral [0..]) :: [(String, Word64)]
+      nameList  = zip (map fst defs) [0..] :: [(String, Word16)]
       namToFid' = withPrims (MS.fromList nameList)
       fidToNam' = MS.fromList (map (\(k,v) -> (v,k)) (MS.toList namToFid'))
       fidToFun' = MS.fromList (map (\(fn, ((cp,ars), cr)) -> (mget namToFid' fn, ((cp, ars), lexify (setRefIds namToFid' cr)))) defs)
@@ -671,7 +671,7 @@ createBook defs ctrToCid cidToAri cidToLen cidToADT =
        }
 
 -- Adds the function id to Ref constructors
-setRefIds :: MS.Map String Word64 -> Core -> Core
+setRefIds :: MS.Map String Word16 -> Core -> Core
 setRefIds fids term = case term of
   Var nam       -> Var nam
   Let m x v b   -> Let m x (setRefIds fids v) (setRefIds fids b)
@@ -692,7 +692,7 @@ setRefIds fids term = case term of
       exitFailure
 
 -- Collects all labels used
-collectLabels :: Core -> MS.Map Word64 ()
+collectLabels :: Core -> MS.Map Lab ()
 collectLabels term = case term of
   Var _               -> MS.empty
   U32 _               -> MS.empty

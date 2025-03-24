@@ -100,34 +100,35 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
     CTR -> do
       let loc = termLoc term
       let lab = termLab term
-      let cid = lab
+      let cid = fromIntegral lab
       let nam = mget (cidToCtr book) cid
       let ari = mget (cidToAri book) cid
-      let ars = if ari == 0 then [] else [0..ari-1]
+      let ars = if ari == 0 then [] else [0..fromIntegral ari-1]
       fds <- mapM (\i -> extractCoreAt dupsRef reduceAt book (loc + i)) ars
       return $ Ctr nam fds
 
     MAT -> do
       let loc = termLoc term
       let lab = termLab term
-      let cid = lab
-      let len = fromIntegral $ mget (cidToLen book) cid
+      let cid = fromIntegral lab
+      let len = mget (cidToLen book) cid
       val <- extractCoreAt dupsRef reduceAt book (loc + 0)
       css <- foldM (\css i -> do
         let ctr = mget (cidToCtr book) (cid + i)
-        let ari = fromIntegral $ mget (cidToAri book) (cid + i)
-        let fds = if ari == 0 then [] else ["$" ++ show (loc + 1 + j) | j <- [0..ari-1]]
-        bod <- extractCoreAt dupsRef reduceAt book (loc + 1 + i)
+        let ari = mget (cidToAri book) (cid + i)
+        let fds = if ari == 0 then [] else ["$" ++ show (loc + 1 + j) | j <- [0..fromIntegral ari-1]]
+        bod <- extractCoreAt dupsRef reduceAt book (loc + 1 + fromIntegral i)
         return $ (ctr,fds,bod):css) [] [0..len-1]
       return $ Mat val [] (reverse css)
 
     IFL -> do
       let loc = termLoc term
       let lab = termLab term
+      let cid = fromIntegral lab
       val <- extractCoreAt dupsRef reduceAt book (loc + 0)
       cs0 <- extractCoreAt dupsRef reduceAt book (loc + 1)
       cs1 <- extractCoreAt dupsRef reduceAt book (loc + 2)
-      return $ Mat val [] [(mget (cidToCtr book) lab, [], cs0), ("_", [], cs1)]
+      return $ Mat val [] [(mget (cidToCtr book) cid, [], cs0), ("_", [], cs1)]
 
     SWI -> do
       let loc = termLoc term
@@ -164,8 +165,8 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
     REF -> do
       let loc = termLoc term
       let lab = termLab term
-      let fid = lab
-      let ari = funArity book fid
+      let fid = fromIntegral lab
+      let ari = fromIntegral $ funArity book fid
       let aux = if ari == 0 then [] else [0..ari-1]
       arg <- mapM (\i -> extractCoreAt dupsRef reduceAt book (loc + i)) aux
       let name = MS.findWithDefault "?" fid (fidToNam book)

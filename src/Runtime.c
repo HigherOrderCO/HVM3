@@ -127,16 +127,15 @@ Term term_new(Tag tag, Lab lab, Loc loc) {
   return tag_enc | lab_enc | loc_enc;
 }
 
-// Must return a u64 to be read as Word64 in Haskell
-u64 term_tag(Term x) {
+Tag term_tag(Term x) {
   return x & 0x7F;
 }
 
-u64 term_lab(Term x) {
+Lab term_lab(Term x) {
   return (x >> 8) & 0xFFFFFF;
 }
 
-u64 term_loc(Term x) {
+Loc term_loc(Term x) {
   return (x >> 32) & 0xFFFFFFFF;
 }
 
@@ -253,7 +252,7 @@ void print_tag(Tag tag) {
 void print_term(Term term) {
   printf("term_new(");
   print_tag(term_tag(term));
-  printf(",0x%06llx,0x%08llx)", term_lab(term), term_loc(term));
+  printf(",0x%06llx,0x%08llx)", (u64)term_lab(term), (u64)term_loc(term));
 }
 
 void print_heap() {
@@ -1371,22 +1370,22 @@ void hvm_set_state(State* hvm) {
   }
 }
 
-void hvm_define(u64 fid, Term (*func)()) {
+void hvm_define(u16 fid, Term (*func)()) {
   //printf("defined %llu %p\n", fid, func);
   HVM.book[fid] = func;
 }
 
-void hvm_set_cari(u64 cid, u16 arity) {
+void hvm_set_cari(u16 cid, u16 arity) {
   HVM.cari[cid] = arity;
 }
 
-void hvm_set_fari(u64 fid, u16 arity) {
+void hvm_set_fari(u16 fid, u16 arity) {
   HVM.fari[fid] = arity;
 }
 
-void hvm_set_clen(u64 cid, u16 cases) {
+void hvm_set_clen(u16 cid, u16 cases) {
   HVM.clen[cid] = cases;
 }
-void hvm_set_cadt(u64 cid, u16 adt) {
+void hvm_set_cadt(u16 cid, u16 adt) {
   HVM.cadt[cid] = adt;
 }

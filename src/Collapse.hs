@@ -30,7 +30,7 @@ data Bin
   deriving Show
 
 -- A Collapse is a tree of superposed values
-data Collapse a = CSup Word64 (Collapse a) (Collapse a) | CVal a | CEra
+data Collapse a = CSup Lab (Collapse a) (Collapse a) | CVal a | CEra
   deriving Show
 
 bind :: Collapse a -> (a -> Collapse b) -> Collapse b
@@ -54,12 +54,6 @@ bind k f = fork k IM.empty where
   putO bs = \x -> bs (O x)
   -- putI :: (Bin -> Bin) -> (Bin -> Bin) 
   putI bs = \x -> bs (I x)
-
--- Mutates an element at given index in a list
-mut :: Word64 -> (a -> a) -> [a] -> [a]
-mut 0 f (x:xs) = f x : xs
-mut n f (x:xs) = x : mut (n-1) f xs
-mut _ _ []     = []
 
 instance Functor Collapse where
   fmap f (CVal v)     = CVal (f v)
@@ -158,34 +152,35 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
     CTR -> do
       let loc = termLoc term
       let lab = termLab term
-      let cid = lab
+      let cid = fromIntegral lab
       let nam = MS.findWithDefault "?" cid (cidToCtr book)
       let ari = mget (cidToAri book) cid
       let aux = if ari == 0 then [] else [0 .. ari-1]
-      fds0 <- forM aux (\i -> collapseDupsAt state reduceAt book (loc + i))
+      fds0 <- forM aux (\i -> collapseDupsAt state reduceAt book (loc + fromIntegral i))
       return $ Ctr nam fds0
 
     MAT -> do
       let loc = termLoc term
       let lab = termLab term
-      let cid = lab
+      let cid = fromIntegral lab
       let len = fromIntegral $ mget (cidToLen book) cid
       val0 <- collapseDupsAt state reduceAt book (loc + 0)
       css0 <- forM [0..len-1] $ \i -> do
         let ctr = mget (cidToCtr book) (cid + i)
         let ari = fromIntegral $ mget (cidToAri book) (cid + i)
         let fds = if ari == 0 then [] else ["$" ++ show (loc + 1 + j) | j <- [0..ari-1]]
-        bod0 <- collapseDupsAt state reduceAt book (loc + 1 + i)
+        bod0 <- collapseDupsAt state reduceAt book (loc + 1 + fromIntegral i)
         return (ctr, fds, bod0)
       return $ Mat val0 [] css0
 
     IFL -> do
       let loc = termLoc term
       let lab = termLab term
+      let cid = fromIntegral lab
       val0 <- collapseDupsAt state reduceAt book (loc + 0)
       cs00 <- collapseDupsAt state reduceAt book (loc + 1)
       cs10 <- collapseDupsAt state reduceAt book (loc + 2)
-      return $ Mat val0 [] [(mget (cidToCtr book) lab, [], cs00), ("_", [], cs10)]
+      return $ Mat val0 [] [(mget (cidToCtr book) cid, [], cs00), ("_", [], cs10)]
 
     SWI -> do
       let loc = termLoc term
@@ -222,8 +217,8 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
     REF -> do
       let loc = termLoc term
       let lab = termLab term
-      let fid = lab
-      let ari = funArity book fid
+      let fid = fromIntegral lab
+      let ari = fromIntegral (funArity book fid)
       arg0 <- forM [0..ari-1] (\i -> collapseDupsAt state reduceAt book (loc + i))
       let name = MS.findWithDefault "?" fid (fidToNam book)
       return $ Ref name fid arg0
@@ -364,7 +359,7 @@ flattenBFS term = go term (SQ [] [] :: SQ (Collapse a)) where
 
 flattenPQ :: Collapse a -> [a]
 flattenPQ term = go term (PQLeaf :: PQ (Collapse a)) where
-  go (CSup k a b) pq = go CEra (pqPut (k,a) $ pqPut (k,b) $ pq)
+  go (CSup k a b) pq = go CEra (pqPut (fromIntegral k,a) $ pqPut (fromIntegral k,b) $ pq)
   go (CVal x)     pq = x : go CEra pq
   go CEra         pq = case pqPop pq of
     Just ((k,v),pq) -> go v pq

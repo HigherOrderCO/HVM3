@@ -75,18 +75,20 @@ injectCore book (Dup lab dp0 dp1 val bod) loc = do
 
 injectCore book (Ref nam fid arg) loc = do
   let ari = funArity book fid
+  let lab = fromIntegral fid
   when (ari /= fromIntegral (length arg)) $ do
     error $ "Arity mismatch on term: " ++ showCore (Ref nam fid arg) ++ ". Expected " ++ show ari ++ ", got " ++ show (length arg) ++ "."
   ref <- lift $ allocNode (fromIntegral ari)
   sequence_ [injectCore book x (ref + i) | (i,x) <- zip [0..] arg]
-  lift $ set loc (termNew _REF_ fid ref)
+  lift $ set loc (termNew _REF_ lab ref)
 
 injectCore book (Ctr nam fds) loc = do
   let ari = length fds
   let cid = mget (ctrToCid book) nam
+  let lab = fromIntegral cid
   ctr <- lift $ allocNode (fromIntegral ari)
   sequence_ [injectCore book fd (ctr + ix) | (ix,fd) <- zip [0..] fds]
-  lift $ set loc (termNew _CTR_ cid ctr)
+  lift $ set loc (termNew _CTR_ lab ctr)
 
 injectCore book tm@(Mat val mov css) loc = do
   typ <- return $ matType book tm
@@ -95,7 +97,7 @@ injectCore book tm@(Mat val mov css) loc = do
   forM_ (zip [0..] css) $ \ (idx, (ctr, fds, bod)) -> do
     injectCore book (foldr (\x b -> Lam 0 x b) (foldr (\x b -> Lam 0 x b) bod (map fst mov)) fds) (mat + 1 + fromIntegral idx)
   let tag = case typ of { Switch -> _SWI_ ; Match  -> _MAT_ ; IfLet -> _IFL_ }
-  let lab = case typ of { Switch -> fromIntegral $ length css ; _ -> matFirstCid book tm }
+  let lab = case typ of { Switch -> fromIntegral $ length css ; _ -> fromIntegral $ matFirstCid book tm }
   trm <- return $ termNew tag lab mat
   ret <- foldM (\mat (_, val) -> do
       app <- lift $ allocNode 2

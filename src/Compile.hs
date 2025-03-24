@@ -34,7 +34,7 @@ compileHeaders book =
       decls_t = map (\(_, name) -> "Term " ++ name ++ "_t(Term);") funcs
   in unlines $ decls_f ++ decls_t
 
-compile :: Book -> Word64 -> String
+compile :: Book -> Word16 -> String
 compile book fid =
   let full = compileWith compileFull book fid in
   let fast = compileWith compileFast book fid in
@@ -44,7 +44,7 @@ compile book fid =
     else unlines [ full , fast ]
 
 -- Compiles a function using either Fast-Mode or Full-Mode
-compileWith :: (Book -> Word64 -> Core -> Bool -> [(Bool,String)] -> Compile ()) -> Book -> Word64 -> String
+compileWith :: (Book -> Word16 -> Core -> Bool -> [(Bool,String)] -> Compile ()) -> Book -> Word16 -> String
 compileWith cmp book fid = 
   let copy   = fst (fst (mget (fidToFun book) fid)) in
   let args   = snd (fst (mget (fidToFun book) fid)) in
@@ -74,7 +74,7 @@ fresh name = do
 -- Full Compiler
 -- -------------
 
-compileFull :: Book -> Word64 -> Core -> Bool -> [(Bool,String)] -> Compile ()
+compileFull :: Book -> Word16 -> Core -> Bool -> [(Bool,String)] -> Compile ()
 compileFull book fid core copy args = do
   emit $ "Term " ++ mget (fidToNam book) fid ++ "_t(Term ref) {"
   tabInc
@@ -104,7 +104,7 @@ compileFullVar var host = do
       modify $ \s -> s { vars = (var, host) : vars s }
       return "0"
 
-compileFullCore :: Book -> Word64 -> Core -> String -> Compile String
+compileFullCore :: Book -> Word16 -> Core -> String -> Compile String
 
 compileFullCore book fid Era _ = do
   return $ "term_new(ERA, 0, 0)"
@@ -216,7 +216,7 @@ compileFullCore book fid t@(Ref rNam rFid rArg) host = do
 -- -------------
 
 -- Compiles a function using Fast-Mode
-compileFast :: Book -> Word64 -> Core -> Bool -> [(Bool,String)] -> Compile ()
+compileFast :: Book -> Word16 -> Core -> Bool -> [(Bool,String)] -> Compile ()
 compileFast book fid core copy args = do
   emit $ "Term " ++ mget (fidToNam book) fid ++ "_f(Term ref) {"
   tabInc
@@ -257,7 +257,7 @@ compileFast book fid core copy args = do
   emit "}"
 
 -- Compiles a fast function's argument list
-compileFastArgs :: Book -> Word64 -> Core -> [String] -> MS.Map Int [String] -> Compile ()
+compileFastArgs :: Book -> Word16 -> Core -> [String] -> MS.Map Int [String] -> Compile ()
 compileFastArgs book fid body ctx reuse = do
   emit $ "while (1) {"
   tabInc
@@ -266,7 +266,7 @@ compileFastArgs book fid body ctx reuse = do
   emit $ "}"
 
 -- Compiles a fast function body (pattern-matching)
-compileFastBody :: Book -> Word64 -> Core -> [String] -> Bool -> Int -> MS.Map Int [String] -> Compile ()
+compileFastBody :: Book -> Word16 -> Core -> [String] -> Bool -> Int -> MS.Map Int [String] -> Compile ()
 compileFastBody book fid term@(Mat val mov css) ctx stop@False itr reuse = do
   valT   <- compileFastCore book fid val reuse
   valNam <- fresh "val"
@@ -455,14 +455,14 @@ compileFastBody book fid term ctx stop itr reuse = do
   emit $ "return " ++ body ++ ";"
 
 -- Falls back from fast mode to full mode
-compileFastUndo :: Book -> Word64 -> Core -> [String] -> Int -> MS.Map Int [String] -> Compile ()
+compileFastUndo :: Book -> Word16 -> Core -> [String] -> Int -> MS.Map Int [String] -> Compile ()
 compileFastUndo book fid term ctx itr reuse = do
   forM_ (zip [0..] ctx) $ \ (i, arg) -> do
     emit $ "set(term_loc(ref) + "++show i++", " ++ arg ++ ");"
   emit $ "return " ++ mget (fidToNam book) fid ++ "_t(ref);"
 
 -- Completes a fast mode call
-compileFastSave :: Book -> Word64 -> Core -> [String] -> Int -> MS.Map Int [String] -> Compile ()
+compileFastSave :: Book -> Word16 -> Core -> [String] -> Int -> MS.Map Int [String] -> Compile ()
 compileFastSave book fid term ctx itr reuse = do
   emit $ "*HVM.itrs += itrs;"
 
@@ -485,7 +485,7 @@ compileFastAlloc arity reuse = do
     -- _ -> return $ "alloc_node(" ++ show arity ++ ")"
 
 -- Compiles a core term in fast mode
-compileFastCore :: Book -> Word64 -> Core -> MS.Map Int [String] -> Compile String
+compileFastCore :: Book -> Word16 -> Core -> MS.Map Int [String] -> Compile String
 
 compileFastCore book fid Era reuse = 
   return $ "term_new(ERA, 0, 0)"
@@ -708,7 +708,7 @@ compileFastVar var = do
       return $ "<ERR>"
 
 -- Compiles a function using Fast-Mode
-compileSlow :: Book -> Word64 -> Core -> Bool -> [(Bool,String)] -> Compile ()
+compileSlow :: Book -> Word16 -> Core -> Bool -> [(Bool,String)] -> Compile ()
 compileSlow book fid core copy args = do
   book <- return book
   emit $ "Term " ++ mget (fidToNam book) fid ++ "_f(Term ref) {"
@@ -718,6 +718,10 @@ compileSlow book fid core copy args = do
 checkRefAri :: Book -> Core -> Compile ()
 checkRefAri book core = do
   case core of
-    Ref nam fid arg -> when ((funArity book fid) /= fromIntegral (length arg)) $ do
-      error $ "Arity mismatch on term: " ++ showCore core ++ ". Expected " ++ show (funArity book fid) ++ ", got " ++ show (length arg) ++ "."
+    Ref nam lab arg -> do
+      let fid = fromIntegral lab
+      let ari = funArity book fid
+      let len = length arg
+      when (ari /= fromIntegral len) $ do
+        error $ "Arity mismatch on term: " ++ showCore core ++ ". Expected " ++ show ari ++ ", got " ++ show len ++ "."
     _ -> return ()

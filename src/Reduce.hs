@@ -172,41 +172,32 @@ reduceRefAt book host = do
   term <- got host
   let lab = termLab term
   let loc = termLoc term
-  let fid = lab
+  let fid = fromIntegral lab
   let ari = funArity book fid
-  if isValidFid fid then
-    case fid of
-      x | x == _DUP_F_ -> reduceRefAt_DupF book host loc ari
-      x | x == _SUP_F_ -> reduceRefAt_SupF book host loc ari
-      x | x == _LOG_F_ -> reduceRefAt_LogF book host loc ari
-      otherwise -> case MS.lookup fid (fidToFun book) of
-        Just ((copy, args), core) -> do
-          incItr
-          when (length args /= fromIntegral ari) $ do
-            putStrLn $ "RUNTIME_ERROR: arity mismatch on call to '@" ++ mget (fidToNam book) fid ++ "'."
-            exitFailure
-          argTerms <- if ari == 0
-            then return []
-            else forM (zip [0..] args) $ \(i, (strict, _)) -> do
-              term <- got (loc + i)
-              if strict
-                then reduceAt False book (loc + i)
-                else return term
-          doInjectCoreAt book core host $ zip (map snd args) argTerms
-        Nothing -> do
-          putStrLn $ "RUNTIME_ERROR: Function ID " ++ show fid ++ " not found in fidToFun book."
+  case lab of
+    x | x == _DUP_F_ -> reduceRefAt_DupF book host loc ari
+    x | x == _SUP_F_ -> reduceRefAt_SupF book host loc ari
+    x | x == _LOG_F_ -> reduceRefAt_LogF book host loc ari
+    otherwise -> case MS.lookup fid (fidToFun book) of
+      Just ((copy, args), core) -> do
+        incItr
+        when (length args /= fromIntegral ari) $ do
+          putStrLn $ "RUNTIME_ERROR: arity mismatch on call to '@" ++ mget (fidToNam book) fid ++ "'."
           exitFailure
-  else do
-    putStrLn $ "RUNTIME_ERROR: Invalid function ID " ++ show fid
-    exitFailure
-
--- Check for valid function ID
-isValidFid :: Word64 -> Bool
-isValidFid fid = fid >= 0 && fid <= 65536 -- FIX: Linux BUG as this is out of RANGE!! the book only has [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-
+        argTerms <- if ari == 0
+          then return []
+          else forM (zip [0..] args) $ \(i, (strict, _)) -> do
+            term <- got (loc + i)
+            if strict
+              then reduceAt False book (loc + i)
+              else return term
+        doInjectCoreAt book core host $ zip (map snd args) argTerms
+      Nothing -> do
+        putStrLn $ "RUNTIME_ERROR: Function ID " ++ show fid ++ " not found in fidToFun book."
+        exitFailure
 
 -- Primitive: Dynamic Dup `@DUP(lab val λdp0λdp1(bod))`
-reduceRefAt_DupF :: Book -> Loc -> Loc -> Word64 -> HVM Term  
+reduceRefAt_DupF :: Book -> Loc -> Loc -> Word16 -> HVM Term  
 reduceRefAt_DupF book host loc ari = do
   incItr
   when (ari /= 3) $ do
@@ -218,7 +209,7 @@ reduceRefAt_DupF book host loc ari = do
   dup <- allocNode 1
   case tagT (termTag lab) of
     W32 -> do
-      when (termLoc lab > 0xFFFF) $ do
+      when (termLoc lab > 0xFFFFFF) $ do
         error "RUNTIME_ERROR: dynamic DUP label too large"
       -- Create the DUP node with value
       set (dup + 0) val
@@ -240,7 +231,7 @@ reduceRefAt_DupF book host loc ari = do
       exitFailure
 
 -- Primitive: Dynamic Sup `@SUP(lab tm0 tm1)`
-reduceRefAt_SupF :: Book -> Loc -> Loc -> Word64 -> HVM Term
+reduceRefAt_SupF :: Book -> Loc -> Loc -> Word16 -> HVM Term
 reduceRefAt_SupF book host loc ari = do
   incItr
   when (ari /= 3) $ do
@@ -252,7 +243,7 @@ reduceRefAt_SupF book host loc ari = do
   sup <- allocNode 2
   case tagT (termTag lab) of
     W32 -> do
-      when (termLoc lab > 0xFFFF) $ do
+      when (termLoc lab > 0xFFFFFF) $ do
         error "RUNTIME_ERROR: dynamic SUP label too large"
       let ret = termNew _SUP_ (termLoc lab) sup
       set (sup + 0) tm0
@@ -264,7 +255,7 @@ reduceRefAt_SupF book host loc ari = do
 -- Primitive: Logger `@LOG(msg)`
 -- Will extract the term and log it. 
 -- Returns 0.
-reduceRefAt_LogF :: Book -> Loc -> Loc -> Word64 -> HVM Term
+reduceRefAt_LogF :: Book -> Loc -> Loc -> Word16 -> HVM Term
 reduceRefAt_LogF book host loc ari = do
   incItr
   when (ari /= 1) $ do
@@ -281,13 +272,13 @@ reduceRefAt_LogF book host loc ari = do
 
 -- Primitive: Fresh `@FRESH`
 -- Returns a fresh dup label.
-reduceRefAt_FreshF :: Book -> Loc -> Loc -> Word64 -> HVM Term
+reduceRefAt_FreshF :: Book -> Loc -> Loc -> Word16 -> HVM Term
 reduceRefAt_FreshF book host loc ari = do
   incItr
   when (ari /= 0) $ do
     putStrLn $ "RUNTIME_ERROR: arity mismatch on call to '@Fresh'."
     exitFailure
-  num <- fresh
+  num <- fromIntegral <$> fresh
   let ret = termNew _W32_ 0 num
   set host ret
   return ret

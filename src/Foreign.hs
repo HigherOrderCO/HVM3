@@ -11,19 +11,19 @@ foreign import ccall unsafe "Runtime.c hvm_free"
   hvmFree :: IO ()
 
 foreign import ccall unsafe "Runtime.c alloc_node"
-  allocNode :: Word64 -> IO Word64
+  allocNode :: Loc -> IO Loc
 
 foreign import ccall unsafe "Runtime.c set"
-  set :: Word64 -> Term -> IO ()
+  set :: Loc -> Term -> IO ()
 
 foreign import ccall unsafe "Runtime.c got"
-  got :: Word64 -> IO Term
+  got :: Loc -> IO Term
 
 foreign import ccall unsafe "Runtime.c take"
-  take :: Word64 -> IO Term
+  take :: Loc -> IO Term
 
 foreign import ccall unsafe "Runtime.c swap"
-  swap :: Word64 -> IO Term
+  swap :: Loc -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c term_new"
   termNew :: Tag -> Lab -> Loc -> Term
@@ -32,7 +32,7 @@ foreign import ccall unsafe "Runtime.c term_tag"
   termTag :: Term -> Tag
 
 foreign import ccall unsafe "Runtime.c term_get_bit"
-  termGetBit :: Term -> Tag
+  termGetBit :: Term -> Word8
 
 foreign import ccall unsafe "Runtime.c term_lab"
   termLab :: Term -> Lab
@@ -62,7 +62,7 @@ foreign import ccall unsafe "Runtime.c reduce"
   reduceC :: Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_at"
-  reduceAtC :: Term -> IO Term
+  reduceAtC :: Loc -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_let"
   reduceLet :: Term -> Term -> IO Term
@@ -146,10 +146,10 @@ foreign import ccall unsafe "Runtime.c reduce_opy_w32"
   reduceOpyW32 :: Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_ref_sup"
-  reduceRefSup :: Term -> Word64 -> IO Term
+  reduceRefSup :: Term -> Word16 -> IO Term
 
 foreign import ccall unsafe "Runtime.c hvm_define"
-  hvmDefine :: Word64 -> FunPtr (IO Term) -> IO ()
+  hvmDefine :: Word16 -> FunPtr (IO Term) -> IO ()
 
 foreign import ccall unsafe "Runtime.c hvm_get_state"
   hvmGetState :: IO (Ptr ())
@@ -158,13 +158,13 @@ foreign import ccall unsafe "Runtime.c hvm_set_state"
   hvmSetState :: Ptr () -> IO ()
 
 foreign import ccall unsafe "Runtime.c hvm_set_cari"
-  hvmSetCari :: Word64 -> Word16 -> IO ()
+  hvmSetCari :: Word16 -> Word16 -> IO ()
 
 foreign import ccall unsafe "Runtime.c hvm_set_clen"
-  hvmSetClen :: Word64 -> Word16 -> IO ()
+  hvmSetClen :: Word16 -> Word16 -> IO ()
 
 foreign import ccall unsafe "Runtime.c hvm_set_cadt"
-  hvmSetCadt :: Word64 -> Word16 -> IO ()
+  hvmSetCadt :: Word16 -> Word16 -> IO ()
 
 foreign import ccall unsafe "Runtime.c hvm_set_fari"
-  hvmSetFari :: Word64 -> Word16 -> IO ()
+  hvmSetFari :: Word16 -> Word16 -> IO ()

@@ -7,14 +7,19 @@ import Foreign.Ptr
 -- Core Types
 -- ----------
 
+type Tag  = Word8
+type Lab  = Word32
+type Loc  = Word32
+type Term = Word64
+
 data Core
   = Var String -- x
-  | Ref String Word64 [Core] -- @fn
+  | Ref String Word16 [Core] -- @fn
   | Era -- *
-  | Lam Word64 String Core -- &L λx(F)
-  | App Word64 Core Core -- &L (f x)
-  | Sup Word64 Core Core -- &L{a b}
-  | Dup Word64 String String Core Core -- ! &L{a b} = v body
+  | Lam Lab String Core -- &L λx(F)
+  | App Lab Core Core -- &L (f x)
+  | Sup Lab Core Core -- &L{a b}
+  | Dup Lab String String Core Core -- ! &L{a b} = v body
   | Ctr String [Core] -- #Ctr{a b ...}
   | Mat Core [(String,Core)] [(String,[String],Core)] -- ~ v { #A{a b ...}: ... #B{a b ...}: ... ... }
   | U32 Word32 -- 123
@@ -50,24 +55,19 @@ data Oper
 type Func = ((Bool, [(Bool,String)]), Core)
 
 data Book = Book
-  { fidToFun :: MS.Map Word64 Func -- function id to Function object
-  , fidToLab :: MS.Map Word64 (MS.Map Word64 ()) -- function id to dup labels used in its body
-  , fidToNam :: MS.Map Word64 String -- function id to name
-  , namToFid :: MS.Map String Word64 -- function name to id
-  , cidToAri :: MS.Map Word64 Word64 -- constructor id to field count (arity)
-  , cidToLen :: MS.Map Word64 Word64 -- constructor id to cases length (ADT constructor count)
-  , cidToCtr :: MS.Map Word64 String -- constructor id to name
-  , ctrToCid :: MS.Map String Word64 -- constructor name to id
-  , cidToADT :: MS.Map Word64 Word64 -- constructor id to ADT id (first cid of its datatype)
+  { fidToFun :: MS.Map Word16 Func -- function id to Function object
+  , fidToLab :: MS.Map Word16 (MS.Map Lab ()) -- function id to dup labels used in its body
+  , fidToNam :: MS.Map Word16 String -- function id to name
+  , namToFid :: MS.Map String Word16 -- function name to id
+  , cidToAri :: MS.Map Word16 Word16 -- constructor id to field count (arity)
+  , cidToLen :: MS.Map Word16 Word16 -- constructor id to cases length (ADT constructor count)
+  , cidToCtr :: MS.Map Word16 String -- constructor id to name
+  , ctrToCid :: MS.Map String Word16 -- constructor name to id
+  , cidToADT :: MS.Map Word16 Word16 -- constructor id to ADT id (first cid of its datatype)
   } deriving (Show, Eq)
 
 -- Runtime Types
 -- -------------
-
-type Tag  = Word64
-type Lab  = Word64
-type Loc  = Word64
-type Term = Word64
 
 data TAG
   = DP0
@@ -188,11 +188,11 @@ _SUP_F_ = 0xFFFE
 _LOG_F_ :: Lab
 _LOG_F_ = 0xFFFD
 
-primitives :: [(String, Lab)]
+primitives :: [(String, Word16)]
 primitives =
-  [ ("SUP", _SUP_F_)
-  , ("DUP", _DUP_F_)
-  , ("LOG", _LOG_F_)
+  [ ("SUP", fromIntegral _SUP_F_)
+  , ("DUP", fromIntegral _DUP_F_)
+  , ("LOG", fromIntegral _LOG_F_)
   ]
 
 -- Utils
@@ -207,7 +207,7 @@ mget map key =
     Nothing  -> error $ "key not found: " ++ show key
 
 -- Returns the first constructor ID in a pattern-match
-matFirstCid :: Book -> Core -> Word64
+matFirstCid :: Book -> Core -> Word16
 matFirstCid book (Mat _ _ ((ctr,_,_):_)) =
   case MS.lookup ctr (ctrToCid book) of
     Just cid -> cid
@@ -223,11 +223,11 @@ matType book (Mat _ _ css) =
     _                                  -> error "invalid match"
 matType _ _ = error "not a match"
 
-funArity :: Book -> Word64 -> Word64
+funArity :: Book -> Word16 -> Word16
 funArity book fid
-  | fid == _SUP_F_ = 3
-  | fid == _DUP_F_ = 3
-  | fid == _LOG_F_ = 1
+  | fid == (fromIntegral _SUP_F_) = 3
+  | fid == (fromIntegral _DUP_F_) = 3
+  | fid == (fromIntegral _LOG_F_) = 1
   | otherwise = case MS.lookup fid (fidToFun book) of
       Just ((_, args), _) -> fromIntegral (length args)
       Nothing -> error $ "Function ID not found: " ++ show fid

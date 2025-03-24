@@ -121,11 +121,11 @@ modeToString PARA = "^"
 tagToString :: Tag -> String
 tagToString t = show (tagT t)
 
-labToString :: Word64 -> String
-labToString lab = padLeft (showHex lab) 6 '0'
+labToString :: Lab -> String
+labToString lab = padLeft (showHex (fromIntegral lab)) 6 '0'
 
-locToString :: Word64 -> String
-locToString loc = padLeft (showHex loc) 8 '0'
+locToString :: Loc -> String
+locToString loc = padLeft (showHex (fromIntegral loc)) 8 '0'
 
 termToString :: Term -> String
 termToString term =
@@ -239,7 +239,7 @@ prettyLst _ = Nothing
 -- Dumping
 -- -------
 
-dumpHeapRange :: Word64 -> Word64 -> HVM [(Word64, Term)]
+dumpHeapRange :: Loc -> Loc -> HVM [(Loc, Term)]
 dumpHeapRange ini len =
   if ini < len then do
     head <- got ini
@@ -249,18 +249,18 @@ dumpHeapRange ini len =
       else return ((ini, head) : tail)
   else return []
 
-dumpHeap :: HVM ([(Word64, Term)], Word64)
+dumpHeap :: HVM ([(Loc, Term)], Word64)
 dumpHeap = do
   len <- getLen
   itr <- getItr
-  terms <- dumpHeapRange 0 len
+  terms <- dumpHeapRange 0 (fromIntegral len)
   return (terms, itr)
 
-heapToString :: ([(Word64, Term)], Word64) -> String
+heapToString :: ([(Loc, Term)], Word64) -> String
 heapToString (terms, itr) = 
   "set_itr(0x" ++ padLeft (showHex itr) 8 '0' ++ ");\n" ++
   foldr (\(k,v) txt ->
-    let addr = padLeft (showHex k) 8 '0'
+    let addr = padLeft (showHex (fromIntegral k)) 8 '0'
         term = termToString v
     in "set(0x" ++ addr ++ ", " ++ term ++ ");\n" ++ txt) "" terms
 
