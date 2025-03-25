@@ -48,8 +48,8 @@ bind k f = fork k IM.empty where
   pass (CSup k x y) paths = case IM.lookup (fromIntegral k) paths of
     Just (O p) -> pass x (IM.insert (fromIntegral k) p paths)
     Just (I p) -> pass y (IM.insert (fromIntegral k) p paths)
-    Just E     -> CSup k x y
-    Nothing    -> CSup k x y
+    Just E     -> CSup k (pass x paths) (pass y paths)
+    Nothing    -> CSup k (pass x paths) (pass y paths)
   -- putO :: (Bin -> Bin) -> (Bin -> Bin)
   putO bs = \x -> bs (O x)
   -- putI :: (Bin -> Bin) -> (Bin -> Bin) 
