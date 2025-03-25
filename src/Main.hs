@@ -155,7 +155,8 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
     then return (reduceCAt debug)
     else return (reduceAt debug)
   vals <- case mode of
-    Collapse _ -> doCollapseFlatAt rxAt book 0
+    Collapse _ ->
+      doCollapseFlatAt book 0
     Normalize -> do
       core <- doExtractCoreAt rxAt book 0
       return [(doLiftDups core)]

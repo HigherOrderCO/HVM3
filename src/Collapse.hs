@@ -1,264 +1,587 @@
--- //./Type.hs//
--- //./Extract.hs//
-
 module Collapse where
 
-import Control.Monad (ap, forM, forM_)
+import Control.Monad (forM, forM_)
 import Control.Monad.IO.Class
 import Data.Char (chr, ord)
-import Data.IORef
 import Data.Word
-import Debug.Trace
-import GHC.Conc
+import Extract
+import Reduce
 import Foreign
 import Show
 import Type
-import System.Exit (exitFailure)
 import System.IO.Unsafe (unsafeInterleaveIO)
-import qualified Data.IntMap.Strict as IM
 import qualified Data.Map.Strict as MS
 
--- The Collapse Monad 
--- ------------------
--- See: https://gist.github.com/VictorTaelin/60d3bc72fb4edefecd42095e44138b41
+-- ~ * { K0 K1 K2 ... }
+-- --------------------- MAT-ERA
+-- *
+icEraMat :: Term -> Term -> HVM Term
+icEraMat mat _ = do
+  let eraTerm = termNew _ERA_ 0 0
+  return eraTerm
 
--- A bit-string
-data Bin
-  = O Bin
-  | I Bin
-  | E
-  deriving Show
+-- #C{* K0 K1}
+-- -------------- CTR-ERA (if already in normal form)
+-- *
+icEraCtr :: Term -> Term -> HVM Term
+icEraCtr ctr _ = do
+  let eraTerm = termNew _ERA_ 0 0
+  return eraTerm
 
--- A Collapse is a tree of superposed values
-data Collapse a = CSup Lab (Collapse a) (Collapse a) | CVal a | CEra
-  deriving Show
+-- λx.*
+-- ------ ERA-LAM
+-- x <- *
+-- *
+icEraLam :: Term -> Term -> HVM Term
+icEraLam lam _ = do
+  let lamLoc = termLoc lam
+  let eraTerm = termNew _ERA_ 0 0
+  set lamLoc (termSetBit eraTerm)
+  return eraTerm
 
-bind :: Collapse a -> (a -> Collapse b) -> Collapse b
-bind k f = fork k IM.empty where
-  -- fork :: Collapse a -> IntMap (Bin -> Bin) -> Collapse b
-  fork CEra         paths = CEra
-  fork (CVal v)     paths = pass (f v) (IM.map (\x -> x E) paths)
-  fork (CSup k x y) paths =
-    let lft = fork x $ IM.alter (\x -> Just (maybe (putO id) putO x)) (fromIntegral k) paths in
-    let rgt = fork y $ IM.alter (\x -> Just (maybe (putI id) putI x)) (fromIntegral k) paths in
-    CSup k lft rgt 
-  -- pass :: Collapse b -> IntMap Bin -> Collapse b
-  pass CEra         paths = CEra
-  pass (CVal v)     paths = CVal v
-  pass (CSup k x y) paths = case IM.lookup (fromIntegral k) paths of
-    Just (O p) -> pass x (IM.insert (fromIntegral k) p paths)
-    Just (I p) -> pass y (IM.insert (fromIntegral k) p paths)
-    Just E     -> CSup k x y
-    Nothing    -> CSup k x y
-  -- putO :: (Bin -> Bin) -> (Bin -> Bin)
-  putO bs = \x -> bs (O x)
-  -- putI :: (Bin -> Bin) -> (Bin -> Bin) 
-  putI bs = \x -> bs (I x)
+-- (f *)
+-- ------ ERA-APP
+-- *
+icEraApp :: Term -> Term -> HVM Term
+icEraApp app era = do
+  return (termNew _ERA_ 0 0)
 
-instance Functor Collapse where
-  fmap f (CVal v)     = CVal (f v)
-  fmap f (CSup k x y) = CSup k (fmap f x) (fmap f y)
-  fmap _ CEra         = CEra
+-- !&L{r,s} = *;
+-- K
+-- -------------- DUP-ERA
+-- r <- *
+-- s <- *
+-- K
+icDupEra :: Term -> Term -> HVM Term
+icDupEra dup era = do
+  let dupLoc = termLoc dup
+  let dupTag = termTag dup
+  let isCo0 = (dupTag == _DP0_)
 
-instance Applicative Collapse where
-  pure  = CVal
-  (<*>) = ap
+  let eraTerm = termNew _ERA_ 0 0
 
-instance Monad Collapse where
-  return = pure
-  (>>=)  = bind
+  set dupLoc (termSetBit eraTerm)
+  return eraTerm
+
+-- λx.&L{f0,f1}
+-- ----------------- SUP-LAM
+-- x <- &L{x0,x1}
+-- &L{λx0.f0,λx1.f1}
+icSupLam :: Book -> Term -> Term -> HVM Term
+icSupLam book lam sup = do
+  let lamLoc = termLoc lam
+  let supLoc = termLoc sup
+
+  let supLab = termLab sup
+
+  f0 <- got (supLoc + 0)
+  f1 <- got (supLoc + 1)
+
+  lam0Loc <- allocNode 1
+  lam1Loc <- allocNode 1
+
+  set lam0Loc f0
+  set lam1Loc f1
+
+  let x0 = termNew _VAR_ 0 lam0Loc
+  let x1 = termNew _VAR_ 0 lam1Loc
+
+  newSupLoc <- allocNode 2
+  set (newSupLoc + 0) x0
+  set (newSupLoc + 1) f1
+
+  let newSup = termNew _SUP_ supLab newSupLoc
+
+  set lamLoc (termSetBit newSup)
+
+  let lam0Term = termNew _LAM_ 0 lam0Loc
+  let lam1Term = termNew _LAM_ 0 lam1Loc
+
+  resultSupLoc <- allocNode 2
+  set (resultSupLoc + 0) lam0Term
+  set (resultSupLoc + 1) lam1Term
+
+  return (termNew _SUP_ supLab resultSupLoc)
+
+-- (f &L{x0,x1})
+-- ------------------- SUP-APP
+-- !&L{f0,f1} = f
+-- &L{(f0 x0),(f1 x1)}
+icSupApp :: Term -> Term -> HVM Term
+icSupApp app sup = do
+  let appLoc = termLoc app
+  let supLoc = termLoc sup
+  let supLab = termLab sup
+
+  fun <- got (appLoc + 0)
+  lft <- got (supLoc + 0)
+  rgt <- got (supLoc + 1)
+
+  dupLoc <- allocNode 1
+  set dupLoc fun
+
+  let f0 = termNew _DP0_ supLab dupLoc
+  let f1 = termNew _DP1_ supLab dupLoc
+
+  app0Loc <- allocNode 2
+  set (app0Loc + 0) f0
+  set (app0Loc + 1) lft
+  let app0 = termNew _APP_ 0 app0Loc
+
+  app1Loc <- allocNode 2
+  set (app1Loc + 0) f1
+  set (app1Loc + 1) rgt
+  let app1 = termNew _APP_ 0 app1Loc
+
+  resultSupLoc <- allocNode 2 
+  set (resultSupLoc + 0) app0
+  set (resultSupLoc + 1) app1
+  return (termNew _SUP_ supLab resultSupLoc)
+
+-- &R{&L{x0,x1},y}
+-- ----------------------- SUP-SUP-X (if R>L)
+-- !&R{y0,y1} = y;
+-- &L{&R{x0,y0},&R{x1,y1}}
+icSupSupX :: Term -> Term -> HVM Term
+icSupSupX outerSup innerSup = do
+  let outerLoc = termLoc outerSup 
+  let outerLab = termLab outerSup
+  let innerLoc = termLoc innerSup
+  let innerLab = termLab innerSup
+
+  x0 <- got (innerLoc + 0)
+  x1 <- got (innerLoc + 1)
+  y  <- got (outerLoc + 1)
+
+  dupLoc <- allocNode 1
+  set dupLoc y
+
+  let y0 = termNew _DP0_ outerLab dupLoc
+  let y1 = termNew _DP1_ outerLab dupLoc
+
+  sup0Loc <- allocNode 2
+  set (sup0Loc + 0) x0
+  set (sup0Loc + 1) y0
+  let sup0 = termNew _SUP_ outerLab sup0Loc
+
+  sup1Loc <- allocNode 2
+  set (sup1Loc + 0) x1
+  set (sup1Loc + 1) y1
+  let sup1 = termNew _SUP_ outerLab sup1Loc
+
+  resultSupLoc <- allocNode 2
+  set (resultSupLoc + 0) sup0
+  set (resultSupLoc + 1) sup1
+  return (termNew _SUP_ innerLab resultSupLoc)
+
+-- &R{x,&L{y0,y1}}
+-- ----------------------- SUP-SUP-Y (if R>L)
+-- !&R{x0,x1} = x;
+-- &L{&R{x0,y0},&R{x1,y1}}
+icSupSupY :: Term -> Term -> HVM Term
+icSupSupY outerSup innerSup = do
+  let outerLoc = termLoc outerSup
+  let outerLab = termLab outerSup
+  let innerLoc = termLoc innerSup
+  let innerLab = termLab innerSup
+  
+  x  <- got (outerLoc + 0)
+  y0 <- got (innerLoc + 0)
+  y1 <- got (innerLoc + 1)
+
+  dupLoc <- allocNode 1
+  set dupLoc x
+
+  let x0 = termNew _DP0_ outerLab dupLoc
+  let x1 = termNew _DP1_ outerLab dupLoc
+
+  sup0Loc <- allocNode 2
+  set (sup0Loc + 0) x0
+  set (sup0Loc + 1) y0
+  let sup0 = termNew _SUP_ outerLab sup0Loc
+
+  sup1Loc <- allocNode 2
+  set (sup1Loc + 0) x1
+  set (sup1Loc + 1) y1
+  let sup1 = termNew _SUP_ outerLab sup1Loc
+
+  resultSupLoc <- allocNode 2
+  set (resultSupLoc + 0) sup0
+  set (resultSupLoc + 1) sup1
+  return (termNew _SUP_ innerLab resultSupLoc)
+  
+
+-- !&L{x0,x1} = x; K
+-- ----------------- DUP-VAR
+-- x0 <- x
+-- x1 <- x
+-- K
+icDupVar :: Term -> Term -> HVM Term
+icDupVar dup var = do
+  let dupLoc = termLoc dup
+  set dupLoc (termSetBit var)
+  return var
+
+-- !&L{a0,a1} = (f x); K
+-- --------------------- DUP-APP
+-- a0 <- (f0 x0)
+-- a1 <- (f1 x1)
+-- !&L{f0,f1} = f;
+-- !&L{x0,x1} = x;
+-- K
+icDupApp :: Term -> Term -> HVM Term
+icDupApp dup app = do
+  let dupLoc = termLoc dup 
+  let lab = termLab dup
+  let tag = termTag dup
+  let isCo0 = (tag == _DP0_)
+
+  let appLoc = termLoc app
+  fun <- got (appLoc + 0)
+  arg <- got (appLoc + 1)
+
+  dupFunLoc <- allocNode 1
+  set dupFunLoc fun
+  dupArgLoc <- allocNode 1
+  set dupArgLoc arg
+
+  let f0 = termNew _DP0_ lab dupFunLoc
+  let f1 = termNew _DP1_ lab dupFunLoc
+
+  let x0 = termNew _DP0_ lab dupArgLoc
+  let x1 = termNew _DP1_ lab dupArgLoc
+
+  app0Loc <- allocNode 2
+  set (app0Loc + 0) f0
+  set (app0Loc + 1) x0
+  let app0 = termNew _APP_ 0 app0Loc
+
+  app1Loc <- allocNode 2
+  set (app1Loc + 0) f1
+  set (app1Loc + 1) x1
+  let app1 = termNew _APP_ 0 app1Loc
+
+  if isCo0 
+  then do
+    set dupLoc (termSetBit app1)
+    return app0
+  else do
+    set dupLoc (termSetBit app0)
+    return app1
+
+-- #CTR {&L{x0 x1} k0 k1 ... kn}
+-- --------------------------- SUP-CTR
+-- !&L{CTR0 CTR1} = CTR
+-- !&L{k00, k01}=k0
+-- !&L{k10, k11}=k1
+-- !&L{kn0, kn1}=kn
+-- &L{#CTR0{x0 k00 k10 ... kn0} #CTR1{x1 k01 k11 kn1}}
+icSupCtr :: Term -> Term -> Lab -> Loc -> Loc -> HVM Term
+icSupCtr ctr sup cid len idx = do
+  -- Extract locations and label
+  let ctrLoc = termLoc ctr
+  let supLoc = termLoc sup
+  let supLab = termLab sup
+
+  -- Get superposition components
+  x0 <- got (supLoc + 0)
+  x1 <- got (supLoc + 1)
+
+  -- Duplicate all arguments except the one at idx
+  aList <- forM [0 .. len - 1] $ \j -> do
+    if j == idx then
+      return Nothing  -- Don’t duplicate the superposition
+    else do
+      aj <- got (ctrLoc + j)              -- Get argument aj
+      dupAjLoc <- allocNode 1             -- Allocate space for duplication
+      set dupAjLoc aj                  -- Store aj
+      let aj0 = termNew _DP0_ supLab dupAjLoc  -- First duplicate
+      let aj1 = termNew _DP1_ supLab dupAjLoc  -- Second duplicate
+      return (Just (aj0, aj1))            -- Return pair (aj0, aj1)
+
+  -- Create CTR0: #CTR{a0' a1' ... x0 ... a_{len-1}'}
+  ctr0Loc <- allocNode len
+  forM_ [0 .. len - 1] $ \j -> do
+    if j == idx then
+      set (ctr0Loc + j) x0             -- Use x0 at idx
+    else do
+      let Just (aj0, _) = aList !! fromIntegral j  -- Get aj0
+      set (ctr0Loc + j) aj0            -- Use duplicate aj0
+  let ctr0 = termNew _CTR_ cid ctr0Loc    -- Construct CTR0
+
+  -- Create CTR1: #CTR{a0'' a1'' ... x1 ... a_{len-1}''}
+  ctr1Loc <- allocNode len
+  forM_ [0 .. len - 1] $ \j -> do
+    if j == idx then
+      set (ctr1Loc + j) x1             -- Use x1 at idx
+    else do
+      let Just (_, aj1) = aList !! fromIntegral j  -- Get aj1
+      set (ctr1Loc + j) aj1            -- Use duplicate aj1
+  let ctr1 = termNew _CTR_ cid ctr1Loc    -- Construct CTR1
+
+  -- Create resulting superposition: &L{CTR0 CTR1}
+  supResultLoc <- allocNode 2
+  set (supResultLoc + 0) ctr0
+  set (supResultLoc + 1) ctr1
+  let supResult = termNew _SUP_ supLab supResultLoc
+
+  -- Return the new superposition
+  return supResult
+
+-- ~N{#A: &L{z0 z1} #B: x #C: y ...}
+-- --------------------------------- SUP-MAT-CTR
+-- !&L{N0,N1} = N;
+-- !&L{x0,x1} = x;
+-- !&L{y0,y1} = y;
+-- &L{~N0{#A:z0 #B: x0 #C: y0} ~N1{#A:z1 #B: x1 #C: y1}}
+icSupMatCtr :: Tag -> Term -> Term -> Loc -> Loc -> HVM Term
+icSupMatCtr matTag mat sup matLen supIdx = do
+  let matLoc = termLoc mat
+  let matLab = termLab mat
+  let supLab = termLab sup
+  let supLoc = termLoc sup
+  n <- got (matLoc + 0)
+  dupNLoc <- allocNode 1
+  set dupNLoc n
+  let n0 = termNew _DP0_ supLab dupNLoc
+  let n1 = termNew _DP1_ supLab dupNLoc
+  z0 <- got (supLoc + 0)
+  z1 <- got (supLoc + 1)
+  uList <- forM [1 .. matLen] $ \j -> do
+    let caseOffset = matLoc + j
+    if j == supIdx then return (z0, z1)
+    else do
+      tj <- got caseOffset
+      dupTjLoc <- allocNode 1
+      set dupTjLoc tj
+      let t0j = termNew _DP0_ supLab dupTjLoc
+      let t1j = termNew _DP1_ supLab dupTjLoc
+      return (t0j, t1j)
+  mat0Loc <- allocNode (matLen + 1)
+  set (mat0Loc + 0) n0
+  forM_ [1 .. matLen] $ \j -> do
+    let (u_j, _) = uList !! fromIntegral (j - 1)
+    set (mat0Loc + 1 + (j - 1)) u_j
+  let mat0 = termNew matTag matLab mat0Loc
+  mat1Loc <- allocNode (matLen + 1)
+  set (mat1Loc + 0) n1
+  forM_ [1 .. matLen] $ \j -> do
+    let (_, v_j) = uList !! fromIntegral (j - 1)
+    set (mat1Loc + 1 + (j - 1)) v_j
+  let mat1 = termNew matTag matLab mat1Loc
+  supLoc <- allocNode 2
+  set (supLoc + 0) mat0
+  set (supLoc + 1) mat1
+  return (termNew _SUP_ supLab supLoc)
+
+isDup :: TAG -> Bool
+isDup tag =
+  case tag of
+    DP0 -> True
+    DP1 -> True
+    _   -> False
+
+isEra :: Term -> Bool
+isEra term = termTag term == _ERA_
+
+isEraC :: Core -> Bool
+isEraC Era = True
+isEraC _   = False
+
+isSup :: Term -> Bool
+isSup term = termTag term == _SUP_
+
+isSupC :: Core -> Bool
+isSupC (Sup _ _ _) = True
+isSupC _           = False
+
+
 
 -- Dup Collapser
 -- -------------
 
-collapseDupsAt :: IM.IntMap [Int] -> ReduceAt -> Book -> Loc -> HVM Core
+collapseDupsAt :: Book -> Loc -> HVM Core
+collapseDupsAt book host = unsafeInterleaveIO $ do
+  t <- got host
+  term <- reduceC t
 
-collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
-  term <- reduceAt book host
-  case tagT (termTag term) of
-
-    ERA -> do
-      return Era
+  let tag = termTag term
+  let loc = termLoc term
+  let lab = termLab term
+  case tagT tag of
+    ERA -> return Era
 
     LET -> do
-      let loc = termLoc term
-      let mode = modeT (termLab term)
+      let mode = modeT lab
       name <- return $ "$" ++ show (loc + 0)
-      val0 <- collapseDupsAt state reduceAt book (loc + 1)
-      bod0 <- collapseDupsAt state reduceAt book (loc + 2)
+      val0 <- collapseDupsAt book (loc + 1)
+      bod0 <- collapseDupsAt book (loc + 2)
       return $ Let mode name val0 bod0
 
-    LAM -> do
-      let loc = termLoc term
-      let lab = termLab term
-      name <- return $ "$" ++ show (loc + 0)
-      bod0 <- collapseDupsAt state reduceAt book (loc + 0)
-      return $ Lam lab name bod0
+    LAM -> do 
+      bod <- got (loc + 0)
+      case (tagT (termTag bod)) of
+        SUP -> do
+          -- trm <- icSupLam book term bod
+          -- set host trm
+          -- collapseDupsAt book host
+
+          name <- return $ "$" ++ show (loc + 0)
+          bod0 <- collapseDupsAt book (loc + 0)
+          return $ Lam lab name bod0
+        _   ->  do 
+          name <- return $ "$" ++ show (loc + 0)
+          bod0 <- collapseDupsAt book (loc + 0)
+          return $ Lam lab name bod0
 
     APP -> do
-      let loc = termLoc term
-      let lab = termLab term
-      fun0 <- collapseDupsAt state reduceAt book (loc + 0)
-      arg0 <- collapseDupsAt state reduceAt book (loc + 1)
-      return $ App lab fun0 arg0
-
+      fun <- got (loc + 0)
+      arg <- got (loc + 1)
+      if (tagT (termTag arg)) == SUP then do
+        trm <- icSupApp term arg
+        set host trm
+        collapseDupsAt book host
+      else do
+        fun0 <- collapseDupsAt book (loc + 0)
+        arg0 <- collapseDupsAt book (loc + 1)
+        return $ App lab fun0 arg0
+     
     SUP -> do
-      let loc = termLoc term
-      let lab = termLab term
-      case IM.lookup (fromIntegral lab) paths of
-        Just (p:ps) -> do
-          let newPaths = IM.insert (fromIntegral lab) ps paths
-          collapseDupsAt (newPaths) reduceAt book (loc + fromIntegral p)
-        _ -> do
-          tm00 <- collapseDupsAt state reduceAt book (loc + 0)
-          tm11 <- collapseDupsAt state reduceAt book (loc + 1)
-          return $ Sup lab tm00 tm11
+      -- core <- doExtractCoreAt book host
+      tm00 <- collapseDupsAt book (loc + 0)
+      tm11 <- collapseDupsAt book (loc + 1)
+      return $ Sup lab tm00 tm11
 
     VAR -> do
-      let loc = termLoc term
       sub <- got loc
-      if termGetBit sub /= 0
-      then do
+      if termGetBit sub /= 0 then do
         set (loc + 0) (termRemBit sub)
-        collapseDupsAt state reduceAt book (loc + 0)
+        collapseDupsAt book (loc + 0)
       else do
         name <- return $ "$" ++ show loc
         return $ Var name
 
     DP0 -> do
-      let loc = termLoc term
-      let lab = termLab term
-      sb0 <- got (loc+0)
-      if termGetBit sb0 /= 0
-      then do
+      sb0 <- got (loc + 0)
+      if termGetBit sb0 /= 0 then do
         set (loc + 0) (termRemBit sb0)
-        collapseDupsAt state reduceAt book (loc + 0)
-      else do
-        let newPaths = IM.alter (Just . maybe [0] (0:)) (fromIntegral lab) paths
-        collapseDupsAt (newPaths) reduceAt book (loc + 0)
+        collapseDupsAt book (loc + 0)
+      else
+        collapseDupsAt book (loc + 0)
 
     DP1 -> do
-      let loc = termLoc term
-      let lab = termLab term
-      sb1 <- got (loc+0)
-      if termGetBit sb1 /= 0
-      then do
+      sb1 <- got (loc + 0)
+      if termGetBit sb1 /= 0 then do
         set (loc + 0) (termRemBit sb1)
-        collapseDupsAt state reduceAt book (loc + 0)
-      else do
-        let newPaths = IM.alter (Just . maybe [1] (1:)) (fromIntegral lab) paths
-        collapseDupsAt (newPaths) reduceAt book (loc + 0)
+        collapseDupsAt book (loc + 0)
+      else
+        collapseDupsAt book (loc + 0)
+
 
     CTR -> do
-      let loc = termLoc term
-      let lab = termLab term
       let cid = fromIntegral lab
       let nam = MS.findWithDefault "?" cid (cidToCtr book)
       let ari = mget (cidToAri book) cid
       let aux = if ari == 0 then [] else [0 .. ari-1]
-      fds0 <- forM aux (\i -> collapseDupsAt state reduceAt book (loc + fromIntegral i))
-      return $ Ctr nam fds0
+      fds0 <- forM aux $ \i -> do
+        field <- got (loc + fromIntegral i) 
+        case (tagT (termTag field)) of
+          ERA -> do
+            trm <- icEraCtr term field
+            set host trm
+            collapseDupsAt book host
+          SUP -> do
+            trm <- icSupCtr term field (fromIntegral cid) (fromIntegral ari) (fromIntegral i)
+            set host trm
+            collapseDupsAt book host
+          _ -> do 
+            collapseDupsAt book (loc + fromIntegral i)
+
+      let result = case filter isEraC fds0 of
+                    (era:_) -> Era  -- If ERA exists, return Era
+                    [] -> case filter isSupC fds0 of
+                           (sup:_) -> sup  -- If no ERA but SUP exists, return SUP
+                           [] -> Ctr nam fds0  -- Otherwise, return Ctr
+      return $ result
+
 
     MAT -> do
-      let loc = termLoc term
-      let lab = termLab term
       let cid = fromIntegral lab
       let len = fromIntegral $ mget (cidToLen book) cid
-      val0 <- collapseDupsAt state reduceAt book (loc + 0)
+      val0 <- collapseDupsAt book (loc + 0)
       css0 <- forM [0..len-1] $ \i -> do
         let ctr = mget (cidToCtr book) (cid + i)
         let ari = fromIntegral $ mget (cidToAri book) (cid + i)
         let fds = if ari == 0 then [] else ["$" ++ show (loc + 1 + j) | j <- [0..ari-1]]
-        bod0 <- collapseDupsAt state reduceAt book (loc + 1 + fromIntegral i)
+        bod0 <- collapseDupsAt book (loc + 1 + fromIntegral i)
         return (ctr, fds, bod0)
       return $ Mat val0 [] css0
 
     IFL -> do
-      let loc = termLoc term
-      let lab = termLab term
       let cid = fromIntegral lab
-      val0 <- collapseDupsAt state reduceAt book (loc + 0)
-      cs00 <- collapseDupsAt state reduceAt book (loc + 1)
-      cs10 <- collapseDupsAt state reduceAt book (loc + 2)
+      val0 <- collapseDupsAt book (loc + 0)
+      cs00 <- collapseDupsAt book (loc + 1)
+      cs10 <- collapseDupsAt book (loc + 2)
       return $ Mat val0 [] [(mget (cidToCtr book) cid, [], cs00), ("_", [], cs10)]
 
     SWI -> do
-      let loc = termLoc term
-      let lab = termLab term
       let len = fromIntegral lab
-      val0 <- collapseDupsAt state reduceAt book (loc + 0)
+      val0 <- collapseDupsAt book (loc + 0)
       css0 <- forM [0..len-1] $ \i -> do
-        bod0 <- collapseDupsAt state reduceAt book (loc + 1 + i)
+        bod0 <- collapseDupsAt book (loc + 1 + i)
         return (show i, [], bod0)
       return $ Mat val0 [] css0
 
     W32 -> do
-      let val = termLoc term
-      return $ U32 (fromIntegral val)
+      return $ U32 (fromIntegral loc)
 
     CHR -> do
-      let val = termLoc term
-      return $ Chr (chr (fromIntegral val))
+      return $ Chr (chr (fromIntegral loc))
 
     OPX -> do
-      let loc = termLoc term
-      let opr = toEnum (fromIntegral (termLab term))
-      nm00 <- collapseDupsAt state reduceAt book (loc + 0)
-      nm10 <- collapseDupsAt state reduceAt book (loc + 1)
+      let opr = toEnum (fromIntegral lab)
+      nm00 <- collapseDupsAt book (loc + 0)
+      nm10 <- collapseDupsAt book (loc + 1)
       return $ Op2 opr nm00 nm10
 
     OPY -> do
-      let loc = termLoc term
-      let opr = toEnum (fromIntegral (termLab term))
-      nm00 <- collapseDupsAt state reduceAt book (loc + 0)
-      nm10 <- collapseDupsAt state reduceAt book (loc + 1)
+      let opr = toEnum (fromIntegral lab)
+      nm00 <- collapseDupsAt book (loc + 0)
+      nm10 <- collapseDupsAt book (loc + 1)
       return $ Op2 opr nm00 nm10
 
     REF -> do
-      let loc = termLoc term
-      let lab = termLab term
       let fid = fromIntegral lab
       let ari = fromIntegral (funArity book fid)
-      arg0 <- forM [0..ari-1] (\i -> collapseDupsAt state reduceAt book (loc + i))
+      arg0 <- forM [0..ari-1] (\i -> collapseDupsAt book (loc + i))
       let name = MS.findWithDefault "?" fid (fidToNam book)
       return $ Ref name fid arg0
 
-    tag -> do
-      return $ Var "?"
-      -- exitFailure
+    _ -> return $ Var "?"
 
 -- Sup Collapser
 -- -------------
 
-collapseSups :: Book -> Core -> Collapse Core
-
+collapseSups :: Book -> Core -> HVM Core
 collapseSups book core = case core of
-
-  Var name -> do
-    return $ Var name
-
+  Var name -> return $ Var name
   Ref name fid args -> do
     args <- mapM (collapseSups book) args
     return $ Ref name fid args
-
   Lam lab name body -> do
     body <- collapseSups book body
     return $ Lam lab name body
-
   App lab fun arg -> do
     fun <- collapseSups book fun
     arg <- collapseSups book arg
     return $ App lab fun arg
-
   Dup lab x y val body -> do
     val <- collapseSups book val
     body <- collapseSups book body
     return $ Dup lab x y val body
-
   Ctr nam fields -> do
     fields <- mapM (collapseSups book) fields
     return $ Ctr nam fields
-
   Mat val mov css -> do
     val <- collapseSups book val
     mov <- mapM (\(key, expr) -> do
@@ -268,68 +591,48 @@ collapseSups book core = case core of
       bod <- collapseSups book bod
       return (ctr, fds, bod)) css
     return $ Mat val mov css
-
-  U32 val -> do
-    return $ U32 val
-
-  Chr val -> do
-    return $ Chr val
-
+  U32 val -> return $ U32 val
+  Chr val -> return $ Chr val
   Op2 op x y -> do
     x <- collapseSups book x
     y <- collapseSups book y
     return $ Op2 op x y
-
   Let mode name val body -> do
     val <- collapseSups book val
     body <- collapseSups book body
     return $ Let mode name val body
-
-  Era -> do
-    CEra
-
+  Era -> return Era
   Sup lab tm0 tm1 -> do
-    let tm0' = collapseSups book tm0
-    let tm1' = collapseSups book tm1
-    CSup lab tm0' tm1'
+    tm0' <- collapseSups book tm0
+    tm1' <- collapseSups book tm1
+    return $ Sup lab tm0' tm1'
 
 -- Tree Collapser
 -- --------------
 
-doCollapseAt :: ReduceAt -> Book -> Loc -> HVM (Collapse Core)
-doCollapseAt reduceAt book host = do
-  -- namesRef <- newIORef MS.empty
-  let state = (IM.empty)
-  core <- collapseDupsAt state reduceAt book host
-  return $ collapseSups book core
+doCollapseAt :: Book -> Loc -> HVM Core
+doCollapseAt book host = do
+  core <- collapseDupsAt book host
+  collapseSups book core
 
--- Priority Queue
--- --------------
+-- Flattener
+-- ---------
 
-data PQ a
-  = PQLeaf
-  | PQNode (Word64, a) (PQ a) (PQ a)
-  deriving (Show)
+flattenDFS :: Core -> [Core]
+flattenDFS (Sup _ a b) = flattenDFS a ++ flattenDFS b
+flattenDFS Era = []
+flattenDFS x = [x]
 
-pqUnion :: PQ a -> PQ a -> PQ a
-pqUnion PQLeaf heap = heap
-pqUnion heap PQLeaf = heap
-pqUnion heap1@(PQNode (k1,v1) l1 r1) heap2@(PQNode (k2,v2) l2 r2)
-  | k1 <= k2  = PQNode (k1,v1) (pqUnion heap2 r1) l1
-  | otherwise = PQNode (k2,v2) (pqUnion heap1 r2) l2
-
-pqPop :: PQ a -> Maybe ((Word64, a), PQ a)
-pqPop PQLeaf         = Nothing
-pqPop (PQNode x l r) = Just (x, pqUnion l r)
-
-pqPut :: (Word64,a) -> PQ a -> PQ a
-pqPut (k,v) = pqUnion (PQNode (k,v) PQLeaf PQLeaf)
+flattenBFS :: Core -> [Core]
+flattenBFS root = go root (SQ [] []) where
+  go (Sup _ a b) sq = go Era (sqPut b $ sqPut a sq)
+  go Era sq = case sqPop sq of
+    Just (v, sq') -> go v sq'
+    Nothing -> []
+  go x sq = x : go Era sq
 
 -- Simple Queue
 -- ------------
--- Allows pushing to an end, and popping from another.
--- Simple purely functional implementation.
--- Includes sqPop and sqPut.
 
 data SQ a = SQ [a] [a]
 
@@ -341,37 +644,13 @@ sqPop (SQ (x:xs) ys) = Just (x, SQ xs ys)
 sqPut :: a -> SQ a -> SQ a
 sqPut x (SQ xs ys) = SQ xs (x:ys)
 
--- Flattener
--- ---------
-
-flattenDFS :: Collapse a -> [a]
-flattenDFS (CSup k a b) = flatten a ++ flatten b
-flattenDFS (CVal x)     = [x]
-flattenDFS CEra         = []
-
-flattenBFS :: Collapse a -> [a]
-flattenBFS term = go term (SQ [] [] :: SQ (Collapse a)) where
-  go (CSup k a b) sq = go CEra (sqPut b $ sqPut a $ sq)
-  go (CVal x)     sq = x : go CEra sq
-  go CEra         sq = case sqPop sq of
-    Just (v,sq) -> go v sq
-    Nothing     -> []
-
-flattenPQ :: Collapse a -> [a]
-flattenPQ term = go term (PQLeaf :: PQ (Collapse a)) where
-  go (CSup k a b) pq = go CEra (pqPut (fromIntegral k,a) $ pqPut (fromIntegral k,b) $ pq)
-  go (CVal x)     pq = x : go CEra pq
-  go CEra         pq = case pqPop pq of
-    Just ((k,v),pq) -> go v pq
-    Nothing         -> []
-
-flatten :: Collapse a -> [a]
+flatten :: Core -> [Core]
 flatten = flattenBFS
 
 -- Flat Collapser
 -- --------------
 
-doCollapseFlatAt :: ReduceAt -> Book -> Loc -> HVM [Core]
-doCollapseFlatAt reduceAt book host = do
-  coll <- doCollapseAt reduceAt book host
-  return $ flatten coll
+doCollapseFlatAt :: Book -> Loc -> HVM [Core]
+doCollapseFlatAt book host = do
+  core <- doCollapseAt book host
+  return $ flatten core
