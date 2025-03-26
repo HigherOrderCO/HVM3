@@ -20,7 +20,11 @@ typedef uint64_t Term;
 typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
+#ifdef ATOMIC
 typedef _Atomic(Term) ATerm;
+#else
+typedef uint64_t ATerm;
+#endif
 
 // Runtime Types
 // -------------
@@ -168,7 +172,12 @@ _Bool term_is_atom(Term term) {
 // -------
 
 Term swap(Loc loc, Term term) {
+#ifdef ATOMIC
   Term val = atomic_exchange_explicit(&HVM.heap[loc], term, memory_order_relaxed);
+#else
+  Term val = HVM.heap[loc];
+  HVM.heap[loc] = term;
+#endif
   if (val == 0) {
     printf("SWAP 0 at %08llx\n", (u64)loc);
     exit(0);
@@ -177,7 +186,11 @@ Term swap(Loc loc, Term term) {
 }
 
 Term got(Loc loc) {
+#ifdef ATOMIC
   Term val = atomic_load_explicit(&HVM.heap[loc], memory_order_relaxed);
+#else
+  Term val = HVM.heap[loc];
+#endif
   if (val == 0) {
     printf("GOT 0 at %08llx\n", (u64)loc);
     exit(0);
@@ -186,7 +199,11 @@ Term got(Loc loc) {
 }
 
 void set(Loc loc, Term term) {
+#ifdef ATOMIC
   atomic_store_explicit(&HVM.heap[loc], term, memory_order_relaxed);
+#else
+  HVM.heap[loc] = term;
+#endif
 }
 
 void sub(Loc loc, Term term) {
