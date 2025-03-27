@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <stdbool.h>
+#include <string.h>
 
 #define MAX_HEAP_SIZE (3ULL << 29) // 12 GB
 #define MAX_STACK_SIZE (1ULL << 28)
@@ -27,6 +28,35 @@ typedef uint64_t u64;
 // -------------
 
 typedef struct {
+  u64 let_lazy;
+  u64 let_stri;
+  u64 app_era;
+  u64 app_lam;
+  u64 app_sup;
+  u64 dup_era;
+  u64 dup_lam;
+  u64 dup_sup_anni;
+  u64 dup_sup_comm;
+  u64 dup_ctr[65536];
+  u64 dup_w32;
+  u64 mat_era;
+  u64 mat_sup;
+  u64 mat_ctr[65536];
+  u64 mat_w32;
+  u64 opx_era;
+  u64 opx_sup;
+  u64 opx_w32;
+  u64 opy_era;
+  u64 opy_sup;
+  u64 opy_w32;
+  u64 ref_sup[65536];
+  u64 ref_dup[65536];
+  u64 ref_era[65536];
+  u64 ref_f[65536];
+  u64 ref_t[65536];
+} Interactions;
+
+typedef struct {
   Term*  sbuf; // reduction stack buffer
   u64*   spos; // reduction stack position
   Term*  heap; // global node buffer
@@ -38,6 +68,8 @@ typedef struct {
   u16    clen[65536]; // case length of each constructor
   u16    cadt[65536]; // ADT id of each constructor
   u16    fari[65536]; // arity of each function
+
+  Interactions* interactions;
 } State;
 
 static State HVM = {
@@ -52,6 +84,7 @@ static State HVM = {
   .clen = {0},
   .cadt = {0},
   .fari = {0},
+  .interactions = NULL
 };
 
 // Constants
@@ -297,6 +330,7 @@ Term reduce_ref_sup(Term ref, u16 idx) {
   Lab ref_lab = term_lab(ref);
   u16 fun_id = ref_lab;
   u16 arity  = HVM.fari[fun_id];
+  HVM.interactions->ref_sup[fun_id]++;
   if (idx >= arity) {
     printf("ERROR: Invalid index in reduce_ref_sup\n");
     exit(1);
@@ -342,6 +376,7 @@ Term reduce_ref(Term ref) {
   //printf("reduce_ref "); print_term(ref); printf("\n");
   //printf("call %d %p\n", term_loc(ref), HVM.book[term_loc(ref)]);
   inc_itr();
+  HVM.interactions->ref_f[term_lab(ref)]++;
   return HVM.book[term_lab(ref)](ref);
 }
 
@@ -353,6 +388,7 @@ Term reduce_ref(Term ref) {
 Term reduce_let(Term let, Term val) {
   //printf("reduce_let "); print_term(let); printf("\n");
   inc_itr();
+  HVM.interactions->let_lazy++;
   Loc let_loc = term_loc(let);
   Term bod    = got(let_loc + 1);
   sub(let_loc + 0, val);
@@ -365,6 +401,7 @@ Term reduce_let(Term let, Term val) {
 Term reduce_app_era(Term app, Term era) {
   //printf("reduce_app_era "); print_term(app); printf("\n");
   inc_itr();
+  HVM.interactions->app_era++;
   return era;
 }
 
@@ -374,6 +411,7 @@ Term reduce_app_era(Term app, Term era) {
 // body
 Term reduce_app_lam(Term app, Term lam) {
   inc_itr();
+  HVM.interactions->app_lam++;
   Loc app_loc = term_loc(app);
   Loc lam_loc = term_loc(lam);
   Term bod    = got(lam_loc + 0);
@@ -389,6 +427,7 @@ Term reduce_app_lam(Term app, Term lam) {
 Term reduce_app_sup(Term app, Term sup) {
   //printf("reduce_app_sup "); print_term(app); printf("\n");
   inc_itr();
+  HVM.interactions->app_sup++;
   Loc app_loc = term_loc(app);
   Loc sup_loc = term_loc(sup);
   Lab sup_lab = term_lab(sup);
@@ -444,6 +483,7 @@ Term reduce_app_w32(Term app, Term w32) {
 Term reduce_dup_era(Term dup, Term era) {
   //printf("reduce_dup_era "); print_term(dup); printf("\n");
   inc_itr();
+  HVM.interactions->dup_era++;
   Loc dup_loc = term_loc(dup);
   sub(dup_loc + 0, era);
   return era;
@@ -458,6 +498,7 @@ Term reduce_dup_era(Term dup, Term era) {
 Term reduce_dup_lam(Term dup, Term lam) {
   //printf("reduce_dup_lam "); print_term(dup); printf("\n");
   inc_itr();
+  HVM.interactions->dup_lam++;
   Loc dup_loc = term_loc(dup);
   Loc lam_loc = term_loc(lam);
   Lab dup_lab = term_lab(dup);
@@ -505,6 +546,7 @@ Term reduce_dup_sup(Term dup, Term sup) {
   Lab sup_lab = term_lab(sup);
   Loc sup_loc = term_loc(sup);
   if (dup_lab == sup_lab) {
+    HVM.interactions->dup_sup_anni++;
     Term tm0 = got(sup_loc + 0);
     Term tm1 = got(sup_loc + 1);
     if (term_tag(dup) == DP0) {
@@ -515,6 +557,7 @@ Term reduce_dup_sup(Term dup, Term sup) {
       return tm1;
     }
   } else {
+    HVM.interactions->dup_sup_comm++;
     Loc loc = alloc_node(4);
     Loc du0 = sup_loc + 0;
     Loc du1 = sup_loc + 1;
@@ -554,6 +597,7 @@ Term reduce_dup_ctr(Term dup, Term ctr) {
   Loc ctr_loc = term_loc(ctr);
   Lab ctr_lab = term_lab(ctr);
   u64 ctr_ari = HVM.cari[ctr_lab];
+  HVM.interactions->dup_ctr[(u16)ctr_lab]++;
 
   Loc loc     = alloc_node(ctr_ari * 2);
   //Loc ctr0    = alloc_node(ctr_ari);
@@ -581,6 +625,7 @@ Term reduce_dup_ctr(Term dup, Term ctr) {
 Term reduce_dup_w32(Term dup, Term w32) {
   //printf("reduce_dup_w32 "); print_term(dup); printf("\n");
   inc_itr();
+  HVM.interactions->dup_w32++;
   Loc dup_loc = term_loc(dup);
   sub(dup_loc + 0, w32);
   return w32;
@@ -602,6 +647,7 @@ Term reduce_dup_ref(Term dup, Term ref) {
   Loc ref_loc = term_loc(ref);
   Lab ref_lab = term_lab(ref);
   u64 ref_ari = HVM.fari[ref_lab];
+  HVM.interactions->ref_dup[(u16)ref_lab]++;
 
   Loc loc     = alloc_node(ref_ari * 2);
   Loc ref0    = ref_loc;
@@ -627,6 +673,7 @@ Term reduce_dup_ref(Term dup, Term ref) {
 Term reduce_mat_era(Term mat, Term era) {
   //printf("reduce_mat_era "); print_term(mat); printf("\n");
   inc_itr();
+  HVM.interactions->mat_era++;
   return era;
 }
 
@@ -650,6 +697,7 @@ Term reduce_mat_lam(Term mat, Term lam) {
 Term reduce_mat_sup(Term mat, Term sup) {
   //printf("reduce_mat_sup "); print_term(mat); printf("\n");
   inc_itr();
+  HVM.interactions->mat_sup++;
   Tag mat_tag = term_tag(mat);
   Lab mat_lab = term_lab(mat);
   Loc mat_loc = term_loc(mat);
@@ -683,6 +731,7 @@ Term reduce_mat_ctr(Term mat, Term ctr) {
   Tag mat_tag = term_tag(mat);
   Loc mat_loc = term_loc(mat);
   Lab mat_lab = term_lab(mat);
+  HVM.interactions->mat_ctr[(u16)term_lab(ctr)]++;
   // If-Let
   if (mat_tag == IFL) {
     Loc ctr_loc = term_loc(ctr);
@@ -735,6 +784,7 @@ Term reduce_mat_ctr(Term mat, Term ctr) {
 Term reduce_mat_w32(Term mat, Term w32) {
   //printf("reduce_mat_w32 "); print_term(mat); printf("\n");
   inc_itr();
+  HVM.interactions->mat_w32++;
   Loc mat_loc = term_loc(mat);
   Lab mat_lab = term_lab(mat);
   u64 mat_len = mat_lab;
@@ -756,6 +806,7 @@ Term reduce_mat_w32(Term mat, Term w32) {
 Term reduce_opx_era(Term opx, Term era) {
   //printf("reduce_opx_era "); print_term(opx); printf("\n");
   inc_itr();
+  HVM.interactions->opx_era++;
   return era;
 }
 
@@ -775,6 +826,7 @@ Term reduce_opx_lam(Term opx, Term lam) {
 Term reduce_opx_sup(Term opx, Term sup) {
   //printf("reduce_opx_sup "); print_term(opx); printf("\n");
   inc_itr();
+  HVM.interactions->opx_sup++;
   Loc opx_loc = term_loc(opx);
   Loc sup_loc = term_loc(sup);
   Lab sup_lab = term_lab(sup);
@@ -811,6 +863,7 @@ Term reduce_opx_ctr(Term opx, Term ctr) {
 Term reduce_opx_w32(Term opx, Term nmx) {
   //printf("reduce_opx_w32 "); print_term(opx); printf("\n");
   inc_itr();
+  HVM.interactions->opx_w32++;
   Lab opx_lab = term_lab(opx);
   Loc opx_loc = term_loc(opx);
   Term nmy = got(opx_loc + 1);
@@ -825,6 +878,7 @@ Term reduce_opx_w32(Term opx, Term nmx) {
 Term reduce_opy_era(Term opy, Term era) {
   //printf("reduce_opy_era "); print_term(opy); printf("\n");
   inc_itr();
+  HVM.interactions->opy_era++;
   return era;
 }
 
@@ -843,6 +897,7 @@ Term reduce_opy_lam(Term opy, Term era) {
 Term reduce_opy_sup(Term opy, Term sup) {
   //printf("reduce_opy_sup "); print_term(opy); printf("\n");
   inc_itr();
+  HVM.interactions->opy_sup++;
   Loc opy_loc = term_loc(opy);
   Loc sup_loc = term_loc(sup);
   Lab sup_lab = term_lab(sup);
@@ -876,6 +931,7 @@ Term reduce_opy_ctr(Term opy, Term ctr) {
 Term reduce_opy_w32(Term opy, Term w32) {
   //printf("reduce_opy_w32 "); print_term(opy); printf("\n");
   inc_itr();
+  HVM.interactions->opy_w32++;
   Loc opy_loc = term_loc(opy);
   Tag t = term_tag(w32);
   u32 x = term_loc(got(opy_loc + 1));
@@ -938,6 +994,7 @@ Term reduce(Term term) {
             continue;
           }
           case STRI: {
+            HVM.interactions->let_stri++;
             spush(next, sbuf, &spos);
             next = got(loc + 0);
             continue;
@@ -1268,6 +1325,7 @@ void hvm_init() {
   HVM.size = alloc_huge(sizeof(u64));
   HVM.itrs = alloc_huge(sizeof(u64));
   HVM.frsh = alloc_huge(sizeof(u64));
+  HVM.interactions = alloc_huge(sizeof(Interactions));
 
   #define CHECK_ALLOC(ptr, name) if (!(ptr)) { printf(name " alloc failed\n"); allocs_failed++; }
   int allocs_failed = 0; // Track if any allocation failed
@@ -1278,6 +1336,7 @@ void hvm_init() {
   CHECK_ALLOC(HVM.size, "size");
   CHECK_ALLOC(HVM.itrs, "itrs");
   CHECK_ALLOC(HVM.frsh, "frsh");
+  CHECK_ALLOC(HVM.interactions, "interactions");
 
   if (allocs_failed > 0) {
     printf("hvm_init alloc's failed: %d allocations failed\n", allocs_failed);
@@ -1289,6 +1348,9 @@ void hvm_init() {
   *HVM.size = 1;
   *HVM.itrs = 0;
   *HVM.frsh = 0x20;
+
+  memset(HVM.interactions, 0, sizeof(Interactions));
+
   HVM.book[SUP_F] = SUP_f;
   HVM.book[DUP_F] = DUP_f;
   HVM.book[LOG_F] = LOG_f;
@@ -1319,12 +1381,41 @@ void hvm_free() {
     hvm_munmap(HVM.size, sizeof(u64), "size");
     hvm_munmap(HVM.itrs, sizeof(u64), "itrs");
     hvm_munmap(HVM.frsh, sizeof(u64), "frsh");
+    hvm_munmap(HVM.interactions, sizeof(Interactions), "interactions");
 }
 
 
 State* hvm_get_state() {
   return &HVM;
 }
+
+// Getter functions for individual interaction count fields
+u64 hvm_get_let_lazy() { return HVM.interactions->let_lazy; }
+u64 hvm_get_let_stri() { return HVM.interactions->let_stri; }
+u64 hvm_get_app_era() { return HVM.interactions->app_era; }
+u64 hvm_get_app_lam() { return HVM.interactions->app_lam; }
+u64 hvm_get_app_sup() { return HVM.interactions->app_sup; }
+u64 hvm_get_dup_era() { return HVM.interactions->dup_era; }
+u64 hvm_get_dup_lam() { return HVM.interactions->dup_lam; }
+u64 hvm_get_dup_sup_anni() { return HVM.interactions->dup_sup_anni; }
+u64 hvm_get_dup_sup_comm() { return HVM.interactions->dup_sup_comm; }
+u64 hvm_get_dup_ctr(u16 cid) { return HVM.interactions->dup_ctr[cid]; }
+u64 hvm_get_dup_w32() { return HVM.interactions->dup_w32; }
+u64 hvm_get_mat_era() { return HVM.interactions->mat_era; }
+u64 hvm_get_mat_sup() { return HVM.interactions->mat_sup; }
+u64 hvm_get_mat_ctr(u16 cid) { return HVM.interactions->mat_ctr[cid]; }
+u64 hvm_get_mat_w32() { return HVM.interactions->mat_w32; }
+u64 hvm_get_opx_era() { return HVM.interactions->opx_era; }
+u64 hvm_get_opx_sup() { return HVM.interactions->opx_sup; }
+u64 hvm_get_opx_w32() { return HVM.interactions->opx_w32; }
+u64 hvm_get_opy_era() { return HVM.interactions->opy_era; }
+u64 hvm_get_opy_sup() { return HVM.interactions->opy_sup; }
+u64 hvm_get_opy_w32() { return HVM.interactions->opy_w32; }
+u64 hvm_get_ref_dup(u16 fid) { return HVM.interactions->ref_dup[fid]; }
+u64 hvm_get_ref_sup(u16 fid) { return HVM.interactions->ref_sup[fid]; }
+u64 hvm_get_ref_era(u16 fid) { return HVM.interactions->ref_era[fid]; }
+u64 hvm_get_ref_f(u16 fid) { return HVM.interactions->ref_f[fid]; }
+u64 hvm_get_ref_t(u16 fid) { return HVM.interactions->ref_t[fid]; }
 
 void hvm_set_state(State* hvm) {
   HVM.sbuf = hvm->sbuf;
@@ -1340,6 +1431,7 @@ void hvm_set_state(State* hvm) {
     HVM.clen[i] = hvm->clen[i];
     HVM.cadt[i] = hvm->cadt[i];
   }
+  HVM.interactions = hvm->interactions;
 }
 
 void hvm_define(u16 fid, Term (*func)()) {

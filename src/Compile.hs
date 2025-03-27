@@ -82,6 +82,7 @@ compileFull :: Book -> Word16 -> Core -> Bool -> [(Bool,String)] -> Compile ()
 compileFull book fid core copy args = do
   emit $ "Term " ++ mget (fidToNam book) fid ++ "_t(Term ref) {"
   tabInc
+  emit "HVM.interactions->ref_t[term_lab(ref)]++;"
   forM_ (zip [0..] args) $ \(i, arg) -> do
     argVar <- fresh "arg"
     if fst arg
@@ -237,6 +238,7 @@ compileFast book fid core copy args = do
           emit $ "if (term_tag(" ++ argNam ++ ") == ERA) {"
           emit $ "  itrs += 1;"
           emit $ "  *HVM.itrs += itrs;"
+          emit $ "  HVM.interactions->ref_era[" ++ show fid ++ "]++;"
           emit $ "  return term_new(ERA, 0, 0);"
           emit $ "}"
           emit $ "if (term_tag(" ++ argNam ++ ") == SUP) {"
