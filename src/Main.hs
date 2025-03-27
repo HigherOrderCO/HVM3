@@ -6,7 +6,7 @@
 
 module Main where
 
-import Control.Monad (guard, when, forM_)
+import Control.Monad (guard, when, forM_, foldM)
 import Data.FileEmbed
 import Data.List (partition, isPrefixOf, take, find)
 import Data.Word
@@ -188,10 +188,65 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
     printf "TIME: %.7f seconds\n" time
     printf "SIZE: %llu nodes\n" size
     printf "PERF: %.3f MIPS\n" mips
+    printInteractions book
     return ()
   -- Finalize
   hvmFree
   return $ Right ()
+
+-- | Prints interaction statistics with function names from the Book
+printInteractions :: Book -> IO ()
+printInteractions book = do
+  -- Get interaction counts from HVM state
+  let baseFns = 
+        [ ("let_lazy", hvmGetLetLazy)
+        , ("let_strict", hvmGetLetStri)
+        , ("app_era", hvmGetAppEra)
+        , ("app_lam", hvmGetAppLam)
+        , ("app_sup", hvmGetAppSup)
+        , ("dup_era", hvmGetDupEra)
+        , ("dup_lam", hvmGetDupLam)
+        , ("dup_sup_anni", hvmGetDupSupAnni)
+        , ("dup_sup_comm", hvmGetDupSupComm)
+        , ("dup_w32", hvmGetDupW32)
+        , ("mat_era", hvmGetMatEra)
+        , ("mat_sup", hvmGetMatSup)
+        , ("opx_era", hvmGetOpxEra)
+        , ("opx_sup", hvmGetOpxSup)
+        , ("opx_w32", hvmGetOpxW32)
+        , ("opy_era", hvmGetOpyEra)
+        , ("opy_sup", hvmGetOpySup)
+        , ("opy_w32", hvmGetOpyW32)
+        , ("dup_ctr (total)", foldM (\acc i -> hvmGetDupCtr i >>= \count -> return (acc + count)) 0 [0..65535])
+        , ("mat_ctr (total)", foldM (\acc i -> hvmGetMatCtr i >>= \count -> return (acc + count)) 0 [0..65535])
+        , ("ref_sup (total)", foldM (\acc i -> hvmGetRefSup i >>= \count -> return (acc + count)) 0 [0..65535])
+        , ("ref_dup (total)", foldM (\acc i -> hvmGetRefDup i >>= \count -> return (acc + count)) 0 [0..65535])
+        , ("ref_era (total)", foldM (\acc i -> hvmGetRefEra i >>= \count -> return (acc + count)) 0 [0..65535])
+        , ("ref_f (total)", foldM (\acc i -> hvmGetRefF i >>= \count -> return (acc + count)) 0 [0..65535])
+        , ("ref_t (total)", foldM (\acc i -> hvmGetRefT i >>= \count -> return (acc + count)) 0 [0..65535])
+        ]
+
+  putStrLn "Interactions:"
+  forM_ baseFns $ \(name, fn) -> do
+    count <- fn
+    printf "  %s: %llu\n" name count
+  
+  putStrLn "Ctr interactions:"
+  forM_ (MS.toList (cidToCtr book)) $ \(i, name) -> do
+    dupCount <- hvmGetDupCtr i
+    matCount <- hvmGetMatCtr i
+    when (matCount > 0 || dupCount > 0) $ do
+      printf "  %-15s: mat_ctr:%-12llu dup_ctr:%-12llu\n" name matCount dupCount  
+
+  putStrLn "Call interactions:"
+  forM_ (MS.toList (fidToFun book)) $ \(fid, (_, _)) -> do
+    callF <- hvmGetRefF fid
+    callT <- hvmGetRefT fid
+    refEra <- hvmGetRefEra fid
+    refDup <- hvmGetRefDup fid
+    refSup <- hvmGetRefSup fid
+    when (callF > 0) $ do
+      printf "  %-15s: call_f:%-10llu call_t:%-10llu dup:%-10llu sup:%-10llu era:%-10llu\n" (mget (fidToNam book) fid) callF callT refDup refSup refEra
 
 genMain :: Book -> String
 genMain book =
