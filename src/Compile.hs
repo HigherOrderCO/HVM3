@@ -231,6 +231,8 @@ compileFast book fid core copy args = do
       case MS.lookup fid (fidToLab book) of
         Just labs -> do
           emit $ "if (term_tag(" ++ argNam ++ ") == ERA) {"
+          emit $ "  itrs += 1;"
+          emit $ "  *HVM.itrs += itrs;"
           emit $ "  return term_new(ERA, 0, 0);"
           emit $ "}"
           emit $ "if (term_tag(" ++ argNam ++ ") == SUP) {"
@@ -459,6 +461,7 @@ compileFastUndo :: Book -> Word16 -> Core -> [String] -> Int -> MS.Map Int [Stri
 compileFastUndo book fid term ctx itr reuse = do
   forM_ (zip [0..] ctx) $ \ (i, arg) -> do
     emit $ "set(term_loc(ref) + "++show i++", " ++ arg ++ ");"
+  compileFastSave book fid term ctx itr reuse
   emit $ "return " ++ mget (fidToNam book) fid ++ "_t(ref);"
 
 -- Completes a fast mode call
