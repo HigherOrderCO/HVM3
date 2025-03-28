@@ -239,6 +239,8 @@ compileFast book fid core copy args = do
           emit $ "  itrs += 1;"
           emit $ "  *HVM.itrs += itrs;"
           emit $ "  HVM.interactions->ref_era[" ++ show fid ++ "]++;"
+          emit $ "  itrs += 1;"
+          emit $ "  *HVM.itrs += itrs;"
           emit $ "  return term_new(ERA, 0, 0);"
           emit $ "}"
           emit $ "if (term_tag(" ++ argNam ++ ") == SUP) {"
