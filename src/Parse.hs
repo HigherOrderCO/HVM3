@@ -115,6 +115,7 @@ parseLam :: ParserM Core
 parseLam = do
   consume "λ"
   var <- parseName1
+  consume "."
   bod <- bindVars [var] parseCore
   return $ Lam 0 var bod
 
@@ -142,6 +143,7 @@ parseLabeled = do
         '{' -> do
           consume "{"
           tm0 <- parseCore
+          maybeConsume ","
           tm1 <- parseCore
           consume "}"
           return $ Sup label tm0 tm1
@@ -175,6 +177,7 @@ parseLabeled = do
         Just '{' -> do
           consume "{"
           tm0 <- parseCore
+          maybeConsume ","
           tm1 <- parseCore
           consume "}"
           if null name then do
@@ -353,10 +356,12 @@ parseLet = do
       nam <- parseName
       consume "{"
       dp0 <- parseName1
+      maybeConsume ","
       dp1 <- parseName1
       consume "}"
       consume "="
       val <- parseCore
+      maybeConsume ";"
       bod <- bindVars [dp0, dp1] parseCore
 
       if null nam then do
@@ -374,6 +379,7 @@ parseLet = do
         consume "="
         return nam
       val <- parseCore
+      maybeConsume ";"
       bod <- bindVars [fromMaybe "_" nam] parseCore
       case nam of
         Just nam -> return $ Let STRI nam val bod
@@ -385,6 +391,7 @@ parseLet = do
       nam <- parseName1
       consume "="
       val <- parseCore
+      maybeConsume ";"
       bod <- bindVars [nam] parseCore
       return $ Let PARA nam val bod
     
@@ -393,6 +400,7 @@ parseLet = do
       nam <- parseName1
       consume "="
       val <- parseCore
+      maybeConsume ";"
       bod <- bindVars [nam] parseCore
       return $ Let LAZY nam val bod
 
@@ -622,6 +630,9 @@ parseName1 = skip >> many1 (alphaNum <|> char '_' <|> char '$' <|> char '&')
 
 consume :: String -> ParserM String
 consume str = skip >> string str
+
+maybeConsume :: String -> ParserM (Maybe String)
+maybeConsume str = skip >> optionMaybe (string str)
 
 closeWith :: String -> ParserM ()
 closeWith str = try $ do
