@@ -464,6 +464,7 @@ parseLst = do
   skip
   char '['
   elems <- many $ do
+    maybeConsume ","
     closeWith "]"
     parseCore
   char ']'
