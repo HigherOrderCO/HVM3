@@ -2,7 +2,7 @@
 
 module Parse where
 
-import Control.Monad (foldM, forM, forM_, when)
+import Control.Monad (foldM, forM, forM_, when, unless)
 import Control.Monad.State
 import Data.Either (isLeft)
 import Data.IORef
@@ -22,6 +22,8 @@ import Text.Parsec.Pos
 import Text.Parsec.String
 import Type
 import qualified Data.Map.Strict as MS
+import System.Directory (doesFileExist, getModificationTime)
+import Control.Exception (catch, SomeException)
 
 -- Core Parsers
 -- ------------
@@ -34,6 +36,7 @@ data ParserState = ParserState
   , pCtrToCid  :: MS.Map String Word16
   , pCidToADT  :: MS.Map Word16 Word16
   , imported   :: MS.Map String ()
+  , cachedImported :: MS.Map String () 
   , varUsages  :: MS.Map String VarUsage
   , freshLabel :: Lab
   }
@@ -530,12 +533,19 @@ parseADTCtr = do
 parseBook :: ParserM [(String, ((Bool, [(Bool,String)]), Core))]
 parseBook = do
   skip
-  defs <- many $ do
+
+  cachedDefs <- many $ do
+    def <- try (parseTopImpCached)
+    skip
+    return def
+
+  otherDefs <- many $ do
     def <- choice [parseTopImp, parseTopADT, parseTopDef]
     skip
     return def
+
   try $ skip >> eof
-  return $ concat defs
+  return $ concat cachedDefs ++ concat otherDefs
 
 parseBookWithState :: ParserM ([(String, ((Bool, [(Bool,String)]), Core))], ParserState)
 parseBookWithState = do
@@ -552,6 +562,42 @@ parseTopDef :: ParserM [(String, ((Bool, [(Bool,String)]), Core))]
 parseTopDef = do
   def <- parseDef
   return [def]
+
+parseTopImpCached :: ParserM [(String, ((Bool, [(Bool,String)]), Core))]
+parseTopImpCached = do
+  string "importCached"
+  space
+  path <- many1 (noneOf "\n\r")
+  
+  -- Check for circular cached imports
+  st <- getState
+  when (MS.member path (cachedImported st)) $ do
+    fail $ "Circular importCached detected for " ++ show path
+  
+  -- Mark as cached import and process
+  if MS.member path (imported st) || MS.member path (cachedImported st)
+    then return []  -- Already imported (regular or cached), skip
+    else importFileCached path
+
+importFileCached :: String -> ParserM [(String, ((Bool, [(Bool,String)]), Core))]
+importFileCached path = do
+  -- Mark as cached import
+  modifyState (\s -> s { cachedImported = MS.insert path () (cachedImported s) })
+  
+  -- Read and parse the file
+  fileExists <- liftIO $ doesFileExist path
+  unless fileExists $ fail $ "Cannot find file to import: " ++ path
+  
+  contents <- liftIO $ readFile path
+  st <- getState
+  result <- liftIO $ runParserT parseBookWithState st path contents
+  
+  case result of
+    Left err -> handleParseError path contents err
+    Right (importedDefs, importedState) -> do
+      putState importedState
+      skip
+      return importedDefs
 
 parseTopImp :: ParserM [(String, ((Bool, [(Bool,String)]), Core))]
 parseTopImp = do
@@ -591,7 +637,7 @@ handleParseError path contents err = do
 
 -- Parse Book and Core
 doParseBook filePath code = do
-  result <- runParserT p (ParserState MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty 0) "" code
+  result <- runParserT p (ParserState MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty 0) "" code
   case result of
     Right (defs, st) -> do
       return $ createBook defs (pCtrToCid st) (pCidToAri st) (pCidToLen st) (pCidToADT st)
@@ -606,7 +652,7 @@ doParseBook filePath code = do
 
 doParseCore :: String -> IO Core
 doParseCore code = do
-  result <- runParserT parseCore (ParserState MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty 0) "" code
+  result <- runParserT parseCore (ParserState MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty 0) "" code
   case result of
     Right core -> return core
     Left err -> do

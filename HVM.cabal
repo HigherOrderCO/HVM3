@@ -34,6 +34,8 @@ executable hvm
                       libffi,
                       unix,
                       file-embed,
+                      directory^>=1.3.9.0,
+                      time,
     hs-source-dirs:   src
     default-language: GHC2024
     c-sources:        src/Runtime.c

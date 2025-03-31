@@ -6,10 +6,12 @@
 
 module Main where
 
-import Control.Monad (guard, when, forM_)
+import Control.Monad (guard, when, forM_, unless, foldM)
+import Control.Exception (catch, SomeException)
 import Data.FileEmbed
 import Data.List (partition, isPrefixOf, take, find)
 import Data.Word
+import Data.Time (UTCTime)
 import Foreign.C.Types
 import Foreign.LibFFI
 import Foreign.LibFFI.Types
@@ -21,6 +23,8 @@ import Extract
 import Foreign
 import Inject
 import Parse
+import Text.Parsec (runParserT)
+import System.IO.Unsafe (unsafePerformIO)
 import Reduce
 import Show
 import Type
@@ -35,6 +39,7 @@ import Text.Printf
 import Data.IORef
 import qualified Data.Map.Strict as MS
 import Text.Read (readMaybe)
+import System.Directory (createDirectoryIfMissing, doesFileExist, getModificationTime, getCurrentDirectory)
 
 runtime_c :: String
 runtime_c = $(embedStringFile "./src/Runtime.c")
@@ -95,71 +100,102 @@ printHelp = do
 
 cliRun :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> [String] -> IO (Either String ())
 cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
-  -- Initialize the HVM
   hvmInit
+  createDirectoryIfMissing True ".build"
+  
   code <- readFile' filePath
   book <- doParseBook filePath code
-  -- Set constructor arities, case length and ADT ids
-  forM_ (MS.toList (cidToAri book)) $ \ (cid, ari) -> do
-    hvmSetCari cid (fromIntegral ari)
-  forM_ (MS.toList (cidToLen book)) $ \ (cid, len) -> do
-    hvmSetClen cid (fromIntegral len)
-  forM_ (MS.toList (cidToADT book)) $ \ (cid, adt) -> do
-    hvmSetCadt cid (fromIntegral adt)
-  forM_ (MS.toList (fidToFun book)) $ \ (fid, ((_, args), _)) -> do
-    hvmSetFari fid (fromIntegral $ length args)
-  -- Compile to native
+  
+  -- Extract cached import paths from the parser state
+  parserStateResult <- runParserT parseBookWithState (ParserState MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty 0) "" code
+  let cachedPaths = case parserStateResult of
+        Right (_, st) -> MS.keys (cachedImported st)
+        Left _        -> []
+        
+  -- Split book into cached and non-cached parts
+  let (cachedDefs, localDefs) = partition (\(name, _) -> any (\path -> isPrefixOf path name) cachedPaths) (MS.toList (namToFid book))
+  let cachedBook = createSubBook book cachedDefs
+  let localBook = createSubBook book localDefs
+  
+  -- Compile cached imports if necessary
   when compiled $ do
-    -- Create the C file content
-    let decls = compileHeaders book
-    let funcs = map (\ (fid, _) -> compile book fid) (MS.toList (fidToFun book))
-    let mainC = unlines $ [runtime_c] ++ [decls] ++ funcs ++ [genMain book]
-    -- Try to use a cached .so file
-    callCommand "mkdir -p .build"
+    forM_ cachedPaths $ \cachedPath -> do
+      let cachedFName = last $ words $ map (\c -> if c == '/' then ' ' else c) cachedPath
+      let cachedCPath = ".build/" ++ cachedFName ++ ".c"
+      let cachedOPath = ".build/" ++ cachedFName ++ ".so"
+      let cachedBookSubset = filterBookByPath cachedBook cachedPath
+      
+      -- Check if we need to recompile by comparing the file modification time
+      needRecompile <- checkNeedRecompile cachedPath cachedOPath
+      
+      cachedLib <- if needRecompile
+        then do
+          -- Recompile if needed
+          let cContent = compileBookToC cachedBookSubset
+          writeFile cachedCPath cContent
+          callCommand $ "gcc -O2 -fPIC -shared " ++ cachedCPath ++ " -o " ++ cachedOPath
+          dlopen cachedOPath [RTLD_NOW]
+        else do
+          -- Just load the existing shared object
+          dlopen cachedOPath [RTLD_NOW]
+      
+      -- Register cached functions
+      forM_ (MS.keys (fidToFun cachedBookSubset)) $ \fid -> do
+        funPtr <- dlsym cachedLib (mget (fidToNam cachedBookSubset) fid ++ "_f")
+        hvmDefine fid funPtr
+  
+  -- Compile local book
+  when compiled $ do
+    let decls = compileHeaders localBook
+    let funcs = map (\(fid, _) -> compile localBook fid) (MS.toList (fidToFun localBook))
+    let mainC = unlines $ [runtime_c] ++ [decls] ++ funcs ++ [genMain localBook]
     let fName = last $ words $ map (\c -> if c == '/' then ' ' else c) filePath
     let cPath = ".build/" ++ fName ++ ".c"
     let oPath = ".build/" ++ fName ++ ".so"
-
+    
     oldCFile <- tryIOError (readFile' cPath)
-    bookLib <- if oldCFile == Right mainC then do
-      dlopen oPath [RTLD_NOW]
-    else do
-      writeFile cPath mainC
-      callCommand $ "gcc -O2 -fPIC -shared " ++ cPath ++ " -o " ++ oPath
-      dlopen oPath [RTLD_NOW]
-
-    -- Register compiled functions
-    forM_ (MS.keys (fidToFun book)) $ \ fid -> do
-      funPtr <- dlsym bookLib (mget (fidToNam book) fid ++ "_f")
+    bookLib <- if oldCFile == Right mainC
+      then dlopen oPath [RTLD_NOW]
+      else do
+        writeFile cPath mainC
+        callCommand $ "gcc -O2 -fPIC -shared " ++ cPath ++ " -o " ++ oPath
+        dlopen oPath [RTLD_NOW]
+    
+    -- Register local functions
+    forM_ (MS.keys (fidToFun localBook)) $ \fid -> do
+      funPtr <- dlsym bookLib (mget (fidToNam localBook) fid ++ "_f")
       hvmDefine fid funPtr
-    -- Link compiled state
+    
     hvmGotState <- hvmGetState
     hvmSetState <- dlsym bookLib "hvm_set_state"
     callFFI hvmSetState retVoid [argPtr hvmGotState]
-  -- Abort when main isn't present
-  when (not $ MS.member "main" (namToFid book)) $ do
-    putStrLn "Error: 'main' not found."
+  
+  -- Set up runtime state
+  forM_ (MS.toList (cidToAri book)) $ \ (cid, ari) -> hvmSetCari cid (fromIntegral ari)
+  forM_ (MS.toList (cidToLen book)) $ \ (cid, len) -> hvmSetClen cid (fromIntegral len)
+  forM_ (MS.toList (cidToADT book)) $ \ (cid, adt) -> hvmSetCadt cid (fromIntegral adt)
+  forM_ (MS.toList (fidToFun book)) $ \ (fid, ((_, args), _)) -> hvmSetFari fid (fromIntegral $ length args)
+  
+  -- Check for main in local file
+  when (not $ MS.member "main" (namToFid localBook)) $ do
+    putStrLn "Error: 'main' not found in local file."
     exitWith (ExitFailure 1)
-  -- Abort when wrong number of strArgs
+    
   let ((_, mainArgs), _) = mget (fidToFun book) (mget (namToFid book) "main")
   when (length strArgs /= length mainArgs) $ do
     putStrLn $ "Error: 'main' expects " ++ show (length mainArgs)
-              ++ " arguments, found " ++ show (length strArgs)
+               ++ " arguments, found " ++ show (length strArgs)
     exitWith (ExitFailure 1)
-  -- Normalize main
+  
   init <- getMonotonicTimeNSec
-  -- Convert string arguments to Core terms and inject them at runtime
   let args = map (\str -> foldr (\c acc -> Ctr "#Cons" [Chr c, acc]) (Ctr "#Nil" []) str) strArgs
   root <- doInjectCoreAt book (Ref "main" (mget (namToFid book) "main") args) 0 []
-  rxAt <- if compiled
-    then return (reduceCAt debug)
-    else return (reduceAt debug)
+  rxAt <- if compiled then return (reduceCAt debug) else return (reduceAt debug)
   vals <- case mode of
     Collapse _ -> doCollapseFlatAt rxAt book 0
     Normalize -> do
       core <- doExtractCoreAt rxAt book 0
       return [(doLiftDups core)]
-  -- Print results
   case mode of
     Collapse limit -> do
       lastItrs <- newIORef 0
@@ -172,13 +208,9 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
         writeIORef lastItrs currItrs
       putStrLn ""
     Normalize -> do
-      let output = if hideQuotes
-                   then removeQuotes (showCore (head vals))
-                   else showCore (head vals)
+      let output = if hideQuotes then removeQuotes (showCore (head vals)) else showCore (head vals)
       putStrLn output
-  -- Prints total time
   end <- getMonotonicTimeNSec
-  -- Show stats
   when showStats $ do
     itrs <- getItr
     size <- getLen
@@ -188,10 +220,83 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
     printf "TIME: %.7f seconds\n" time
     printf "SIZE: %llu nodes\n" size
     printf "PERF: %.3f MIPS\n" mips
-    return ()
-  -- Finalize
   hvmFree
   return $ Right ()
+
+-- Helper functions
+checkNeedRecompile :: FilePath -> FilePath -> IO Bool
+checkNeedRecompile sourcePath objectPath = do
+  sourceExists <- doesFileExist sourcePath
+  objectExists <- doesFileExist objectPath
+  
+  if not sourceExists then
+    return True -- Source doesn't exist, this is an error condition
+  else if not objectExists then
+    return True -- Object doesn't exist, need to compile
+  else do
+    -- Compare modification times
+    sourceTime <- getModificationTime sourcePath
+    objectTime <- getModificationTime objectPath
+    
+    -- Check if there are any imports in the source that might be newer
+    hasNewerImports <- checkImportsModTime sourcePath objectTime
+    
+    return (sourceTime > objectTime || hasNewerImports)
+
+checkImportsModTime :: FilePath -> UTCTime -> IO Bool
+checkImportsModTime filePath objTime = do
+  result <- (do
+    content <- readFile filePath
+    imports <- extractImports content
+    foldM (\acc imp -> do
+              exists <- doesFileExist imp
+              if exists then do
+                impTime <- getModificationTime imp
+                newerImports <- checkImportsModTime imp objTime
+                return (acc || impTime > objTime || newerImports)
+              else
+                return acc
+          ) False imports) `catch` \(_ :: SomeException) -> return False
+  return result
+
+extractImports :: String -> IO [FilePath]
+extractImports content = do
+  let contentLines = lines content
+  return $ concatMap extractImportPath contentLines
+  where
+    extractImportPath line 
+      | "import " `isPrefixOf` line = [drop 7 $ takeWhile (/= '\n') line]
+      | "importCached " `isPrefixOf` line = [drop 13 $ takeWhile (/= '\n') line]
+      | otherwise = []
+
+createSubBook :: Book -> [(String, Word16)] -> Book
+createSubBook fullBook defs = 
+  let namToFid' = MS.fromList defs
+      fidToNam' = MS.fromList (map (\(n, f) -> (f, n)) defs)
+      fidToFun' = MS.filterWithKey (\k _ -> k `elem` map snd defs) (fidToFun fullBook)
+      fidToLab' = MS.filterWithKey (\k _ -> k `elem` map snd defs) (fidToLab fullBook)
+  in Book
+       { fidToFun = fidToFun'
+       , fidToNam = fidToNam'
+       , fidToLab = fidToLab'
+       , namToFid = namToFid'
+       , cidToAri = cidToAri fullBook
+       , cidToCtr = cidToCtr fullBook
+       , ctrToCid = ctrToCid fullBook
+       , cidToLen = cidToLen fullBook
+       , cidToADT = cidToADT fullBook
+       }
+
+filterBookByPath :: Book -> String -> Book
+filterBookByPath book path =
+  let defs = filter (\(name, _) -> isPrefixOf path name) (MS.toList (namToFid book))
+  in createSubBook book defs
+
+compileBookToC :: Book -> String
+compileBookToC book =
+  let decls = compileHeaders book
+      funcs = map (\(fid, _) -> compile book fid) (MS.toList (fidToFun book))
+  in unlines $ [runtime_c] ++ [decls] ++ funcs
 
 genMain :: Book -> String
 genMain book =
