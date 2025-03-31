@@ -96,6 +96,7 @@ parseCore = do
     '('  -> parseExpression
     '@'  -> parseRef
     '&'  -> parseLabeled
+    '{'  -> parseUnlabeled
     '!'  -> parseLet
     '#'  -> parseCtr
     '~'  -> parseMat
@@ -118,6 +119,15 @@ parseLam = do
   consume "."
   bod <- bindVars [var] parseCore
   return $ Lam 0 var bod
+
+parseUnlabeled :: ParserM Core
+parseUnlabeled = do
+  consume "{"
+  tm0 <- parseCore
+  maybeConsume ","
+  tm1 <- parseCore
+  consume "}"
+  return $ Sup (0::Lab) tm0 tm1
 
 parseLabeled :: ParserM Core
 parseLabeled = do
@@ -370,6 +380,19 @@ parseLet = do
       else case reads nam of
         [(num :: Lab, "")] -> return $ Dup num dp0 dp1 val bod
         otherwise -> return $ Ref "DUP" (fromIntegral _DUP_F_) [Var ("&" ++ nam), val, Lam 0 dp0 (Lam 0 dp1 bod)]
+
+    '{' -> do
+      consume "{"
+      dp0 <- parseName1
+      maybeConsume ","
+      dp1 <- parseName1
+      consume "}"
+      consume "="
+      val <- parseCore
+      maybeConsume ";"
+      bod <- bindVars [dp0, dp1] parseCore
+      num <- genFreshLabel
+      return $ Dup (0::Lab) dp0 dp1 val bod
     
     -- Strict Let: !! x = val body
     '!' -> do
