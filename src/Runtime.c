@@ -39,7 +39,7 @@ typedef struct {
   u16    fari[65536]; // arity of each function
 } State;
 
-static State HVM = {
+State HVM = {
   .sbuf = NULL,
   .spos = NULL,
   .heap = NULL,

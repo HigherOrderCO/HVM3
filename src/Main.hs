@@ -103,10 +103,24 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
   hvmInit
   createDirectoryIfMissing True ".build"
   
+  -- Always compile Runtime.c separately to ensure we have a shared library for all other modules
+  let runtimeCPath = ".build/Runtime.c"
+  let runtimeOPath = ".build/libRuntime.so"  -- Use standard lib prefix
+  
+  writeFile runtimeCPath runtime_c
+  
+  currentDir <- getCurrentDirectory
+  let buildDir = currentDir ++ "/.build"
+  
+  callCommand $ "gcc -O2 -fPIC -shared -I./src " ++ runtimeCPath ++ " -o " ++ runtimeOPath
+    
+  runtimeExists <- doesFileExist runtimeOPath
+  unless runtimeExists $ do
+    error "Failed to create libRuntime.so shared library"
+  
   code <- readFile' filePath
   book <- doParseBook filePath code
   
-  -- Extract cached import paths from the parser state
   parserStateResult <- runParserT parseBookWithState (ParserState MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty 0) "" code
   let cachedPaths = case parserStateResult of
         Right (_, st) -> MS.keys (cachedImported st)
@@ -117,7 +131,12 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
   let cachedBook = createSubBook book cachedDefs
   let localBook = createSubBook book localDefs
   
-  -- Compile cached imports if necessary
+  runtimeLib <- if compiled
+                then do
+                  let runtimeOPath = ".build/libRuntime.so"
+                  dlopen runtimeOPath [RTLD_NOW, RTLD_GLOBAL]
+                else return (error "Runtime library not loaded in non-compiled mode")
+  
   when compiled $ do
     forM_ cachedPaths $ \cachedPath -> do
       let cachedFName = last $ words $ map (\c -> if c == '/' then ' ' else c) cachedPath
@@ -125,18 +144,27 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
       let cachedOPath = ".build/" ++ cachedFName ++ ".so"
       let cachedBookSubset = filterBookByPath cachedBook cachedPath
       
-      -- Check if we need to recompile by comparing the file modification time
       needRecompile <- checkNeedRecompile cachedPath cachedOPath
       
       cachedLib <- if needRecompile
         then do
-          -- Recompile if needed
-          let cContent = compileBookToC cachedBookSubset
+          let decls = compileHeaders cachedBookSubset
+          let funcs = map (\(fid, _) -> compile cachedBookSubset fid) (MS.toList (fidToFun cachedBookSubset))
+          let includes = unlines
+                [ "#include \"../src/Runtime.h\""
+                , "#include <stdio.h>"
+                , "#include <stdlib.h>"
+                , "#include <time.h>"
+                , "#include <inttypes.h>"
+                ]
+          let cContent = unlines [includes, decls] ++ unlines funcs
           writeFile cachedCPath cContent
-          callCommand $ "gcc -O2 -fPIC -shared " ++ cachedCPath ++ " -o " ++ cachedOPath
+          -- Link against the libRuntime.so with runtime path set
+          currentDir <- getCurrentDirectory
+          let absoluteBuildDir = currentDir ++ "/.build"
+          callCommand $ "gcc -O2 -fPIC -shared -I./src -L" ++ absoluteBuildDir ++ " -Wl,-rpath," ++ absoluteBuildDir ++ " -lRuntime " ++ cachedCPath ++ " -o " ++ cachedOPath
           dlopen cachedOPath [RTLD_NOW]
         else do
-          -- Just load the existing shared object
           dlopen cachedOPath [RTLD_NOW]
       
       -- Register cached functions
@@ -148,7 +176,14 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
   when compiled $ do
     let decls = compileHeaders localBook
     let funcs = map (\(fid, _) -> compile localBook fid) (MS.toList (fidToFun localBook))
-    let mainC = unlines $ [runtime_c] ++ [decls] ++ funcs ++ [genMain localBook]
+    let includes = unlines
+          [ "#include \"../src/Runtime.h\""
+          , "#include <stdio.h>"
+          , "#include <stdlib.h>"
+          , "#include <time.h>"
+          , "#include <inttypes.h>"
+          ]
+    let mainC = unlines [includes, decls] ++ unlines funcs ++ genMain localBook
     let fName = last $ words $ map (\c -> if c == '/' then ' ' else c) filePath
     let cPath = ".build/" ++ fName ++ ".c"
     let oPath = ".build/" ++ fName ++ ".so"
@@ -158,7 +193,10 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
       then dlopen oPath [RTLD_NOW]
       else do
         writeFile cPath mainC
-        callCommand $ "gcc -O2 -fPIC -shared " ++ cPath ++ " -o " ++ oPath
+        -- Link against the libRuntime.so with runtime path set
+        currentDir <- getCurrentDirectory
+        let absoluteBuildDir = currentDir ++ "/.build"
+        callCommand $ "gcc -O2 -fPIC -shared -I./src -L" ++ absoluteBuildDir ++ " -Wl,-rpath," ++ absoluteBuildDir ++ " -lRuntime " ++ cPath ++ " -o " ++ oPath
         dlopen oPath [RTLD_NOW]
     
     -- Register local functions
@@ -296,7 +334,14 @@ compileBookToC :: Book -> String
 compileBookToC book =
   let decls = compileHeaders book
       funcs = map (\(fid, _) -> compile book fid) (MS.toList (fidToFun book))
-  in unlines $ [runtime_c] ++ [decls] ++ funcs
+      includes = unlines
+        [ "#include \"../src/Runtime.h\""
+        , "#include <stdio.h>"
+        , "#include <stdlib.h>"
+        , "#include <time.h>"
+        , "#include <inttypes.h>"
+        ]
+  in unlines $ [includes, decls] ++ funcs
 
 genMain :: Book -> String
 genMain book =
