@@ -28,6 +28,7 @@ import System.Environment (getArgs)
 import System.Exit (exitWith, ExitCode(ExitSuccess, ExitFailure))
 import System.IO
 import System.IO (readFile')
+import System.IO.Unsafe (unsafePerformIO)
 import System.IO.Error (tryIOError)
 import System.Posix.DynamicLinker
 import System.Process (callCommand)
@@ -80,7 +81,7 @@ printHelp :: IO (Either String ())
 printHelp = do
   putStrLn "HVM usage:"
   putStrLn "  hvm help       # Shows this help message"
-  putStrLn "  hvm run <file> [flags] [string args...] # Evals main"
+  putStrLn "  hvm run <file> [flags] [args...] # Evals main"
   putStrLn "    -t  # Returns the type (experimental)"
   putStrLn "    -c  # Runs with compiled mode (fast)"
   putStrLn "    -C  # Collapse the result to a list of λ-Terms"
@@ -148,9 +149,13 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
     exitWith (ExitFailure 1)
   -- Normalize main
   init <- getMonotonicTimeNSec
-  -- Convert string arguments to Core terms and inject them at runtime
-  let args = map (\str -> foldr (\c acc -> Ctr "#Cons" [Chr c, acc]) (Ctr "#Nil" []) str) strArgs
-  root <- doInjectCoreAt book (Ref "main" (mget (namToFid book) "main") args) 0 []
+
+  -- Convert arguments to Core terms and inject them at runtime
+  let args = map parseArgument strArgs
+  let mainFid = mget (namToFid book) "main"
+  let rawTerm = Ref "main" mainFid args
+  let updatedTerm = setRefIds (namToFid book) rawTerm
+  root <- doInjectCoreAt book updatedTerm 0 []
   rxAt <- if compiled
     then return (reduceCAt debug)
     else return (reduceAt debug)
@@ -192,6 +197,9 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
   -- Finalize
   hvmFree
   return $ Right ()
+
+parseArgument :: String -> Core
+parseArgument str = unsafePerformIO $ doParseCore (str)
 
 genMain :: Book -> String
 genMain book =
