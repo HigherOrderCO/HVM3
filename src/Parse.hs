@@ -133,12 +133,12 @@ parseLabeled :: ParserM Core
 parseLabeled = do
   consume "&"
 
-  -- Try to parse a numeric label first
-  num <- optionMaybe $ try $ do
-    digits <- many1 digit
-    case reads digits of
-      [(num :: Lab, "")] -> return num
-      _                  -> fail "Not a number"
+  -- Try to parse a numeric label first, keeping the name
+  name <- parseName
+  let num = case reads name of
+              [(n :: Lab, "")] -> Just n
+              _                -> Nothing
+  when (null name) $ fail "Expect label after &"
   
   case num of
     -- Successfully read a numeric label
@@ -180,7 +180,6 @@ parseLabeled = do
     
     -- No numeric label found, parse as a normal variable or Sup
     Nothing -> do
-      name <- parseName
       next <- optionMaybe $ try $ lookAhead anyChar
       case next of
         -- Dynamic superposition with variable name &name{a b}
@@ -190,7 +189,7 @@ parseLabeled = do
           maybeConsume ","
           tm1 <- parseCore
           consume "}"
-          if null name then do
+          if name == "_" then do
             num <- genFreshLabel
             return $ Sup num tm0 tm1
           else do  
