@@ -36,9 +36,9 @@ coreToString core =
       Lam lab vr0 bod ->
         let bod' = coreToString bod in
         if lab == 0 then
-          "λ" ++ vr0 ++ " " ++ bod'
+          "λ" ++ vr0 ++ "." ++ bod'
         else
-          "&" ++ show lab ++ "λ" ++ vr0 ++ " " ++ bod'
+          "&" ++ show lab ++ "λ" ++ vr0 ++ "." ++ bod'
 
       App lab fun arg ->
         let fun' = coreToString fun in
@@ -51,12 +51,12 @@ coreToString core =
       Sup lab tm0 tm1 ->
         let tm0' = coreToString tm0 in
         let tm1' = coreToString tm1 in
-        "&" ++ show lab ++ "{" ++ tm0' ++ " " ++ tm1' ++ "}"
+        "&" ++ show lab ++ "{" ++ tm0' ++ "," ++ tm1' ++ "}"
 
       Dup lab dp0 dp1 val bod ->
         let val' = coreToString val in
         let bod' = coreToString bod in
-        "! &" ++ show lab ++ "{" ++ dp0 ++ " " ++ dp1 ++ "} = " ++ val' ++ "\n" ++ bod'
+        "! &" ++ show lab ++ "{" ++ dp0 ++ "," ++ dp1 ++ "} = " ++ val' ++ ";\n" ++ bod'
 
       Ref nam fid arg ->
         let arg' = intercalate " " (map coreToString arg) in
@@ -87,11 +87,11 @@ coreToString core =
         if nam == "" then
           let val' = coreToString val in
           let bod' = coreToString bod in
-          val' ++ "\n" ++ bod'
+          val' ++ ";\n" ++ bod'
         else
           let val' = coreToString val in
           let bod' = coreToString bod in
-          "! " ++ modeToString mod ++ nam ++ " = " ++ val' ++ "\n" ++ bod'
+          "! " ++ modeToString mod ++ nam ++ " = " ++ val' ++ ";\n" ++ bod'
 
 operToString :: Oper -> String
 operToString OP_ADD = "+"
@@ -233,7 +233,7 @@ prettyLst :: Core -> Maybe String
 prettyLst (Ctr "#Nil" []) = Just "[]"
 prettyLst (Ctr "#Cons" [x, xs]) = do
   rest <- prettyLst xs
-  return $ "[" ++ coreToString x ++ if rest == "[]" then "]" else " " ++ tail rest
+  return $ "[" ++ coreToString x ++ if rest == "[]" then "]" else ", " ++ tail rest
 prettyLst _ = Nothing
 
 -- Dumping
