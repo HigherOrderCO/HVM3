@@ -127,7 +127,7 @@ parseUnlabeled = do
   maybeConsume ","
   tm1 <- parseCore
   consume "}"
-  return $ Sup (0::Lab) tm0 tm1
+  return $ Sup 0 tm0 tm1
 
 parseLabeled :: ParserM Core
 parseLabeled = do
@@ -373,7 +373,8 @@ parseLet = do
       maybeConsume ";"
       bod <- bindVars [dp0, dp1] parseCore
 
-      if null nam then do
+      when (null nam) $ fail "Expected label after !&"
+      if (nam == "_") then do
         num <- genFreshLabel
         return $ Dup num dp0 dp1 val bod
       else case reads nam of
@@ -391,7 +392,7 @@ parseLet = do
       maybeConsume ";"
       bod <- bindVars [dp0, dp1] parseCore
       num <- genFreshLabel
-      return $ Dup (0::Lab) dp0 dp1 val bod
+      return $ Dup 0 dp0 dp1 val bod
     
     -- Strict Let: !! x = val body
     '!' -> do
