@@ -143,15 +143,12 @@ parseLabeled = do
   case num of
     -- Successfully read a numeric label
     Just label -> do
-      -- Skip spaces after the label
-      skip
-      
       -- Check what follows the label
       next <- lookAhead anyChar
       case next of
-        -- Labeled superposition &123 {a b}
+        -- Labeled superposition &123{a b}
         '{' -> do
-          consume "{"
+          string "{"
           tm0 <- parseCore
           maybeConsume ","
           tm1 <- parseCore
@@ -175,8 +172,7 @@ parseLabeled = do
           char ')'
           return $ foldl (\f a -> App label f a) fun args
         
-        -- This shouldn't happen with a numeric label
-        _ -> fail $ "Expected '{', 'λ' or '(' after &" ++ show label
+        _ -> fail $ "Expected '{' after &" ++ show label ++ " for SUPs"
     
     -- No numeric label found, parse as a normal variable or Sup
     Nothing -> do
@@ -184,7 +180,7 @@ parseLabeled = do
       case next of
         -- Dynamic superposition with variable name &name{a b}
         Just '{' -> do
-          consume "{"
+          string "{"
           tm0 <- parseCore
           maybeConsume ","
           tm1 <- parseCore
