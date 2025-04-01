@@ -201,6 +201,16 @@ parseLabeled = do
           checkVar ("&" ++ name)
           return $ Var ("&" ++ name)
 
+parseApplication :: ParserM Core
+parseApplication = do
+  consume "("
+  fun <- parseCore
+  args <- many $ do
+    closeWith ")"
+    parseCore
+  char ')'
+  return $ foldl (\f a -> App 0 f a) fun args
+
 parseExpression :: ParserM Core
 parseExpression = do
   next <- lookAhead (anyChar >> anyChar)
@@ -213,7 +223,11 @@ parseExpression = do
     '%' -> parseOper OP_MOD
     '=' -> parseOper OP_EQ
     '!' -> parseOper OP_NE
-    '&' -> parseOper OP_AND
+    '&' -> do
+      next2 <- lookAhead (anyChar >> anyChar >> anyChar)
+      case next2 of
+        ' ' -> parseOper OP_AND
+        _   -> parseApplication
     '|' -> parseOper OP_OR
     '^' -> parseOper OP_XOR
     '<' -> do
@@ -229,14 +243,15 @@ parseExpression = do
         '=' -> parseOper OP_GTE
         _   -> parseOper OP_GT
     -- Regular application (f x)
-    _ -> do
-      consume "("
-      fun <- parseCore
-      args <- many $ do
-        closeWith ")"
-        parseCore
-      char ')'
-      return $ foldl (\f a -> App 0 f a) fun args
+    _ -> parseApplication
+    -- _ -> do
+    --   consume "("
+    --   fun <- parseCore
+    --   args <- many $ do
+    --     closeWith ")"
+    --     parseCore
+    --   char ')'
+    --   return $ foldl (\f a -> App 0 f a) fun args
 
 parseRef :: ParserM Core
 parseRef = do
@@ -484,13 +499,13 @@ parseStr delim = do
 
 parseLst :: ParserM Core
 parseLst = do
-  skip
-  char '['
+  consume "["
   elems <- many $ do
-    maybeConsume ","
     closeWith "]"
-    parseCore
-  char ']'
+    core <- parseCore
+    maybeConsume ","
+    return core
+  consume "]"
   return $ foldr (\x acc -> Ctr "#Cons" [x, acc]) (Ctr "#Nil" []) elems
 
 -- Definitions and Data Type parsers
