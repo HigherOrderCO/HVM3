@@ -224,7 +224,6 @@ genMain book =
 
 cleanString :: String -> String
 cleanString [] = []
-cleanString "\"" = ""
 cleanString ('\\':'n':rest) = '\n' : cleanString rest
 cleanString (c:rest) = c : cleanString rest
 
