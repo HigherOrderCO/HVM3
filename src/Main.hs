@@ -229,5 +229,5 @@ cleanString (c:rest) = c : cleanString rest
 
 removeQuotes :: String -> String
 removeQuotes s = case s of
-  '"':rest -> init rest  -- Remove first and last quote if present
+  '"':rest -> cleanString $ init rest  -- Remove first and last quote if present
   _        -> s          -- Otherwise return as-is
