@@ -222,6 +222,12 @@ genMain book =
     , "}"
     ]
 
+cleanString :: String -> String
+cleanString [] = []
+cleanString "\"" = ""
+cleanString ('\\':'n':rest) = '\n' : cleanString rest
+cleanString (c:rest) = c : cleanString rest
+
 removeQuotes :: String -> String
 removeQuotes s = case s of
   '"':rest -> init rest  -- Remove first and last quote if present
