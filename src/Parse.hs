@@ -223,6 +223,7 @@ parseExpression = do
       args <- many $ do
         closeWith ")"
         parseCore
+      skip
       char ')'
       return $ foldl (\f a -> App 0 f a) fun args
 
@@ -458,6 +459,7 @@ parseLst = do
   elems <- many $ do
     closeWith "]"
     parseCore
+  skip
   char ']'
   return $ foldr (\x acc -> Ctr "#Cons" [x, acc]) (Ctr "#Nil" []) elems
 
