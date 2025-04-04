@@ -471,6 +471,8 @@ compileFastSave book fid term ctx itr reuse = do
 
 -- Helper function to allocate nodes with reuse
 compileFastAlloc :: Int -> MS.Map Int [String] -> Compile String
+compileFastAlloc 0     reuse = do
+ return $ "0"
 compileFastAlloc arity reuse = do
   return $ "alloc_node(" ++ show arity ++ ")"
   -- FIXME: temporarily disabled, caused bug in:
