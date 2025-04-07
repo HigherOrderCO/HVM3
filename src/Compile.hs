@@ -311,6 +311,13 @@ compileFastBody book fid term@(Mat val mov css) ctx stop@False itr reuse = do
     tabDec
     emit $ "}"
     tabDec
+    emit $ "} else {"
+    tabInc
+    val <- compileFastCore book fid term reuse
+    emit $ "itrs += " ++ show itr ++ ";"
+    compileFastSave book fid term ctx itr reuse
+    emit $ "return " ++ val ++ ";"
+    tabDec
     emit $ "}"
 
   -- Constructor Pattern-Matching (with IfLet)
@@ -355,6 +362,13 @@ compileFastBody book fid term@(Mat val mov css) ctx stop@False itr reuse = do
     tabDec
     emit $ "}"
     tabDec
+    emit $ "} else {"
+    tabInc
+    val <- compileFastCore book fid term reuse
+    emit $ "itrs += " ++ show itr ++ ";"
+    compileFastSave book fid term ctx itr reuse
+    emit $ "return " ++ val ++ ";"
+    tabDec
     emit $ "}"
 
   -- Constructor Pattern-Matching (without IfLet)
@@ -380,6 +394,13 @@ compileFastBody book fid term@(Mat val mov css) ctx stop@False itr reuse = do
       emit $ "}"
     tabDec
     emit $ "}"
+    tabDec
+    emit $ "} else {"
+    tabInc
+    val <- compileFastCore book fid term reuse
+    emit $ "itrs += " ++ show itr ++ ";"
+    compileFastSave book fid term ctx itr reuse
+    emit $ "return " ++ val ++ ";"
     tabDec
     emit $ "}"
 
@@ -451,8 +472,8 @@ compileFastBody book fid term@(Ref fNam fFid fArg) ctx stop itr reuse | fFid == 
   emit $ "continue;"
 
 compileFastBody book fid term ctx stop itr reuse = do
-  emit $ "itrs += " ++ show itr ++ ";"
   body <- compileFastCore book fid term reuse
+  emit $ "itrs += " ++ show itr ++ ";"
   compileFastSave book fid term ctx itr reuse
   emit $ "return " ++ body ++ ";"
 
