@@ -105,6 +105,14 @@ static State HVM = {
 // Heap
 // ----
 
+void set_len(u64 size) {
+  *HVM.size = size;
+}
+
+void set_itr(u64 itrs) {
+  *HVM.itrs = itrs;
+}
+
 u64 get_len() {
   return *HVM.size;
 }

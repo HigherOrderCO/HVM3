@@ -4,6 +4,12 @@ import Data.Word
 import Foreign.Ptr
 import Type
 
+foreign import ccall "set_len" 
+  setLen :: Word64 -> IO ()
+
+foreign import ccall "set_itr"
+  setItr :: Word64 -> IO ()
+
 foreign import ccall unsafe "Runtime.c hvm_init"
   hvmInit :: IO ()
 
