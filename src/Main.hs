@@ -7,7 +7,6 @@
 module Main where
 
 import Network.Socket as Network
-import System.IO (hFlush, stdout, hSetBuffering, Handle, IOMode(ReadWriteMode), hGetLine, hPutStrLn, hClose)
 import System.IO (hSetEncoding, utf8)
 import Control.Monad (guard, when, forM_, unless)
 import Data.FileEmbed
@@ -143,6 +142,11 @@ cliServe filePath debug compiled mode showStats hideQuotes = do
     hvmGotState <- hvmGetState
     hvmSetState <- dlsym bookLib "hvm_set_state"
     callFFI hvmSetState retVoid [argPtr hvmGotState]
+
+    when (not $ MS.member "main" (namToFid book)) $ do
+      putStrLn "Error: 'main' not found."
+      exitWith (ExitFailure 1)
+
   serveSocket book debug compiled mode showStats hideQuotes
 
   hvmFree
@@ -292,7 +296,8 @@ serveSocket book debug compiled mode showStats hideQuotes = do
         term <- doParseCore input
         let updatedTerm = setRefIds (namToFid book) term
         oldSize <- getLen
-        root <- doInjectCoreAt book updatedTerm 0 []
+        let mainFid = mget (namToFid book) "main"
+        root <- doInjectCoreAt book (Ref "main" mainFid [updatedTerm]) 0 []
         rxAt <- if compiled then return (reduceCAt debug) else return (reduceAt debug)
         vals <- case mode of
           Collapse _ -> doCollapseFlatAt rxAt book 0
@@ -312,8 +317,8 @@ serveSocket book debug compiled mode showStats hideQuotes = do
         when showStats $ do
           itrs <- getItr
           size <- getLen
-          printf "WORK: %llu interactions\n" itrs
-          printf "SIZE: %llu nodes\n" size
+          hPutStrLn h $ "WORK: " ++ (show itrs) ++ " interactions"
+          hPutStrLn h $ "SIZE: " ++ (show size) ++ " nodes"
           setItr 0
       hClose h
       loop sock
