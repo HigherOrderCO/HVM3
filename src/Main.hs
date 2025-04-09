@@ -121,7 +121,7 @@ cliServe filePath debug compiled mode showStats hideQuotes = do
     hvmSetCadt cid (fromIntegral adt)
   forM_ (MS.toList (fidToFun book)) $ \(fid, ((_, args), _)) -> do
     hvmSetFari fid (fromIntegral $ length args)
-  -- Compile to native if specified
+
   when compiled $ do
     let decls = compileHeaders book
     let funcs = map (\(fid, _) -> compile book fid) (MS.toList (fidToFun book))
@@ -143,19 +143,17 @@ cliServe filePath debug compiled mode showStats hideQuotes = do
     hvmGotState <- hvmGetState
     hvmSetState <- dlsym bookLib "hvm_set_state"
     callFFI hvmSetState retVoid [argPtr hvmGotState]
-  -- Start the socket server instead of REPL
   serveSocket book debug compiled mode showStats hideQuotes
-  -- Free resources when loop exits
+
   hvmFree
   return $ Right ()
 
 cliRun :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> [String] -> IO (Either String ())
 cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
-  -- Initialize the HVM
   hvmInit
   code <- readFile' filePath
   book <- doParseBook filePath code
-  -- Set constructor arities, case length and ADT ids
+
   forM_ (MS.toList (cidToAri book)) $ \ (cid, ari) -> do
     hvmSetCari cid (fromIntegral ari)
   forM_ (MS.toList (cidToLen book)) $ \ (cid, len) -> do
@@ -164,9 +162,8 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
     hvmSetCadt cid (fromIntegral adt)
   forM_ (MS.toList (fidToFun book)) $ \ (fid, ((_, args), _)) -> do
     hvmSetFari fid (fromIntegral $ length args)
-  -- Compile to native
+
   when compiled $ do
-    -- Create the C file content
     let decls = compileHeaders book
     let funcs = map (\ (fid, _) -> compile book fid) (MS.toList (fidToFun book))
     let mainC = unlines $ [runtime_c] ++ [decls] ++ funcs ++ [genMain book]
@@ -184,7 +181,6 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
       callCommand $ "gcc -O2 -fPIC -shared " ++ cPath ++ " -o " ++ oPath
       dlopen oPath [RTLD_NOW]
 
-    -- Register compiled functions
     forM_ (MS.keys (fidToFun book)) $ \ fid -> do
       funPtr <- dlsym bookLib (mget (fidToNam book) fid ++ "_f")
       hvmDefine fid funPtr
