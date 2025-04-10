@@ -278,12 +278,12 @@ compileFastBody :: Book -> Word16 -> Core -> [String] -> Bool -> Int -> Compile 
 compileFastBody book fid term@(Mat val mov css) ctx stop@False itr = do
   valT   <- compileFastCore book fid val
   valNam <- fresh "val"
-  numNam <- fresh "num"
   emit $ "Term " ++ valNam ++ " = (" ++ valT ++ ");"
   let isNumeric = length css > 0 && (let (ctr,fds,bod) = css !! 0 in ctr == "0")
 
   -- Numeric Pattern-Matching
   if isNumeric then do
+    numNam <- fresh "num"
     emit $ "if (term_tag("++valNam++") == W32) {"
     tabInc
     emit $ "u32 " ++ numNam ++ " = term_loc(" ++ valNam ++ ");"
@@ -297,7 +297,6 @@ compileFastBody book fid term@(Mat val mov css) ctx stop@False itr = do
           valT <- compileFastCore book fid val
           bind key valT
         compileFastBody book fid bod ctx stop (itr + 1 + length mov)
-        emit $ "break;"
         tabDec
         emit $ "}"
       else do
@@ -311,7 +310,6 @@ compileFastBody book fid term@(Mat val mov css) ctx stop@False itr = do
           valT <- compileFastCore book fid val
           bind key valT
         compileFastBody book fid bod ctx stop (itr + 1 + length fds + length mov)
-        emit $ "break;"
         tabDec
         emit $ "}"
     tabDec
@@ -349,7 +347,6 @@ compileFastBody book fid term@(Mat val mov css) ctx stop@False itr = do
         valT <- compileFastCore book fid val
         bind key valT
       compileFastBody book fid bod ctx stop (itr + 1 + length fds + length mov)
-      emit $ "break;"
       tabDec
       emit $ "}"
       modify $ \st -> st { reus = reuse' }
@@ -364,7 +361,6 @@ compileFastBody book fid term@(Mat val mov css) ctx stop@False itr = do
       valT <- compileFastCore book fid val
       bind key valT
     compileFastBody book fid dflBod ctx stop itrA
-    emit $ "break;"
     tabDec
     emit $ "}"
     tabDec
@@ -398,7 +394,6 @@ compileFastBody book fid term@(Mat val mov css) ctx stop@False itr = do
         valT <- compileFastCore book fid val
         bind key valT
       compileFastBody book fid bod ctx stop (itr + 1 + length fds + length mov)
-      emit $ "break;"
       tabDec
       emit $ "}"
       modify $ \st -> st { reus = reuse' }
@@ -413,8 +408,6 @@ compileFastBody book fid term@(Mat val mov css) ctx stop@False itr = do
     emit $ "return " ++ val ++ ";"
     tabDec
     emit $ "}"
-
-  compileFastUndo book fid term ctx itr
   where
     undoIfLetChain :: String -> Core -> [([(String,Core)], (String, [String], Core))]
     undoIfLetChain expNam term@(Mat (Var gotNam) mov [(ctr, fds, bod), ("_", [nxtNam], rest)]) =
@@ -486,16 +479,6 @@ compileFastBody book fid term ctx stop itr = do
   emit $ "itrs += " ++ show itr ++ ";"
   compileFastSave book fid term ctx itr
   emit $ "return " ++ body ++ ";"
-
--- Falls back from fast mode to full mode
-compileFastUndo :: Book -> Word16 -> Core -> [String] -> Int -> Compile ()
-compileFastUndo book fid term ctx itr = do
-  refNam <- fresh "ref"
-  compileFastAlloc refNam (length ctx)
-  forM_ (zip [0..] ctx) $ \ (i, arg) -> do
-    emit $ "set(" ++ refNam ++ " + " ++ show i ++ ", " ++ arg ++ ");"
-  compileFastSave book fid term ctx itr
-  emit $ "return " ++ mget (fidToNam book) fid ++ "_t(ref);"
 
 -- Completes a fast mode call
 compileFastSave :: Book -> Word16 -> Core -> [String] -> Int -> Compile ()
@@ -678,10 +661,12 @@ compileFastCore book fid (Op2 opr nu0 nu1) = do
         OP_RSH -> ">>"
   emit $ "  " ++ retNam ++ " = term_new(W32, 0, term_loc(" ++ nu0Nam ++ ") " ++ oprStr ++ " term_loc(" ++ nu1Nam ++ "));"
   emit $ "} else {"
+  tabInc
   compileFastAlloc opxNam 2
-  emit $ "  set(" ++ opxNam ++ " + 0, " ++ nu0Nam ++ ");"
-  emit $ "  set(" ++ opxNam ++ " + 1, " ++ nu1Nam ++ ");"
-  emit $ "  " ++ retNam ++ " = term_new(OPX, " ++ show (fromEnum opr) ++ ", " ++ opxNam ++ ");"
+  emit $ "set(" ++ opxNam ++ " + 0, " ++ nu0Nam ++ ");"
+  emit $ "set(" ++ opxNam ++ " + 1, " ++ nu1Nam ++ ");"
+  emit $ retNam ++ " = term_new(OPX, " ++ show (fromEnum opr) ++ ", " ++ opxNam ++ ");"
+  tabDec
   emit $ "}"
   return $ retNam
 
