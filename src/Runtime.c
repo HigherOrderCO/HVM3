@@ -362,7 +362,7 @@ Term reduce_let(Term let, Term val) {
   return bod;
 }
 
-// &L(* a)
+// (* a)
 // ------- APP-ERA
 // *
 Term reduce_app_era(Term app, Term era) {
@@ -371,69 +371,28 @@ Term reduce_app_era(Term app, Term era) {
   return era;
 }
 
-// &L(&Rλx(body) arg)
+// (λx(body) arg)
 // ---------------- APP-LAM
-// if &L == &R:
-//   x <- arg
-//   body
-// else:
-//   x <- &Lλy(z)
-//   &Rλz&L(body &R(arg y))
+// x <- arg
+// body
 Term reduce_app_lam(Term app, Term lam) {
   inc_itr();
   Loc app_loc = term_loc(app);
-  Lab app_lab = term_lab(app);
   Loc lam_loc = term_loc(lam);
-  Lab lam_lab = term_lab(lam);
   Term arg    = got(app_loc + 1);
   Term bod    = got(lam_loc + 0);
-  if (app_lab == lam_lab) {
-    // If labels match, perform standard substitution
-    sub(lam_loc + 0, arg);
-    return bod;
-  } else {
-    printf("swap\n");
-    // If labels differ, create new structures
-    Loc lam_y = alloc_node(1); // Will be &Lλy(z)
-    Loc lam_z = alloc_node(1); // Will be &Rλz(...)
-    
-    // Create a variable that will be bound by lam_z
-    Term var_y = term_new(VAR, 0, lam_y);
-    Term var_z = term_new(VAR, 0, lam_z);
-    
-    // Set up the new lambda that will replace x
-    set(lam_y + 0, var_z);
-    
-    // Substitute x with &Lλy(z)
-    sub(lam_loc + 0, term_new(LAM, app_lab, lam_y));
-    
-    // Create the inner application: &R(arg y)
-    Loc inn_app = alloc_node(2);
-    set(inn_app + 0, arg);
-    set(inn_app + 1, var_y);
-    
-    // Create the out application: &L(body &R(arg y))
-    Loc out_app = alloc_node(2);
-    set(out_app + 0, bod);
-    set(out_app + 1, term_new(APP, lam_lab, inn_app));
-    
-    // Set up the out lambda's body
-    set(lam_z + 0, term_new(APP, app_lab, out_app));
-    
-    // Return &Rλz(...)
-    return term_new(LAM, lam_lab, lam_z);
-  }
+  sub(lam_loc + 0, arg);
+  return bod;
 }
 
-// &R(&L{a b} c)
+// (&L{a b} c)
 // --------------------- APP-SUP
 // ! &L{x0 x1} = c
-// &L{&R(a x0) &R(b x1)}
+// &L{(a x0) (b x1)}
 Term reduce_app_sup(Term app, Term sup) {
   //printf("reduce_app_sup "); print_term(app); printf("\n");
   inc_itr();
   Loc app_loc = term_loc(app);
-  Lab app_lab = term_lab(app);
   Loc sup_loc = term_loc(sup);
   Lab sup_lab = term_lab(sup);
   Term arg    = got(app_loc + 1);
@@ -450,8 +409,8 @@ Term reduce_app_sup(Term app, Term sup) {
   set(ap0 + 1, term_new(DP0, sup_lab, du0));
   set(ap1 + 0, tm1);
   set(ap1 + 1, term_new(DP1, sup_lab, du0));
-  set(su0 + 0, term_new(APP, app_lab, ap0));
-  set(su0 + 1, term_new(APP, app_lab, ap1));
+  set(su0 + 0, term_new(APP, 0, ap0));
+  set(su0 + 1, term_new(APP, 0, ap1));
   return term_new(SUP, sup_lab, su0);
 }
 
@@ -485,11 +444,11 @@ Term reduce_dup_era(Term dup, Term era) {
   return term_rem_bit(era);
 }
 
-// ! &L{r s} = &Rλx(f)
+// ! &L{r s} = λx(f)
 // ------------------- DUP-LAM
 // ! &L{f0 f1} = f
-// r <- &Rλx0(f0)
-// s <- &Rλx1(f1)
+// r <- λx0(f0)
+// s <- λx1(f1)
 // x <- &L{x0 x1}
 Term reduce_dup_lam(Term dup, Term lam) {
   //printf("reduce_dup_lam "); print_term(dup); printf("\n");
@@ -497,7 +456,6 @@ Term reduce_dup_lam(Term dup, Term lam) {
   Loc dup_loc = term_loc(dup);
   Lab dup_lab = term_lab(dup);
   Loc lam_loc = term_loc(lam);
-  Lab lam_lab = term_lab(lam);
   Term bod    = got(lam_loc + 0);
   Loc du0     = alloc_node(1);
   Loc lm0     = alloc_node(1);
@@ -510,11 +468,11 @@ Term reduce_dup_lam(Term dup, Term lam) {
   set(su0 + 1, term_new(VAR, 0, lm1));
   sub(lam_loc + 0, term_new(SUP, dup_lab, su0));
   if (term_tag(dup) == DP0) {
-    sub(dup_loc + 0, term_new(LAM, lam_lab, lm1));
-    return term_new(LAM, lam_lab, lm0);
+    sub(dup_loc + 0, term_new(LAM, 0, lm1));
+    return term_new(LAM, 0, lm0);
   } else {
-    sub(dup_loc + 0, term_new(LAM, lam_lab, lm0));
-    return term_new(LAM, lam_lab, lm1);
+    sub(dup_loc + 0, term_new(LAM, 0, lm0));
+    return term_new(LAM, 0, lm1);
   }
 }
 
@@ -658,7 +616,7 @@ Term reduce_mat_era(Term mat, Term era) {
   return era;
 }
 
-// ~ &Lλx(x) {K0 K1 K2 ...}
+// ~ λx(x) {K0 K1 K2 ...}
 // ------------------------ MAT-LAM
 // ⊥
 Term reduce_mat_lam(Term mat, Term lam) {
@@ -783,7 +741,7 @@ Term reduce_opx_era(Term opx, Term era) {
   return era;
 }
 
-// <op(&Lλx(B) y)
+// <op(λx(B) y)
 // --------------- OPX-LAM
 // ⊥
 Term reduce_opx_lam(Term opx, Term lam) {

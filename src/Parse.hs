@@ -116,7 +116,7 @@ parseLam = do
   consume "λ"
   var <- parseName1
   bod <- bindVars [var] parseCore
-  return $ Lam 0 var bod
+  return $ Lam var bod
 
 parseLabeled :: ParserM Core
 parseLabeled = do
@@ -146,23 +146,6 @@ parseLabeled = do
           consume "}"
           return $ Sup label tm0 tm1
           
-        -- Labeled lambda &123 λx(body)
-        'λ' -> do
-          consume "λ"
-          var <- parseName1
-          bod <- bindVars [var] parseCore
-          return $ Lam label var bod
-          
-        -- Labeled application &123 (f x)
-        '(' -> do
-          consume "("
-          fun <- parseCore
-          args <- many $ do
-            closeWith ")"
-            parseCore
-          char ')'
-          return $ foldl (\f a -> App label f a) fun args
-        
         -- This shouldn't happen with a numeric label
         _ -> fail $ "Expected '{', 'λ' or '(' after &" ++ show label
     
@@ -225,7 +208,7 @@ parseExpression = do
         parseCore
       skip
       char ')'
-      return $ foldl (\f a -> App 0 f a) fun args
+      return $ foldl (\f a -> App f a) fun args
 
 parseRef :: ParserM Core
 parseRef = do
@@ -365,7 +348,7 @@ parseLet = do
         return $ Dup num dp0 dp1 val bod
       else case reads nam of
         [(num :: Lab, "")] -> return $ Dup num dp0 dp1 val bod
-        otherwise -> return $ Ref "DUP" (fromIntegral _DUP_F_) [Var ("&" ++ nam), val, Lam 0 dp0 (Lam 0 dp1 bod)]
+        otherwise -> return $ Ref "DUP" (fromIntegral _DUP_F_) [Var ("&" ++ nam), val, Lam dp0 (Lam dp1 bod)]
     
     -- Strict Let: !! x = val body
     '!' -> do
@@ -677,8 +660,8 @@ setRefIds :: MS.Map String Word16 -> Core -> Core
 setRefIds fids term = case term of
   Var nam       -> Var nam
   Let m x v b   -> Let m x (setRefIds fids v) (setRefIds fids b)
-  Lam l x bod   -> Lam l x (setRefIds fids bod)
-  App l f x     -> App l (setRefIds fids f) (setRefIds fids x)
+  Lam x bod     -> Lam x (setRefIds fids bod)
+  App f x       -> App (setRefIds fids f) (setRefIds fids x)
   Sup l x y     -> Sup l (setRefIds fids x) (setRefIds fids y)
   Dup l x y v b -> Dup l x y (setRefIds fids v) (setRefIds fids b)
   Ctr nam fds   -> Ctr nam (map (setRefIds fids) fds)
@@ -702,8 +685,8 @@ collectLabels term = case term of
   Era                 -> MS.empty
   Ref _ _ args        -> MS.unions $ map collectLabels args
   Let _ _ val bod     -> MS.union (collectLabels val) (collectLabels bod)
-  Lam lab _ bod       -> if lab == 0 then collectLabels bod else MS.insert lab () $ collectLabels bod
-  App lab fun arg     -> if lab == 0 then MS.union (collectLabels fun) (collectLabels arg) else MS.insert lab () $ MS.union (collectLabels fun) (collectLabels arg)
+  Lam _ bod           -> collectLabels bod
+  App fun arg         -> MS.union (collectLabels fun) (collectLabels arg)
   Sup lab tm0 tm1     -> MS.insert lab () $ MS.union (collectLabels tm0) (collectLabels tm1)
   Dup lab _ _ val bod -> MS.insert lab () $ MS.union (collectLabels val) (collectLabels bod)
   Ctr _ fds           -> MS.unions $ map collectLabels fds
@@ -740,16 +723,16 @@ lexify term = evalState (go term MS.empty) 0 where
       bod  <- go bod ctx
       return $ Let mod nam' val bod
 
-    Lam lab nam bod -> do
+    Lam nam bod -> do
       nam' <- fresh nam
       ctx  <- extend nam nam' ctx
       bod  <- go bod ctx
-      return $ Lam lab nam' bod
+      return $ Lam nam' bod
 
-    App lab fun arg -> do
+    App fun arg -> do
       fun <- go fun ctx
       arg <- go arg ctx
-      return $ App lab fun arg
+      return $ App fun arg
 
     Sup lab tm0 tm1 -> do
       tm0 <- go tm0 ctx

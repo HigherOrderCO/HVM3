@@ -90,17 +90,15 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
 
     LAM -> do
       let loc = termLoc term
-      let lab = termLab term
       name <- return $ "$" ++ show (loc + 0)
       bod0 <- collapseDupsAt state reduceAt book (loc + 0)
-      return $ Lam lab name bod0
+      return $ Lam name bod0
 
     APP -> do
       let loc = termLoc term
-      let lab = termLab term
       fun0 <- collapseDupsAt state reduceAt book (loc + 0)
       arg0 <- collapseDupsAt state reduceAt book (loc + 1)
-      return $ App lab fun0 arg0
+      return $ App fun0 arg0
 
     SUP -> do
       let loc = termLoc term
@@ -241,14 +239,14 @@ collapseSups book core = case core of
     args <- mapM (collapseSups book) args
     return $ Ref name fid args
 
-  Lam lab name body -> do
+  Lam name body -> do
     body <- collapseSups book body
-    return $ Lam lab name body
+    return $ Lam name body
 
-  App lab fun arg -> do
+  App fun arg -> do
     fun <- collapseSups book fun
     arg <- collapseSups book arg
-    return $ App lab fun arg
+    return $ App fun arg
 
   Dup lab x y val body -> do
     val <- collapseSups book val

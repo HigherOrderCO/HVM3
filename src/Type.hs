@@ -16,8 +16,8 @@ data Core
   = Var String -- x
   | Ref String Word16 [Core] -- @fn
   | Era -- *
-  | Lam Lab String Core -- &L λx(F)
-  | App Lab Core Core -- &L (f x)
+  | Lam String Core -- λx(F)
+  | App Core Core -- (f x)
   | Sup Lab Core Core -- &L{a b}
   | Dup Lab String String Core Core -- ! &L{a b} = v body
   | Ctr String [Core] -- #Ctr{a b ...}

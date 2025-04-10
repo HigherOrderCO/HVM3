@@ -37,17 +37,15 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
 
     LAM -> do
       let loc = termLoc term
-      let lab = termLab term
       name <- return $ "$" ++ show (loc + 0)
       bod  <- extractCoreAt dupsRef reduceAt book (loc + 0)
-      return $ Lam lab name bod
+      return $ Lam name bod
 
     APP -> do
       let loc = termLoc term
-      let lab = termLab term
       fun <- extractCoreAt dupsRef reduceAt book (loc + 0)
       arg <- extractCoreAt dupsRef reduceAt book (loc + 1)
-      return $ App lab fun arg
+      return $ App fun arg
 
     SUP -> do
       let loc = termLoc term
@@ -197,14 +195,14 @@ liftDups (Ref nam fid arg) =
 liftDups Era =
   (Era, id)
 
-liftDups (Lam lab str bod) =
+liftDups (Lam str bod) =
   let (bodT, bodD) = liftDups bod
-  in (Lam lab str bodT, bodD)
+  in (Lam str bodT, bodD)
 
-liftDups (App lab fun arg) =
+liftDups (App fun arg) =
   let (funT, funD) = liftDups fun
       (argT, argD) = liftDups arg
-  in (App lab funT argT, funD . argD)
+  in (App funT argT, funD . argD)
 
 liftDups (Sup lab tm0 tm1) =
   let (tm0T, tm0D) = liftDups tm0

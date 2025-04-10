@@ -46,17 +46,17 @@ injectCore book (Let mod nam val bod) loc = do
   injectCore book bod (let_node + 1)
   lift $ set loc (termNew _LET_ (fromIntegral $ fromEnum mod) let_node)
 
-injectCore book (Lam lab vr0 bod) loc = do
+injectCore book (Lam vr0 bod) loc = do
   lam <- lift $ allocNode 1
   modify $ \s -> s { args = MS.insert vr0 (termNew _VAR_ 0 (lam + 0)) (args s) }
   injectCore book bod (lam + 0)
-  lift $ set loc (termNew _LAM_ lab lam)
+  lift $ set loc (termNew _LAM_ 0 lam)
 
-injectCore book (App lab fun arg) loc = do
+injectCore book (App fun arg) loc = do
   app <- lift $ allocNode 2
   injectCore book fun (app + 0)
   injectCore book arg (app + 1)
-  lift $ set loc (termNew _APP_ lab app)
+  lift $ set loc (termNew _APP_ 0 app)
 
 injectCore book (Sup lab tm0 tm1) loc = do
   sup <- lift $ allocNode 2
@@ -95,7 +95,7 @@ injectCore book tm@(Mat val mov css) loc = do
   mat <- lift $ allocNode (1 + fromIntegral (length css))
   injectCore book val (mat + 0)
   forM_ (zip [0..] css) $ \ (idx, (ctr, fds, bod)) -> do
-    injectCore book (foldr (\x b -> Lam 0 x b) (foldr (\x b -> Lam 0 x b) bod (map fst mov)) fds) (mat + 1 + fromIntegral idx)
+    injectCore book (foldr (\x b -> Lam x b) (foldr (\x b -> Lam x b) bod (map fst mov)) fds) (mat + 1 + fromIntegral idx)
   let tag = case typ of { Switch -> _SWI_ ; Match  -> _MAT_ ; IfLet -> _IFL_ }
   let lab = case typ of { Switch -> fromIntegral $ length css ; _ -> fromIntegral $ matFirstCid book tm }
   trm <- return $ termNew tag lab mat
