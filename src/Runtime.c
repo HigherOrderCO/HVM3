@@ -13,6 +13,9 @@
 #include <time.h>
 #include <stdbool.h>
 
+#define MAX_HEAP_SIZE (1ULL << 30)  
+#define MAX_STACK_SIZE (1ULL << 28)
+
 typedef uint8_t  Tag;
 typedef uint32_t Lab;
 typedef uint32_t Loc;
@@ -209,6 +212,10 @@ Term take(Loc loc) {
 // ----------
 
 Loc alloc_node(Loc arity) {
+  if (*HVM.size + arity > MAX_HEAP_SIZE) {
+    printf("Heap memory limit exceeded\n");
+    exit(1);
+  }
   u64 old = *HVM.size;
   *HVM.size += arity;
   return old;
@@ -224,6 +231,10 @@ Loc inc_itr() {
 // ----
 
 void spush(Term term) {
+  if (*HVM.spos >= MAX_STACK_SIZE) {
+    printf("Stack memory limit exceeded\n");
+    exit(1);
+  }
   HVM.sbuf[(*HVM.spos)++] = term;
 }
 
@@ -1298,8 +1309,8 @@ void *alloc_huge(size_t size) {
 // --------------
 
 void hvm_init() {
-  HVM.sbuf = alloc_huge((1ULL << 32) * sizeof(Term)); 
-  HVM.heap = alloc_huge((1ULL << 32) * sizeof(ATerm));
+  HVM.sbuf = alloc_huge(MAX_STACK_SIZE * sizeof(Term)); 
+  HVM.heap = alloc_huge(MAX_HEAP_SIZE * sizeof(ATerm));
   HVM.spos = alloc_huge(sizeof(u64));
   HVM.size = alloc_huge(sizeof(u64));
   HVM.itrs = alloc_huge(sizeof(u64));
@@ -1349,8 +1360,8 @@ void hvm_munmap(void *ptr, size_t size, const char *name) {
 }
 
 void hvm_free() {
-    hvm_munmap(HVM.sbuf, (1ULL << 32) * sizeof(Term), "sbuf");
-    hvm_munmap(HVM.heap, (1ULL << 32) * sizeof(ATerm), "heap");
+    hvm_munmap(HVM.sbuf, MAX_STACK_SIZE * sizeof(Term), "sbuf");
+    hvm_munmap(HVM.heap, MAX_HEAP_SIZE * sizeof(ATerm), "heap");
     hvm_munmap(HVM.spos, sizeof(u64), "spos");
     hvm_munmap(HVM.size, sizeof(u64), "size");
     hvm_munmap(HVM.itrs, sizeof(u64), "itrs");
