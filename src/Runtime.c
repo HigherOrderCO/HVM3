@@ -4,7 +4,6 @@
 //./../GOAL//
 
 #include <inttypes.h>
-#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,7 +22,6 @@ typedef uint64_t Term;
 typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
-typedef _Atomic(Term) ATerm;
 
 // Runtime Types
 // -------------
@@ -31,7 +29,7 @@ typedef _Atomic(Term) ATerm;
 typedef struct {
   Term*  sbuf; // reduction stack buffer
   u64*   spos; // reduction stack position
-  ATerm* heap; // global node buffer
+  Term*  heap; // global node buffer
   u64*   size; // global node buffer position
   u64*   itrs; // interaction count
   u64*   frsh; // fresh dup label count
@@ -179,7 +177,8 @@ _Bool term_is_atom(Term term) {
 // -------
 
 Term swap(Loc loc, Term term) {
-  Term val = atomic_exchange_explicit(&HVM.heap[loc], term, memory_order_relaxed);
+  Term val = HVM.heap[loc];
+  HVM.heap[loc] = term;
   if (val == 0) {
     printf("SWAP 0 at %08llx\n", (u64)loc);
     exit(0);
@@ -188,7 +187,7 @@ Term swap(Loc loc, Term term) {
 }
 
 Term got(Loc loc) {
-  Term val = atomic_load_explicit(&HVM.heap[loc], memory_order_relaxed);
+  Term val = HVM.heap[loc];
   if (val == 0) {
     printf("GOT 0 at %08llx\n", (u64)loc);
     exit(0);
@@ -197,7 +196,7 @@ Term got(Loc loc) {
 }
 
 void set(Loc loc, Term term) {
-  atomic_store_explicit(&HVM.heap[loc], term, memory_order_relaxed);
+  HVM.heap[loc] = term;
 }
 
 void sub(Loc loc, Term term) {
@@ -1287,7 +1286,7 @@ void *alloc_huge(size_t size) {
 
 void hvm_init() {
   HVM.sbuf = alloc_huge(MAX_STACK_SIZE * sizeof(Term)); 
-  HVM.heap = alloc_huge(MAX_HEAP_SIZE * sizeof(ATerm));
+  HVM.heap = alloc_huge(MAX_HEAP_SIZE  * sizeof(Term));
   HVM.spos = alloc_huge(sizeof(u64));
   HVM.size = alloc_huge(sizeof(u64));
   HVM.itrs = alloc_huge(sizeof(u64));
@@ -1338,7 +1337,7 @@ void hvm_munmap(void *ptr, size_t size, const char *name) {
 
 void hvm_free() {
     hvm_munmap(HVM.sbuf, MAX_STACK_SIZE * sizeof(Term), "sbuf");
-    hvm_munmap(HVM.heap, MAX_HEAP_SIZE * sizeof(ATerm), "heap");
+    hvm_munmap(HVM.heap, MAX_HEAP_SIZE  * sizeof(Term), "heap");
     hvm_munmap(HVM.spos, sizeof(u64), "spos");
     hvm_munmap(HVM.size, sizeof(u64), "size");
     hvm_munmap(HVM.itrs, sizeof(u64), "itrs");
