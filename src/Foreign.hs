@@ -59,7 +59,7 @@ foreign import ccall unsafe "Runtime.c get_itr"
   getItr :: IO Word64
 
 foreign import ccall unsafe "Runtime.c inc_itr"
-  incItr :: IO Word64
+  incItr :: IO ()
 
 foreign import ccall unsafe "Runtime.c fresh"
   fresh :: IO Word64

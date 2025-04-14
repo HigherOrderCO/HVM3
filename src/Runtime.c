@@ -221,10 +221,8 @@ Loc alloc_node(Loc arity) {
   return old;
 }
 
-Loc inc_itr() {
-  u64 old = *HVM.itrs;
-  *HVM.itrs += 1;
-  return old;
+void inc_itr() {
+  (*HVM.itrs)++;
 }
 
 // Stack
