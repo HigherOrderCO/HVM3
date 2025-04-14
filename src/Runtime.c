@@ -925,6 +925,9 @@ Term reduce(Term term) {
     Lab lab = term_lab(next);
     Loc loc = term_loc(next);
 
+
+    // On variables: substitute
+    // On eliminators: move to field
     switch (tag) {
 
       case LET: {
@@ -1005,119 +1008,117 @@ Term reduce(Term term) {
         continue;
       }
 
-      default: {
-
-        if (spos == stop) {
-          break;
-        } else {
-          Term prev = spop(sbuf, &spos);
-          Tag  ptag = term_tag(prev);
-          Lab  plab = term_lab(prev);
-          Loc  ploc = term_loc(prev);
-          switch (ptag) {
-
-            case LET: {
-              next = reduce_let(prev, next);
-              continue;
-            }
-
-            case APP: {
-              switch (tag) {
-                case ERA: next = reduce_app_era(prev, next); continue;
-                case LAM: next = reduce_app_lam(prev, next); continue;
-                case SUP: next = reduce_app_sup(prev, next); continue;
-                case CTR: next = reduce_app_ctr(prev, next); continue;
-                case W32: next = reduce_app_w32(prev, next); continue;
-                case CHR: next = reduce_app_w32(prev, next); continue;
-                default: break;
-              }
-              break;
-            }
-
-            case DP0:
-            case DP1: {
-              switch (tag) {
-                case ERA: next = reduce_dup_era(prev, next); continue;
-                case LAM: next = reduce_dup_lam(prev, next); continue;
-                case SUP: next = reduce_dup_sup(prev, next); continue;
-                case CTR: next = reduce_dup_ctr(prev, next); continue;
-                case W32: next = reduce_dup_w32(prev, next); continue;
-                case CHR: next = reduce_dup_w32(prev, next); continue;
-                default: break;
-              }
-              break;
-            }
-
-            case MAT:
-            case IFL:
-            case SWI: {
-              switch (tag) {
-                case ERA: next = reduce_mat_era(prev, next); continue;
-                case LAM: next = reduce_mat_lam(prev, next); continue;
-                case SUP: next = reduce_mat_sup(prev, next); continue;
-                case CTR: next = reduce_mat_ctr(prev, next); continue;
-                case W32: next = reduce_mat_w32(prev, next); continue;
-                case CHR: next = reduce_mat_w32(prev, next); continue;
-                default: break;
-              }
-            }
-
-            case OPX: {
-              switch (tag) {
-                case ERA: next = reduce_opx_era(prev, next); continue;
-                case LAM: next = reduce_opx_lam(prev, next); continue;
-                case SUP: next = reduce_opx_sup(prev, next); continue;
-                case CTR: next = reduce_opx_ctr(prev, next); continue;
-                case W32: next = reduce_opx_w32(prev, next); continue;
-                case CHR: next = reduce_opx_w32(prev, next); continue;
-                default: break;
-              }
-            }
-
-            case OPY: {
-              switch (tag) {
-                case ERA: next = reduce_opy_era(prev, next); continue;
-                case LAM: next = reduce_opy_lam(prev, next); continue;
-                case SUP: next = reduce_opy_sup(prev, next); continue;
-                case CTR: next = reduce_opy_ctr(prev, next); continue;
-                case W32: next = reduce_opy_w32(prev, next); continue;
-                case CHR: next = reduce_opy_w32(prev, next); continue;
-                default: break;
-              }
-            }
-
-            default: break;
-          }
-          break;
-        }
-      }
+      default: break;
     }
 
+    // Empty stack: term is in WHNF
     if (spos == stop) {
       *HVM.spos = spos;
       return next;
-    } else {
-      while (spos > stop) {
-        Term host = spop(sbuf, &spos);
-        Tag  htag = term_tag(host);
-        Lab  hlab = term_lab(host);
-        Loc  hloc = term_loc(host);
-        switch (htag) {
-          case APP: set(hloc + 0, next); break;
-          case DP0: 
-          case DP1: set(hloc + 0, next); break;
-          case LET: set(hloc + 0, next); break;
-          case MAT:
-          case IFL:
-          case SWI: set(hloc + 0, next); break;
-          case OPX: set(hloc + 0, next); break;
-          case OPY: set(hloc + 1, next); break;
-        }
-        next = host;
-      }
-      *HVM.spos = spos;
-      return sbuf[stop];
     }
+
+    // Interaction Dispatcher
+    Term prev = spop(sbuf, &spos);
+    Tag  ptag = term_tag(prev);
+    Lab  plab = term_lab(prev);
+    Loc  ploc = term_loc(prev);
+    switch (ptag) {
+
+      case LET: {
+        next = reduce_let(prev, next);
+        continue;
+      }
+
+      case APP: {
+        switch (tag) {
+          case ERA: next = reduce_app_era(prev, next); continue;
+          case LAM: next = reduce_app_lam(prev, next); continue;
+          case SUP: next = reduce_app_sup(prev, next); continue;
+          case CTR: next = reduce_app_ctr(prev, next); continue;
+          case W32: next = reduce_app_w32(prev, next); continue;
+          case CHR: next = reduce_app_w32(prev, next); continue;
+          default: break;
+        }
+      }
+
+      case DP0:
+      case DP1: {
+        switch (tag) {
+          case ERA: next = reduce_dup_era(prev, next); continue;
+          case LAM: next = reduce_dup_lam(prev, next); continue;
+          case SUP: next = reduce_dup_sup(prev, next); continue;
+          case CTR: next = reduce_dup_ctr(prev, next); continue;
+          case W32: next = reduce_dup_w32(prev, next); continue;
+          case CHR: next = reduce_dup_w32(prev, next); continue;
+          default: break;
+        }
+      }
+
+      case MAT:
+      case IFL:
+      case SWI: {
+        switch (tag) {
+          case ERA: next = reduce_mat_era(prev, next); continue;
+          case LAM: next = reduce_mat_lam(prev, next); continue;
+          case SUP: next = reduce_mat_sup(prev, next); continue;
+          case CTR: next = reduce_mat_ctr(prev, next); continue;
+          case W32: next = reduce_mat_w32(prev, next); continue;
+          case CHR: next = reduce_mat_w32(prev, next); continue;
+          default: break;
+        }
+      }
+
+      case OPX: {
+        switch (tag) {
+          case ERA: next = reduce_opx_era(prev, next); continue;
+          case LAM: next = reduce_opx_lam(prev, next); continue;
+          case SUP: next = reduce_opx_sup(prev, next); continue;
+          case CTR: next = reduce_opx_ctr(prev, next); continue;
+          case W32: next = reduce_opx_w32(prev, next); continue;
+          case CHR: next = reduce_opx_w32(prev, next); continue;
+          default: break;
+        }
+      }
+
+      case OPY: {
+        switch (tag) {
+          case ERA: next = reduce_opy_era(prev, next); continue;
+          case LAM: next = reduce_opy_lam(prev, next); continue;
+          case SUP: next = reduce_opy_sup(prev, next); continue;
+          case CTR: next = reduce_opy_ctr(prev, next); continue;
+          case W32: next = reduce_opy_w32(prev, next); continue;
+          case CHR: next = reduce_opy_w32(prev, next); continue;
+          default: break;
+        }
+      }
+
+      default: break;
+    }
+
+    // No interaction: push term back to stack
+    spush(prev, sbuf, &spos);
+
+    // Update parent chain
+    while (spos > stop) {
+      Term host = spop(sbuf, &spos);
+      Tag  htag = term_tag(host);
+      Lab  hlab = term_lab(host);
+      Loc  hloc = term_loc(host);
+      switch (htag) {
+        case APP: set(hloc + 0, next); break;
+        case DP0: 
+        case DP1: set(hloc + 0, next); break;
+        case LET: set(hloc + 0, next); break;
+        case MAT:
+        case IFL:
+        case SWI: set(hloc + 0, next); break;
+        case OPX: set(hloc + 0, next); break;
+        case OPY: set(hloc + 1, next); break;
+      }
+      next = host;
+    }
+    *HVM.spos = spos;
+    return next;
   }
 }
 
