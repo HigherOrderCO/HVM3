@@ -228,16 +228,16 @@ void inc_itr() {
 // Stack
 // ----
 
-void spush(Term term) {
-  if (*HVM.spos >= MAX_STACK_SIZE) {
+void spush(Term term, Term* sbuf, u64* spos) {
+  if (*spos >= MAX_STACK_SIZE) {
     printf("Stack memory limit exceeded\n");
     exit(1);
   }
-  HVM.sbuf[(*HVM.spos)++] = term;
+  sbuf[(*spos)++] = term;
 }
 
-Term spop() {
-  return HVM.sbuf[--(*HVM.spos)];
+Term spop(Term* sbuf, u64* spos) {
+  return sbuf[--(*spos)];
 }
 
 // Stringification
@@ -907,9 +907,10 @@ Term reduce_opy_w32(Term opy, Term w32) {
 
 Term reduce(Term term) {
   if (term_tag(term) >= ERA) return term;
-  Term next = term;
-  u64  stop = *HVM.spos;
-  u64* spos = HVM.spos;
+  Term  next = term;
+  u64   stop = *HVM.spos;
+  u64   spos = stop;
+  Term* sbuf = HVM.sbuf;
 
   while (1) {
     //printf("NEXT "); print_term(term); printf("\n");
@@ -933,7 +934,7 @@ Term reduce(Term term) {
             continue;
           }
           case STRI: {
-            spush(next);
+            spush(next, sbuf, &spos);
             next = got(loc + 0);
             continue;
           }
@@ -949,7 +950,7 @@ Term reduce(Term term) {
       }
 
       case APP: {
-        spush(next);
+        spush(next, sbuf, &spos);
         next = got(loc + 0);
         continue;
       }
@@ -957,19 +958,19 @@ Term reduce(Term term) {
       case MAT:
       case IFL:
       case SWI: {
-        spush(next);
+        spush(next, sbuf, &spos);
         next = got(loc + 0);
         continue;
       }
 
       case OPX: {
-        spush(next);
+        spush(next, sbuf, &spos);
         next = got(loc + 0);
         continue;
       }
 
       case OPY: {
-        spush(next);
+        spush(next, sbuf, &spos);
         next = got(loc + 1);
         continue;
       }
@@ -978,7 +979,7 @@ Term reduce(Term term) {
       case DP1: {
         Term sub = got(loc + 0);
         if (term_get_bit(sub) == 0) {
-          spush(next);
+          spush(next, sbuf, &spos);
           next = sub;
           continue;
         } else {
@@ -998,16 +999,18 @@ Term reduce(Term term) {
       }
 
       case REF: {
-        next = reduce_ref(next); // TODO
+        *HVM.spos = spos;
+        next = reduce_ref(next);
+        spos = *HVM.spos;
         continue;
       }
 
       default: {
 
-        if ((*spos) == stop) {
+        if (spos == stop) {
           break;
         } else {
-          Term prev = HVM.sbuf[--(*spos)];
+          Term prev = spop(sbuf, &spos);
           Tag  ptag = term_tag(prev);
           Lab  plab = term_lab(prev);
           Loc  ploc = term_loc(prev);
@@ -1090,11 +1093,12 @@ Term reduce(Term term) {
       }
     }
 
-    if ((*HVM.spos) == stop) {
+    if (spos == stop) {
+      *HVM.spos = spos;
       return next;
     } else {
-      while ((*HVM.spos) > stop) {
-        Term host = spop();
+      while (spos > stop) {
+        Term host = spop(sbuf, &spos);
         Tag  htag = term_tag(host);
         Lab  hlab = term_lab(host);
         Loc  hloc = term_loc(host);
@@ -1111,12 +1115,10 @@ Term reduce(Term term) {
         }
         next = host;
       }
-      return HVM.sbuf[stop];
+      *HVM.spos = spos;
+      return sbuf[stop];
     }
-
   }
-  printf("retr: ERR\n");
-  return 0;
 }
 
 Term reduce_at(Loc host) {
