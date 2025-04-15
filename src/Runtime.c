@@ -808,12 +808,14 @@ Term reduce_opx_ctr(Term opx, Term ctr) {
 // <op(x0 x1)
 // ---------- OPX-W32
 // >op(x0 x1)
-Term reduce_opx_w32(Term opx, Term w32) {
+Term reduce_opx_w32(Term opx, Term nmx) {
   //printf("reduce_opx_w32 "); print_term(opx); printf("\n");
   inc_itr();
   Lab opx_lab = term_lab(opx);
   Loc opx_loc = term_loc(opx);
-  set(opx_loc + 0, w32);
+  Term nmy = got(opx_loc + 1);
+  set(opx_loc + 0, nmy);
+  set(opx_loc + 1, nmx);
   return term_new(OPY, opx_lab, opx_loc);
 }
 
@@ -844,16 +846,16 @@ Term reduce_opy_sup(Term opy, Term sup) {
   Loc opy_loc = term_loc(opy);
   Loc sup_loc = term_loc(sup);
   Lab sup_lab = term_lab(sup);
-  Term nmx    = got(opy_loc + 0);
+  Term nmx    = got(opy_loc + 1);
   Term tm0    = got(sup_loc + 0);
   Term tm1    = got(sup_loc + 1);
-  Loc op0     = opy_loc;
-  Loc op1     = sup_loc;
+  Loc op0     = sup_loc;
+  Loc op1     = opy_loc;
   Loc su0     = alloc_node(2);
-  // set(op0 + 0, nmx);
-  set(op0 + 1, tm0);
-  set(op1 + 0, nmx);
-  // set(op1 + 1, tm1);
+  //set(op0 + 0, tm0);
+  set(op0 + 1, nmx);
+  set(op1 + 0, tm1);
+  //set(op1 + 1, nmx);
   set(su0 + 0, term_new(OPY, term_lab(opy), op0));
   set(su0 + 1, term_new(OPY, term_lab(opy), op1));
   return term_new(SUP, sup_lab, su0);
@@ -876,7 +878,7 @@ Term reduce_opy_w32(Term opy, Term w32) {
   inc_itr();
   Loc opy_loc = term_loc(opy);
   Tag t = term_tag(w32);
-  u32 x = term_loc(got(opy_loc + 0));
+  u32 x = term_loc(got(opy_loc + 1));
   u32 y = term_loc(w32);
   u32 result;
   switch (term_lab(opy)) {
@@ -951,29 +953,14 @@ Term reduce(Term term) {
         }
       }
 
-      case APP: {
-        spush(next, sbuf, &spos);
-        next = got(loc + 0);
-        continue;
-      }
-
+      case APP:
       case MAT:
       case IFL:
-      case SWI: {
-        spush(next, sbuf, &spos);
-        next = got(loc + 0);
-        continue;
-      }
-
-      case OPX: {
-        spush(next, sbuf, &spos);
-        next = got(loc + 0);
-        continue;
-      }
-
+      case SWI:
+      case OPX:
       case OPY: {
         spush(next, sbuf, &spos);
-        next = got(loc + 1);
+        next = got(loc + 0);
         continue;
       }
 
@@ -1103,17 +1090,7 @@ Term reduce(Term term) {
       Tag  htag = term_tag(host);
       Lab  hlab = term_lab(host);
       Loc  hloc = term_loc(host);
-      switch (htag) {
-        case APP: set(hloc + 0, next); break;
-        case DP0: 
-        case DP1: set(hloc + 0, next); break;
-        case LET: set(hloc + 0, next); break;
-        case MAT:
-        case IFL:
-        case SWI: set(hloc + 0, next); break;
-        case OPX: set(hloc + 0, next); break;
-        case OPY: set(hloc + 1, next); break;
-      }
+      set(hloc + 0, next);
       next = host;
     }
     *HVM.spos = spos;

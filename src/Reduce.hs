@@ -99,7 +99,7 @@ reduceAt debug book host = do
         _   -> set (loc + 0) val >> return term
 
     OPY -> do
-      val <- reduceAt debug book (loc + 1)
+      val <- reduceAt debug book (loc + 0)
       case tagT (termTag val) of
         ERA -> cont host (reduceOpyEra term val)
         LAM -> cont host (reduceOpyLam term val)
@@ -107,7 +107,7 @@ reduceAt debug book host = do
         CTR -> cont host (reduceOpyCtr term val)
         W32 -> cont host (reduceOpyW32 term val)
         CHR -> cont host (reduceOpyW32 term val)
-        _   -> set (loc + 1) val >> return term
+        _   -> set (loc + 0) val >> return term
 
     DP0 -> do
       sb0 <- got (loc + 0)

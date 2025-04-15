@@ -149,16 +149,16 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
     OPX -> do
       let loc = termLoc term
       let opr = toEnum (fromIntegral (termLab term))
-      nm0 <- extractCoreAt dupsRef reduceAt book (loc + 0)
-      nm1 <- extractCoreAt dupsRef reduceAt book (loc + 1)
-      return $ Op2 opr nm0 nm1
+      nmx <- extractCoreAt dupsRef reduceAt book (loc + 0)
+      nmy <- extractCoreAt dupsRef reduceAt book (loc + 1)
+      return $ Op2 opr nmx nmy
 
     OPY -> do
       let loc = termLoc term
       let opr = toEnum (fromIntegral (termLab term))
-      nm0 <- extractCoreAt dupsRef reduceAt book (loc + 0)
-      nm1 <- extractCoreAt dupsRef reduceAt book (loc + 1)
-      return $ Op2 opr nm0 nm1
+      nmy <- extractCoreAt dupsRef reduceAt book (loc + 0)
+      nmx <- extractCoreAt dupsRef reduceAt book (loc + 1)
+      return $ Op2 opr nmx nmy
 
     REF -> do
       let loc = termLoc term
