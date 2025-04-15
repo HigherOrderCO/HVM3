@@ -82,7 +82,6 @@ compileFull :: Book -> Word16 -> Core -> Bool -> [(Bool,String)] -> Compile ()
 compileFull book fid core copy args = do
   emit $ "Term " ++ mget (fidToNam book) fid ++ "_t(Term ref) {"
   tabInc
-  emit "HVM.interactions->ref_t[term_lab(ref)]++;"
   forM_ (zip [0..] args) $ \(i, arg) -> do
     argVar <- fresh "arg"
     if fst arg
@@ -225,6 +224,7 @@ compileFast :: Book -> Word16 -> Core -> Bool -> [(Bool,String)] -> Compile ()
 compileFast book fid core copy args = do
   emit $ "Term " ++ mget (fidToNam book) fid ++ "_f(Term ref) {"
   tabInc
+  emit "HVM.interactions->ref_fast[term_lab(ref)]++;"
   emit "u64 itrs = 0;"
   args <- forM (zip [0..] args) $ \ (i, (strict, arg)) -> do
     argNam <- fresh "arg"
@@ -239,8 +239,6 @@ compileFast book fid core copy args = do
           emit $ "  itrs += 1;"
           emit $ "  *HVM.itrs += itrs;"
           emit $ "  HVM.interactions->ref_era[" ++ show fid ++ "]++;"
-          emit $ "  itrs += 1;"
-          emit $ "  *HVM.itrs += itrs;"
           emit $ "  return term_new(ERA, 0, 0);"
           emit $ "}"
           emit $ "if (term_tag(" ++ argNam ++ ") == SUP) {"
@@ -273,6 +271,7 @@ compileFastArgs book fid body ctx = do
   emit $ "_Bool fst_iter = 1;"
   emit $ "while (1) {"
   tabInc
+  emit $ "HVM.interactions->ref_itrs[term_lab(ref)]++;"
   compileFastBody book fid body ctx False 0
   tabDec
   emit $ "}"
@@ -324,6 +323,7 @@ compileFastBody book fid term@(Mat val mov css) ctx stop@False itr = do
     val <- compileFastCore book fid term
     emit $ "itrs += " ++ show itr ++ ";"
     compileFastSave book fid term ctx itr
+    emit $ "HVM.interactions->ref_fall[term_lab(ref)]++;"
     emit $ "return " ++ val ++ ";"
     tabDec
     emit $ "}"
@@ -375,6 +375,7 @@ compileFastBody book fid term@(Mat val mov css) ctx stop@False itr = do
     val <- compileFastCore book fid term
     emit $ "itrs += " ++ show itr ++ ";"
     compileFastSave book fid term ctx itr
+    emit $ "HVM.interactions->ref_fall[term_lab(ref)]++;"
     emit $ "return " ++ val ++ ";"
     tabDec
     emit $ "}"
@@ -409,6 +410,7 @@ compileFastBody book fid term@(Mat val mov css) ctx stop@False itr = do
     val <- compileFastCore book fid term
     emit $ "itrs += " ++ show itr ++ ";"
     compileFastSave book fid term ctx itr
+    emit $ "HVM.interactions->ref_fall[term_lab(ref)]++;"
     emit $ "return " ++ val ++ ";"
     tabDec
     emit $ "}"
@@ -482,6 +484,7 @@ compileFastBody book fid term ctx stop itr = do
   body <- compileFastCore book fid term
   emit $ "itrs += " ++ show itr ++ ";"
   compileFastSave book fid term ctx itr
+  emit $ "HVM.interactions->ref_fall[term_lab(ref)]++;"
   emit $ "return " ++ body ++ ";"
 
 -- Completes a fast mode call
@@ -737,6 +740,7 @@ compileSlow :: Book -> Word16 -> Core -> Bool -> [(Bool,String)] -> Compile ()
 compileSlow book fid core copy args = do
   book <- return book
   emit $ "Term " ++ mget (fidToNam book) fid ++ "_f(Term ref) {"
+  emit $ "  HVM.interactions->ref_slow[term_lab(ref)]++;"
   emit $ "  return " ++ mget (fidToNam book) fid ++ "_t(ref);"
   emit $ "}"
 

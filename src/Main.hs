@@ -61,8 +61,9 @@ main = do
       let stats          = "-s" `elem` flags
       let debug          = "-d" `elem` flags
       let hideQuotes     = "-Q" `elem` flags
+      let interactions   = "-I" `elem` flags
       let mode           = case collapseFlag of { Just n -> Collapse n ; Nothing -> Normalize }
-      cliRun file debug compiled mode stats hideQuotes sArgs
+      cliRun file debug compiled mode stats hideQuotes interactions sArgs
     ("serve" : file : rest) -> do
       let (flags, _)     = partition ("-" `isPrefixOf`) rest
       let compiled       = "-c" `elem` flags
@@ -98,6 +99,7 @@ printHelp = do
   putStrLn "    -C  # Collapse the result to a list of λ-Terms"
   putStrLn "    -CN # Same as above, but show only first N results"
   putStrLn "    -s  # Show statistics"
+  putStrLn "    -I  # Show interaction statistics"
   putStrLn "    -d  # Print execution steps (debug mode)"
   putStrLn "    -Q  # Hide quotes in output"
   return $ Right ()
@@ -152,8 +154,8 @@ cliServe filePath debug compiled mode showStats hideQuotes = do
   hvmFree
   return $ Right ()
 
-cliRun :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> [String] -> IO (Either String ())
-cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
+cliRun :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> Bool -> [String] -> IO (Either String ())
+cliRun filePath debug compiled mode showStats hideQuotes interactions strArgs = do
   hvmInit
   code <- readFile' filePath
   book <- doParseBook filePath code
@@ -248,8 +250,9 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
     printf "TIME: %.7f seconds\n" time
     printf "SIZE: %llu nodes\n" size
     printf "PERF: %.3f MIPS\n" mips
-    printInteractions book
     return ()
+  when interactions $ do
+    printInteractions book
   -- Finalize
   hvmFree
   return $ Right ()
@@ -285,31 +288,50 @@ printInteractions book = do
         , ("ref_sup (total)", foldM (\acc i -> hvmGetRefSup i >>= \count -> return (acc + count)) 0 [0..65535])
         , ("ref_dup (total)", foldM (\acc i -> hvmGetRefDup i >>= \count -> return (acc + count)) 0 [0..65535])
         , ("ref_era (total)", foldM (\acc i -> hvmGetRefEra i >>= \count -> return (acc + count)) 0 [0..65535])
-        , ("ref_f (total)", foldM (\acc i -> hvmGetRefF i >>= \count -> return (acc + count)) 0 [0..65535])
-        , ("ref_t (total)", foldM (\acc i -> hvmGetRefT i >>= \count -> return (acc + count)) 0 [0..65535])
+        , ("ref_fast (total)", foldM (\acc i -> hvmGetRefFast i >>= \count -> return (acc + count)) 0 [0..65535])
+        , ("ref_slow (total)", foldM (\acc i -> hvmGetRefSlow i >>= \count -> return (acc + count)) 0 [0..65535])
+        , ("ref_itrs (total)", foldM (\acc i -> hvmGetRefItrs i >>= \count -> return (acc + count)) 0 [0..65535])
+        , ("ref_fall (total)", foldM (\acc i -> hvmGetRefFall i >>= \count -> return (acc + count)) 0 [0..65535])
         ]
 
   putStrLn "Interactions:"
   forM_ baseFns $ \(name, fn) -> do
     count <- fn
-    printf "  %s: %llu\n" name count
+    printf "  %s: %s\n" name (formatLargeNumber count)
   
   putStrLn "Ctr interactions:"
   forM_ (MS.toList (cidToCtr book)) $ \(i, name) -> do
     dupCount <- hvmGetDupCtr i
     matCount <- hvmGetMatCtr i
     when (matCount > 0 || dupCount > 0) $ do
-      printf "  %-15s: mat_ctr:%-12llu dup_ctr:%-12llu\n" name matCount dupCount  
+      printf "  %-15s: mat_ctr:%-12s dup_ctr:%-12s\n" name (formatLargeNumber matCount) (formatLargeNumber dupCount)  
 
   putStrLn "Call interactions:"
   forM_ (MS.toList (fidToFun book)) $ \(fid, (_, _)) -> do
-    callF <- hvmGetRefF fid
-    callT <- hvmGetRefT fid
+    refFast <- hvmGetRefFast fid
+    refSlow <- hvmGetRefSlow fid
+    refItrs <- hvmGetRefItrs fid
+    refFall <- hvmGetRefFall fid
     refEra <- hvmGetRefEra fid
     refDup <- hvmGetRefDup fid
     refSup <- hvmGetRefSup fid
-    when (callF > 0) $ do
-      printf "  %-15s: call_f:%-10llu call_t:%-10llu dup:%-10llu sup:%-10llu era:%-10llu\n" (mget (fidToNam book) fid) callF callT refDup refSup refEra
+    when (refFast > 0 || refSlow > 0) $ do
+      (printf
+        "  %-15s: fast:%-10s itrs:%-10s fall:%-10s slow:%-10s sup:%-10s era:%-10s dup:%-10s\n"
+        (mget (fidToNam book) fid) 
+        (formatLargeNumber refFast) 
+        (formatLargeNumber refItrs) 
+        (formatLargeNumber refFall) 
+        (formatLargeNumber refSlow) 
+        (formatLargeNumber refSup) 
+        (formatLargeNumber refEra) 
+        (formatLargeNumber refDup))
+
+-- Helper to format large numbers
+formatLargeNumber :: Word64 -> String
+formatLargeNumber n
+  | n < 1000000 = show n
+  | otherwise     = printf "%.3f M" (fromIntegral n / 1000000.0 :: Double)
 
 genMain :: Book -> String
 genMain book =

@@ -200,5 +200,7 @@ foreign import ccall unsafe "Runtime.c hvm_get_opy_w32"     hvmGetOpyW32 :: IO W
 foreign import ccall unsafe "Runtime.c hvm_get_ref_dup"     hvmGetRefDup :: Word16 -> IO Word64
 foreign import ccall unsafe "Runtime.c hvm_get_ref_sup"     hvmGetRefSup :: Word16 -> IO Word64
 foreign import ccall unsafe "Runtime.c hvm_get_ref_era"     hvmGetRefEra :: Word16 -> IO Word64
-foreign import ccall unsafe "Runtime.c hvm_get_ref_f"       hvmGetRefF :: Word16 -> IO Word64
-foreign import ccall unsafe "Runtime.c hvm_get_ref_t"       hvmGetRefT :: Word16 -> IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_ref_fast"    hvmGetRefFast :: Word16 -> IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_ref_slow"    hvmGetRefSlow :: Word16 -> IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_ref_fall"    hvmGetRefFall :: Word16 -> IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_ref_itrs"    hvmGetRefItrs :: Word16 -> IO Word64

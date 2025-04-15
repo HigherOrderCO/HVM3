@@ -52,8 +52,10 @@ typedef struct {
   u64 ref_sup[65536];
   u64 ref_dup[65536];
   u64 ref_era[65536];
-  u64 ref_f[65536];
-  u64 ref_t[65536];
+  u64 ref_fast[65536];
+  u64 ref_itrs[65536];
+  u64 ref_fall[65536];
+  u64 ref_slow[65536];
 } Interactions;
 
 typedef struct {
@@ -376,7 +378,6 @@ Term reduce_ref(Term ref) {
   //printf("reduce_ref "); print_term(ref); printf("\n");
   //printf("call %d %p\n", term_loc(ref), HVM.book[term_loc(ref)]);
   inc_itr();
-  HVM.interactions->ref_f[term_lab(ref)]++;
   return HVM.book[term_lab(ref)](ref);
 }
 
@@ -1258,12 +1259,14 @@ Term SUP_f(Term ref) {
   set(sup + 0, tm0);
   set(sup + 1, tm1);
   *HVM.itrs += 1;
+  HVM.interactions->ref_fast[SUP_F]++;
   return ret;
 }
 
 // Primitive: Dynamic Dup `@DUP(lab val λdp0λdp1(bod))`
 // Creates a DUP node with given label.
 Term DUP_f(Term ref) {
+  HVM.interactions->ref_fast[DUP_F]++;
   Loc ref_loc = term_loc(ref);
   Term lab = reduce(got(ref_loc + 0));
   Term lab_val = term_loc(lab);
@@ -1296,6 +1299,7 @@ Term DUP_f(Term ref) {
   set(app1 + 0, term_new(APP, 0, app0));
   set(app1 + 1, term_new(DP1, lab_val, dup));
   *HVM.itrs += 1;
+  HVM.interactions->ref_fall[DUP_F]++;
   return term_new(APP, 0, app1);
 }
 
@@ -1414,8 +1418,10 @@ u64 hvm_get_opy_w32() { return HVM.interactions->opy_w32; }
 u64 hvm_get_ref_dup(u16 fid) { return HVM.interactions->ref_dup[fid]; }
 u64 hvm_get_ref_sup(u16 fid) { return HVM.interactions->ref_sup[fid]; }
 u64 hvm_get_ref_era(u16 fid) { return HVM.interactions->ref_era[fid]; }
-u64 hvm_get_ref_f(u16 fid) { return HVM.interactions->ref_f[fid]; }
-u64 hvm_get_ref_t(u16 fid) { return HVM.interactions->ref_t[fid]; }
+u64 hvm_get_ref_fast(u16 fid) { return HVM.interactions->ref_fast[fid]; }
+u64 hvm_get_ref_fall(u16 fid) { return HVM.interactions->ref_fall[fid]; }
+u64 hvm_get_ref_itrs(u16 fid) { return HVM.interactions->ref_itrs[fid]; }
+u64 hvm_get_ref_slow(u16 fid) { return HVM.interactions->ref_slow[fid]; }
 
 void hvm_set_state(State* hvm) {
   HVM.sbuf = hvm->sbuf;
