@@ -24,7 +24,6 @@ import Foreign
 import Inject
 import Parse
 import Reduce
-import Show
 import Type
 import System.Environment (getArgs)
 import System.Exit (exitWith, ExitCode(ExitSuccess, ExitFailure))
@@ -227,14 +226,14 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
       forM_ limitedVals $ \ term -> do
         currItrs <- getItr
         prevItrs <- readIORef lastItrs
-        let output = if hideQuotes then removeQuotes (showCore term) else showCore term
+        let output = if hideQuotes then removeQuotes (show term) else show term
         printf "%s\n" output
         writeIORef lastItrs currItrs
       putStrLn ""
     Normalize -> do
       let output = if hideQuotes
-                   then removeQuotes (showCore (head vals))
-                   else showCore (head vals)
+                   then removeQuotes (show (head vals))
+                   else show (head vals)
       putStrLn output
   -- Prints total time
   end <- getMonotonicTimeNSec
@@ -307,11 +306,11 @@ serveSocket book debug compiled mode showStats hideQuotes = do
         let output = case mode of
               Collapse limit -> do
                 let limitedVals = maybe id Data.List.take limit vals
-                let outputs = map (\term -> if hideQuotes then removeQuotes (showCore term) else showCore term) limitedVals
+                let outputs = map (\term -> if hideQuotes then removeQuotes (show term) else show term) limitedVals
                 unlines outputs
               Normalize -> do
                 let result = head vals
-                if hideQuotes then removeQuotes (showCore result) else showCore result
+                if hideQuotes then removeQuotes (show result) else show result
         hPutStrLn h output
         setLen oldSize
         when showStats $ do

@@ -12,7 +12,6 @@ import Data.Maybe (fromMaybe)
 import Data.Word
 import Debug.Trace
 import Highlight (highlightError)
-import Show
 import System.Console.ANSI
 import System.Exit (exitFailure)
 import System.IO.Unsafe (unsafePerformIO)
@@ -363,15 +362,6 @@ parseLet = do
         Just nam -> return $ Let STRI nam val bod
         Nothing  -> return $ Let STRI "_" val bod
     
-    -- Parallel Let: !^ x = val body
-    '^' -> do
-      consume "^"
-      nam <- parseName1
-      consume "="
-      val <- parseCore
-      bod <- bindVars [nam] parseCore
-      return $ Let PARA nam val bod
-    
     -- Lazy Let: ! x = val body
     _ -> do
       nam <- parseName1
@@ -390,7 +380,7 @@ parseVarOrU32 = do
 parseOper :: Oper -> ParserM Core
 parseOper op = do
   consume "("
-  consume (operToString op)
+  consume (show op)
   nm0 <- parseCore
   nm1 <- parseCore
   consume ")"

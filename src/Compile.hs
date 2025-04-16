@@ -10,7 +10,6 @@ import Data.List
 import Data.Word
 import Debug.Trace
 import Foreign hiding (fresh)
-import Show
 import Type
 import qualified Data.Map.Strict as MS
 
@@ -459,10 +458,6 @@ compileFastBody book fid term@(Let mode var val bod) ctx stop itr = do
           valNam <- fresh "val" 
           emit $ "Term " ++ valNam ++ " = reduce(" ++ valT ++ ");"
           bind var valNam
-    PARA -> do -- TODO: implement parallel evaluation
-      valNam <- fresh "val"
-      emit $ "Term " ++ valNam ++ " = reduce(" ++ valT ++ ");"
-      bind var valNam
   compileFastBody book fid bod ctx stop itr
 
 compileFastBody book fid term@(Ref fNam fFid fArg) ctx stop itr | fFid == fid = do
@@ -529,10 +524,6 @@ compileFastCore book fid (Let mode var val bod) = do
     STRI -> do
       valNam <- fresh "val"
       emit $ "itrs += 1;"
-      emit $ "Term " ++ valNam ++ " = reduce(" ++ valT ++ ");"
-      bind var valNam
-    PARA -> do -- TODO: implement parallel evaluation
-      valNam <- fresh "val"
       emit $ "Term " ++ valNam ++ " = reduce(" ++ valT ++ ");"
       bind var valNam
   compileFastCore book fid bod
@@ -744,7 +735,7 @@ checkRefAri book core = do
       let ari = funArity book fid
       let len = length arg
       when (ari /= fromIntegral len) $ do
-        error $ "Arity mismatch on term: " ++ showCore core ++ ". Expected " ++ show ari ++ ", got " ++ show len ++ "."
+        error $ "Arity mismatch on term: " ++ show core ++ ". Expected " ++ show ari ++ ", got " ++ show len ++ "."
     _ -> return ()
 
 isTailRecursive :: Book -> Word16 -> Core -> Bool

@@ -174,3 +174,10 @@ foreign import ccall unsafe "Runtime.c hvm_set_cadt"
 
 foreign import ccall unsafe "Runtime.c hvm_set_fari"
   hvmSetFari :: Word16 -> Word16 -> IO ()
+
+showTerm :: Term -> String
+showTerm term =
+  let tag = showTag (termTag term)
+      lab = showLab (termLab term)
+      loc = showLoc (termLoc term)
+  in "term_new(" ++ tag ++ ",0x" ++ lab ++ ",0x" ++ loc ++ ")"

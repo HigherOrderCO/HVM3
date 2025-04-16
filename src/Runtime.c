@@ -99,7 +99,6 @@ static State HVM = {
 
 #define LAZY 0x0
 #define STRI 0x1
-#define PARA 0x2
 
 #define VOID 0x00000000000000
 
@@ -940,10 +939,6 @@ Term reduce(Term term) {
           case STRI: {
             spush(next, sbuf, &spos);
             next = got(loc + 0);
-            continue;
-          }
-          case PARA: {
-            printf("TODO\n");
             continue;
           }
           default: {

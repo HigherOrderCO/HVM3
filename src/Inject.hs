@@ -10,7 +10,6 @@ import Data.List (foldr, take)
 import Data.Word
 import Debug.Trace
 import Foreign
-import Show
 import Type
 import qualified Data.Map.Strict as MS
 
@@ -77,7 +76,7 @@ injectCore book (Ref nam fid arg) loc = do
   let ari = funArity book fid
   let lab = fromIntegral fid
   when (ari /= fromIntegral (length arg)) $ do
-    error $ "Arity mismatch on term: " ++ showCore (Ref nam fid arg) ++ ". Expected " ++ show ari ++ ", got " ++ show (length arg) ++ "."
+    error $ "Arity mismatch on term: " ++ show (Ref nam fid arg) ++ ". Expected " ++ show ari ++ ", got " ++ show (length arg) ++ "."
   ref <- lift $ allocNode (fromIntegral ari)
   sequence_ [injectCore book x (ref + i) | (i,x) <- zip [0..] arg]
   lift $ set loc (termNew _REF_ lab ref)
@@ -132,7 +131,7 @@ doInjectCoreAt book core host argList = do
         else do
           return $ m
       Nothing -> do
-        error $ "Unbound variable: \n\x1b[2m" ++ name ++ "\n\x1b[0mIn term:\n\x1b[2m" ++ Data.List.take 256 (coreToString core) ++ "...\x1b[0m")
+        error $ "Unbound variable: \n\x1b[2m" ++ name ++ "\n\x1b[0mIn term:\n\x1b[2m" ++ Data.List.take 256 (show core) ++ "...\x1b[0m")
     (args state)
     (vars state)
   got host

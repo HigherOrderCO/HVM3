@@ -11,7 +11,6 @@ import Data.Word
 import Debug.Trace
 import GHC.Conc
 import Foreign
-import Show
 import Type
 import System.Exit (exitFailure)
 import System.IO.Unsafe (unsafeInterleaveIO)

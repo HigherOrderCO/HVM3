@@ -11,7 +11,6 @@ import Data.IORef
 import Data.Word
 import Debug.Trace
 import Foreign
-import Show
 import System.IO.Unsafe (unsafeInterleaveIO)
 import Type
 import qualified Data.IntSet as IS

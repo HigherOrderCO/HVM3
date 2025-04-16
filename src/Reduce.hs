@@ -8,7 +8,6 @@ import Collapse
 import Extract
 import Foreign
 import Inject
-import Show
 import Type
 import System.Exit
 import qualified Data.Map.Strict as MS
@@ -24,11 +23,11 @@ reduceAt debug book host = do
   when debug $ do
     root <- doExtractCoreAt gotT book 0
     core <- doExtractCoreAt gotT book host
-    putStrLn $ "reduce: " ++ termToString term
+    putStrLn $ "reduce: " ++ showTerm term
     -- putStrLn $ "---------------- CORE: "
-    -- putStrLn $ coreToString core
+    -- putStrLn $ showCore core
     putStrLn $ "---------------- ROOT: "
-    putStrLn $ coreToString (doLiftDups root)
+    putStrLn $ showCore (doLiftDups root)
 
   case tag of
     t | t == _LET_ -> do
@@ -39,8 +38,6 @@ reduceAt debug book host = do
         STRI -> do
           val <- reduceAt debug book (loc + 0)
           cont host (reduceLet term val)
-        PARA -> do
-          error "TODO"
 
     t | t == _APP_ -> do
       fun <- reduceAt debug book (loc + 0)
@@ -225,8 +222,8 @@ reduceRefAt_DupF book host loc ari = do
       return ret
     _ -> do
       core <- doExtractCoreAt gotT book (loc + 0)
-      putStrLn $ "RUNTIME_ERROR: dynamic DUP without numeric label: " ++ termToString lab
-      putStrLn $ coreToString (doLiftDups core)
+      putStrLn $ "RUNTIME_ERROR: dynamic DUP without numeric label: " ++ showTerm lab
+      putStrLn $ showCore (doLiftDups core)
       exitFailure
 
 -- Primitive: Dynamic Sup `@SUP(lab tm0 tm1)`
@@ -261,10 +258,10 @@ reduceRefAt_LogF book host loc ari = do
     putStrLn $ "RUNTIME_ERROR: arity mismatch on call to '@LOG'."
     exitFailure
   msg <- doExtractCoreAt gotT book (loc + 0)
-  putStrLn $ coreToString (doLiftDups msg)
+  putStrLn $ showCore (doLiftDups msg)
   -- msgs <- doCollapseFlatAt gotT book (loc + 0)
   -- forM_ msgs $ \msg -> do
-    -- putStrLn $ coreToString msg
+    -- putStrLn $ showCore msg
   let ret = termNew _W32_ 0 0
   set host ret
   return ret
