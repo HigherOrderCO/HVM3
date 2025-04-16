@@ -1,4 +1,4 @@
 packages: .
 
 package *
-  optimization: 0
+  optimization: 2

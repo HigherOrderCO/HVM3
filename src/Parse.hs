@@ -299,14 +299,16 @@ parseMat = do
   css <- return $ map snd $ sortOn fst css
   -- Switch
   if (let (ctr, _, _) = head css in ctr == "0") then do
-    return $ Mat val mov css
+    return $ Mat SWI val mov css
   -- Match with only 1 case: a default case (forbidden)
   else if length css == 1 && (let (ctr, _, _) = head css in ctr == "_") then do
     fail "Match with only a default case is not allowed."
   -- Match with a default case: turn into If-Let chain
   else if (let (ctr, _, _) = last css in ctr == "_") then do
+    st <- getState
+    let adt     = mget (pCtrToCid st) (let (ctr,_,_) = head css in ctr)
     let defName = (let (_,[nm],_) = last css in nm)
-    let ifLets  = intoIfLetChain (Var defName) mov (init css) defName (last css)
+    let ifLets  = intoIfLetChain adt (Var defName) mov (init css) defName (last css)
     return $ Let LAZY defName val ifLets
   -- Match with all cases covered
   else do
@@ -316,13 +318,13 @@ parseMat = do
     if fromIntegral (length css) /= len then
       fail $ "Incorrect number of cases"
     else
-      return $ Mat val mov css
+      return $ Mat (MAT adt) val mov css
 
-intoIfLetChain :: Core -> [(String, Core)] -> [(String, [String], Core)] -> String -> (String, [String], Core) -> Core
-intoIfLetChain _ _ [] defName (_,_,defBody) = defBody
-intoIfLetChain val mov ((ctr,fds,bod):css) defName defCase =
-  let rest = intoIfLetChain val mov css defName defCase in 
-  Mat val mov [(ctr, fds, bod), ("_", [defName], rest)]
+intoIfLetChain :: Word16 -> Core -> [(String, Core)] -> [(String, [String], Core)] -> String -> (String, [String], Core) -> Core
+intoIfLetChain adt _ _ [] defName (_,_,defBody) = defBody
+intoIfLetChain adt val mov ((ctr,fds,bod):css) defName defCase =
+  let rest = intoIfLetChain adt val mov css defName defCase in 
+  Mat (IFL adt) val mov [(ctr, fds, bod), ("_", [defName], rest)]
 
 parseLet :: ParserM Core
 parseLet = do
@@ -648,19 +650,19 @@ createBook defs ctrToCid cidToAri cidToLen cidToADT =
 -- Adds the function id to Ref constructors
 setRefIds :: MS.Map String Word16 -> Core -> Core
 setRefIds fids term = case term of
-  Var nam       -> Var nam
-  Let m x v b   -> Let m x (setRefIds fids v) (setRefIds fids b)
-  Lam x bod     -> Lam x (setRefIds fids bod)
-  App f x       -> App (setRefIds fids f) (setRefIds fids x)
-  Sup l x y     -> Sup l (setRefIds fids x) (setRefIds fids y)
-  Dup l x y v b -> Dup l x y (setRefIds fids v) (setRefIds fids b)
-  Ctr nam fds   -> Ctr nam (map (setRefIds fids) fds)
-  Mat x mov css -> Mat (setRefIds fids x) (map (\ (k,v) -> (k, setRefIds fids v)) mov) (map (\ (ctr,fds,cs) -> (ctr, fds, setRefIds fids cs)) css)
-  Op2 op x y    -> Op2 op (setRefIds fids x) (setRefIds fids y)
-  U32 n         -> U32 n
-  Chr c         -> Chr c
-  Era           -> Era
-  Ref nam _ arg -> case MS.lookup nam fids of
+  Var nam         -> Var nam
+  Let m x v b     -> Let m x (setRefIds fids v) (setRefIds fids b)
+  Lam x bod       -> Lam x (setRefIds fids bod)
+  App f x         -> App (setRefIds fids f) (setRefIds fids x)
+  Sup l x y       -> Sup l (setRefIds fids x) (setRefIds fids y)
+  Dup l x y v b   -> Dup l x y (setRefIds fids v) (setRefIds fids b)
+  Ctr nam fds     -> Ctr nam (map (setRefIds fids) fds)
+  Mat k x mov css -> Mat k (setRefIds fids x) (map (\ (k,v) -> (k, setRefIds fids v)) mov) (map (\ (ctr,fds,cs) -> (ctr, fds, setRefIds fids cs)) css)
+  Op2 op x y      -> Op2 op (setRefIds fids x) (setRefIds fids y)
+  U32 n           -> U32 n
+  Chr c           -> Chr c
+  Era             -> Era
+  Ref nam _ arg   -> case MS.lookup nam fids of
     Just fid -> Ref nam fid (map (setRefIds fids) arg)
     Nothing  -> unsafePerformIO $ do
       putStrLn $ "error:unbound-ref @" ++ nam
@@ -680,7 +682,7 @@ collectLabels term = case term of
   Sup lab tm0 tm1     -> MS.insert lab () $ MS.union (collectLabels tm0) (collectLabels tm1)
   Dup lab _ _ val bod -> MS.insert lab () $ MS.union (collectLabels val) (collectLabels bod)
   Ctr _ fds           -> MS.unions $ map collectLabels fds
-  Mat val mov css     -> MS.unions $ collectLabels val : map (collectLabels . snd) mov ++ map (\(_,_,bod) -> collectLabels bod) css
+  Mat kin val mov css -> MS.unions $ collectLabels val : map (collectLabels . snd) mov ++ map (\(_,_,bod) -> collectLabels bod) css
   Op2 _ x y           -> MS.union (collectLabels x) (collectLabels y)
 
 -- Gives unique names to lexically scoped vars, unless they start with '$'.
@@ -742,7 +744,7 @@ lexify term = evalState (go term MS.empty) 0 where
       fds <- mapM (\x -> go x ctx) fds
       return $ Ctr nam fds
 
-    Mat val mov css -> do
+    Mat kin val mov css -> do
       val' <- go val ctx
       mov' <- forM mov $ \ (k,v) -> do
         k' <- fresh k
@@ -754,7 +756,7 @@ lexify term = evalState (go term MS.empty) 0 where
         ctx  <- foldM (\ ctx ((k,_),(k',_)) -> extend k k' ctx) ctx (zip mov mov')
         bod <- go bod ctx
         return (ctr, fds', bod)
-      return $ Mat val' mov' css'
+      return $ Mat kin val' mov' css'
 
     Op2 op nm0 nm1 -> do
       nm0 <- go nm0 ctx

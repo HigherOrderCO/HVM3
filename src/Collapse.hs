@@ -167,7 +167,7 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
         let fds = if ari == 0 then [] else ["$" ++ show (loc + 1 + j) | j <- [0..ari-1]]
         bod0 <- collapseDupsAt state reduceAt book (loc + 1 + fromIntegral i)
         return (ctr, fds, bod0)
-      return $ Mat val0 [] css0
+      return $ Mat (MAT cid) val0 [] css0
 
     t | t == _IFL_ -> do
       let loc = termLoc term
@@ -176,7 +176,7 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
       val0 <- collapseDupsAt state reduceAt book (loc + 0)
       cs00 <- collapseDupsAt state reduceAt book (loc + 1)
       cs10 <- collapseDupsAt state reduceAt book (loc + 2)
-      return $ Mat val0 [] [(mget (cidToCtr book) cid, [], cs00), ("_", [], cs10)]
+      return $ Mat (IFL cid) val0 [] [(mget (cidToCtr book) cid, [], cs00), ("_", [], cs10)]
 
     t | t == _SWI_ -> do
       let loc = termLoc term
@@ -186,7 +186,7 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
       css0 <- forM [0..len-1] $ \i -> do
         bod0 <- collapseDupsAt state reduceAt book (loc + 1 + i)
         return (show i, [], bod0)
-      return $ Mat val0 [] css0
+      return $ Mat SWI val0 [] css0
 
     t | t == _W32_ -> do
       let val = termLoc term
@@ -255,7 +255,7 @@ collapseSups book core = case core of
     fields <- mapM (collapseSups book) fields
     return $ Ctr nam fields
 
-  Mat val mov css -> do
+  Mat kin val mov css -> do
     val <- collapseSups book val
     mov <- mapM (\(key, expr) -> do
       expr <- collapseSups book expr
@@ -263,7 +263,7 @@ collapseSups book core = case core of
     css <- mapM (\(ctr, fds, bod) -> do
       bod <- collapseSups book bod
       return (ctr, fds, bod)) css
-    return $ Mat val mov css
+    return $ Mat kin val mov css
 
   U32 val -> do
     return $ U32 val

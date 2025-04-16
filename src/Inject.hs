@@ -89,14 +89,13 @@ injectCore book (Ctr nam fds) loc = do
   sequence_ [injectCore book fd (ctr + ix) | (ix,fd) <- zip [0..] fds]
   lift $ set loc (termNew _CTR_ lab ctr)
 
-injectCore book tm@(Mat val mov css) loc = do
-  typ <- return $ matType book tm
+injectCore book tm@(Mat kin val mov css) loc = do
   mat <- lift $ allocNode (1 + fromIntegral (length css))
   injectCore book val (mat + 0)
   forM_ (zip [0..] css) $ \ (idx, (ctr, fds, bod)) -> do
     injectCore book (foldr (\x b -> Lam x b) (foldr (\x b -> Lam x b) bod (map fst mov)) fds) (mat + 1 + fromIntegral idx)
-  let tag = case typ of { Switch -> _SWI_ ; Match  -> _MAT_ ; IfLet -> _IFL_ }
-  let lab = case typ of { Switch -> fromIntegral $ length css ; _ -> fromIntegral $ matFirstCid book tm }
+  let tag = case kin of { SWI -> _SWI_ ; (MAT _) -> _MAT_ ; (IFL _) -> _IFL_ }
+  let lab = case kin of { SWI -> fromIntegral $ length css ; (MAT cid) -> fromIntegral cid ; (IFL cid) -> fromIntegral cid }
   trm <- return $ termNew tag lab mat
   ret <- foldM (\mat (_, val) -> do
       app <- lift $ allocNode 2

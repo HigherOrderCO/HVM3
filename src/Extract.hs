@@ -116,7 +116,7 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
         let fds = if ari == 0 then [] else ["$" ++ show (loc + 1 + j) | j <- [0..fromIntegral ari-1]]
         bod <- extractCoreAt dupsRef reduceAt book (loc + 1 + fromIntegral i)
         return $ (ctr,fds,bod):css) [] [0..len-1]
-      return $ Mat val [] (reverse css)
+      return $ Mat (MAT cid) val [] (reverse css)
 
     t | t == _IFL_ -> do
       let loc = termLoc term
@@ -125,7 +125,7 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
       val <- extractCoreAt dupsRef reduceAt book (loc + 0)
       cs0 <- extractCoreAt dupsRef reduceAt book (loc + 1)
       cs1 <- extractCoreAt dupsRef reduceAt book (loc + 2)
-      return $ Mat val [] [(mget (cidToCtr book) cid, [], cs0), ("_", [], cs1)]
+      return $ Mat (IFL cid) val [] [(mget (cidToCtr book) cid, [], cs0), ("_", [], cs1)]
 
     t | t == _SWI_ -> do
       let loc = termLoc term
@@ -135,7 +135,7 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
       css <- foldM (\css i -> do
         bod <- extractCoreAt dupsRef reduceAt book (loc + 1 + i)
         return $ (show i, [], bod):css) [] [0..len-1]
-      return $ Mat val [] (reverse css)
+      return $ Mat SWI val [] (reverse css)
 
     t | t == _W32_ -> do
       let val = termLoc term
@@ -220,11 +220,11 @@ liftDups (Ctr nam fds) =
   let (fdsT, fdsD) = liftDupsList fds
   in (Ctr nam fdsT, fdsD)
 
-liftDups (Mat val mov css) =
+liftDups (Mat kin val mov css) =
   let (valT, valD) = liftDups val
       (movT, movD) = liftDupsMov mov
       (cssT, cssD) = liftDupsCss css
-  in (Mat valT movT cssT, valD . movD . cssD)
+  in (Mat kin valT movT cssT, valD . movD . cssD)
 
 liftDups (U32 val) =
   (U32 val, id)

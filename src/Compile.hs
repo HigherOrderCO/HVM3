@@ -170,8 +170,7 @@ compileFullCore book fid (Ctr nam fds) host = do
   sequence_ [emit $ "set(" ++ ctrNam ++ " + " ++ show i ++ ", " ++ fdT ++ ");" | (i,fdT) <- zip [0..] fdsT]
   return $ "term_new(CTR, " ++ show cid ++ ", " ++ ctrNam ++ ")"
 
-compileFullCore book fid tm@(Mat val mov css) host = do
-  let typ = matType book tm
+compileFullCore book fid tm@(Mat kin val mov css) host = do
   matNam <- fresh "mat"
   emit $ "Loc " ++ matNam ++ " = alloc_node(" ++ show (1 + length css) ++ ");"
   valT <- compileFullCore book fid val (matNam ++ " + 0")
@@ -180,8 +179,8 @@ compileFullCore book fid tm@(Mat val mov css) host = do
     let bod' = foldr (\x b -> Lam x b) (foldr (\x b -> Lam x b) bod (map fst mov)) fds
     bodT <- compileFullCore book fid bod' (matNam ++ " + " ++ show (i+1))
     emit $ "set(" ++ matNam ++ " + " ++ show (i+1) ++ ", " ++ bodT ++ ");"
-  let tag = case typ of { Switch -> "SWI" ; IfLet  -> "IFL" ; Match  -> "MAT" }
-  let lab = case typ of { Switch -> fromIntegral (length css) ; _ -> matFirstCid book tm }
+  let tag = case kin of { SWI -> "SWI" ; (IFL _) -> "IFL" ; (MAT _) -> "MAT" }
+  let lab = case kin of { SWI -> fromIntegral (length css) ; (IFL cid) -> cid ; (MAT cid) -> cid }
   let mat = "term_new(" ++ tag ++ ", " ++ show lab ++ ", " ++ matNam ++ ")"
   foldM (\term (key, val) -> do
     appNam <- fresh "app"
@@ -274,7 +273,7 @@ compileFastArgs book fid body ctx = do
 
 -- Compiles a fast function body (pattern-matching)
 compileFastBody :: Book -> Word16 -> Core -> [String] -> Bool -> Int -> Compile ()
-compileFastBody book fid term@(Mat val mov css) ctx stop@False itr = do
+compileFastBody book fid term@(Mat kin val mov css) ctx stop@False itr = do
   valT   <- compileFastCore book fid val
   valNam <- fresh "val"
   emit $ "Term " ++ valNam ++ " = (" ++ valT ++ ");"
@@ -324,7 +323,7 @@ compileFastBody book fid term@(Mat val mov css) ctx stop@False itr = do
     emit $ "}"
 
   -- Constructor Pattern-Matching (with IfLet)
-  else if matType book term == IfLet then do
+  else if (case kin of { (IFL _) -> True ; _ -> False }) then do
     let (Var defNam) = val
     let css          = undoIfLetChain defNam term
     let (_, dflt)    = last css
@@ -378,7 +377,7 @@ compileFastBody book fid term@(Mat val mov css) ctx stop@False itr = do
   else do
     emit $ "if (term_tag(" ++ valNam ++ ") == CTR) {"
     tabInc
-    emit $ "switch (term_lab(" ++ valNam ++ ") - " ++ show (matFirstCid book term) ++ ") {"
+    emit $ "switch (term_lab(" ++ valNam ++ ") - " ++ show (case kin of { (IFL c) -> c ; (MAT c) -> c ; _ -> 0 }) ++ ") {"
     tabInc
     reuse' <- gets reus
     forM_ (zip [0..] css) $ \ (i, (ctr,fds,bod)) -> do
@@ -409,7 +408,7 @@ compileFastBody book fid term@(Mat val mov css) ctx stop@False itr = do
     emit $ "}"
   where
     undoIfLetChain :: String -> Core -> [([(String,Core)], (String, [String], Core))]
-    undoIfLetChain expNam term@(Mat (Var gotNam) mov [(ctr, fds, bod), ("_", [nxtNam], rest)]) =
+    undoIfLetChain expNam term@(Mat _ (Var gotNam) mov [(ctr, fds, bod), ("_", [nxtNam], rest)]) =
       if gotNam == expNam
         then (mov, (ctr, fds, bod)) : undoIfLetChain nxtNam rest
         else [([], ("_", [expNam], term))]
@@ -593,8 +592,7 @@ compileFastCore book fid (Ctr nam fds) = do
   sequence_ [emit $ "set(" ++ ctrNam ++ " + " ++ show i ++ ", " ++ fdT ++ ");" | (i,fdT) <- zip [0..] fdsT]
   return $ "term_new(CTR, " ++ show cid ++ ", " ++ ctrNam ++ ")"
 
-compileFastCore book fid tm@(Mat val mov css) = do
-  let typ = matType book tm
+compileFastCore book fid tm@(Mat kin val mov css) = do
   matNam <- fresh "mat"
   compileFastAlloc matNam (1 + length css)
   valT <- compileFastCore book fid val
@@ -603,8 +601,8 @@ compileFastCore book fid tm@(Mat val mov css) = do
     let bod' = foldr (\x b -> Lam x b) (foldr (\x b -> Lam x b) bod (map fst mov)) fds
     bodT <- compileFastCore book fid bod'
     emit $ "set(" ++ matNam ++ " + " ++ show (i+1) ++ ", " ++ bodT ++ ");"
-  let tag = case typ of { Switch -> "SWI" ; IfLet -> "IFL" ; Match -> "MAT" }
-  let lab = case typ of { Switch -> fromIntegral (length css) ; _ -> matFirstCid book tm }
+  let tag = case kin of { SWI -> "SWI" ; (IFL _) -> "IFL" ; (MAT _) -> "MAT" }
+  let lab = case kin of { SWI -> fromIntegral (length css) ; (IFL cid) -> cid ; (MAT cid) -> cid }
   retNam <- fresh "ret"
   emit $ "Term " ++ retNam ++ " = term_new(" ++ tag ++ ", " ++ show lab ++ ", " ++ matNam ++ ");"
   foldM (\acc (_, val) -> do
@@ -738,11 +736,10 @@ checkRefAri book core = do
         error $ "Arity mismatch on term: " ++ show core ++ ". Expected " ++ show ari ++ ", got " ++ show len ++ "."
     _ -> return ()
 
-isTailRecursive :: Book -> Word16 -> Core -> Bool
-isTailRecursive book fid core = go core
-  where
-    go (Mat val mov css) = any (\(_, _, bod) -> go bod) css
-    go (Dup _ _ _ _ bod) = go bod
-    go (Let _ _ _ bod) = go bod
-    go (Ref _ rFid _) | rFid == fid = True
-    go _ = False
+-- isTailRecursive :: Book -> Word16 -> Core -> Bool
+-- isTailRecursive book fid core = go core where
+  -- go (Mat _ _ _ css)              = any (\(_, _, bod) -> go bod) css
+  -- go (Dup _ _ _ _ bod)            = go bod
+  -- go (Let _ _ _ bod)              = go bod
+  -- go (Ref _ rFid _) | rFid == fid = True
+  -- go _                            = False

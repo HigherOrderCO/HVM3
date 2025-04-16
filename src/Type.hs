@@ -23,11 +23,11 @@ type Loc  = Word32
 type Term = Word64
 
 type Name = String
-type Move = (String,Core)
+type Move = (Name, Core) -- !x = term
 type Case = (Name, [Name], Core) -- #Ctr{x0 x1...}: fn
 
 data LetT = LAZY | STRI deriving (Eq, Enum)
-data MatT = Switch | Match | IfLet deriving (Show, Eq, Enum)
+data MatT = SWI | MAT Word16 | IFL Word16 deriving (Show, Eq)
 
 data Core
   = Var Name                    -- x
@@ -38,11 +38,11 @@ data Core
   | Sup Lab Core Core           -- &L{a b}
   | Dup Lab Name Name Core Core -- ! &L{a b} = v body
   | Ctr Name [Core]             -- #Ctr{a b ...}
-  | Mat Core [Move] [Case]      -- ~ v !moves { cases }
   | U32 Word32                  -- 123
   | Chr Char                    -- 'a'
   | Op2 Oper Core Core          -- (+ a b)
-  | Let LetT String Core Core   -- ! x = v body
+  | Let LetT Name Core Core     -- ! x = v body
+  | Mat MatT Core [Move] [Case] -- ~ v !moves { cases }
   deriving (Eq)
 
 data Oper
@@ -65,12 +65,12 @@ type HasLab = (MS.Map Lab ())
 data Book = Book
   { fidToFun :: MS.Map Word16 Func   -- func id to Func object
   , fidToLab :: MS.Map Word16 HasLab -- func id to dup labels used
-  , fidToNam :: MS.Map Word16 String -- func id to name
-  , namToFid :: MS.Map String Word16 -- func name to id
+  , fidToNam :: MS.Map Word16 Name   -- func id to name
+  , namToFid :: MS.Map Name   Word16 -- func name to id
   , cidToAri :: MS.Map Word16 Word16 -- ctor id to field count (arity)
   , cidToLen :: MS.Map Word16 Word16 -- ctor id to cases length (ADT ctors)
-  , cidToCtr :: MS.Map Word16 String -- ctor id to name
-  , ctrToCid :: MS.Map String Word16 -- ctor name to id
+  , cidToCtr :: MS.Map Word16 Name   -- ctor id to name
+  , ctrToCid :: MS.Map Name   Word16 -- ctor name to id
   , cidToADT :: MS.Map Word16 Word16 -- ctor id to ADT id (first ADT cid)
   } deriving (Show, Eq)
 
@@ -132,22 +132,22 @@ mget map key =
     Just val -> val
     Nothing  -> error $ "key not found: " ++ show key
 
--- Returns the first constructor ID in a pattern-match
-matFirstCid :: Book -> Core -> Word16
-matFirstCid book (Mat _ _ ((ctr,_,_):_)) =
-  case MS.lookup ctr (ctrToCid book) of
-    Just cid -> cid
-    Nothing  -> 0
-matFirstCid _ _ = 0
+-- -- Returns the first constructor ID in a pattern-match
+-- matFirstCid :: Book -> Core -> Word16
+-- matFirstCid book (Mat _ _ ((ctr,_,_):_)) =
+  -- case MS.lookup ctr (ctrToCid book) of
+    -- Just cid -> cid
+    -- Nothing  -> 0
+-- matFirstCid _ _ = 0
 
-matType :: Book -> Core -> MatT
-matType book (Mat _ _ css) =
-  case css of
-    ((ctr,_,_):_) | ctr == "0"         -> Switch
-    [(ctr,_,_),("_",_,_)]              -> IfLet
-    cs | all (\(c,_,_) -> c /= "_") cs -> Match
-    _                                  -> error "invalid match"
-matType _ _ = error "not a match"
+-- matType :: Book -> Core -> MatT
+-- matType book (Mat _ _ css) =
+  -- case css of
+    -- ((ctr,_,_):_) | ctr == "0"         -> Switch
+    -- [(ctr,_,_),("_",_,_)]              -> IfLet
+    -- cs | all (\(c,_,_) -> c /= "_") cs -> Match
+    -- _                                  -> error "invalid match"
+-- matType _ _ = error "not a match"
 
 funArity :: Book -> Word16 -> Word16
 funArity book fid
@@ -270,7 +270,7 @@ showCore core = maybe (format core) id (sugar core) where
   format (Ctr k xs) =
     let xs' = unwords (map showCore xs) in
     concat [k, "{", xs', "}"]
-  format (Mat v m ks) =
+  format (Mat k v m ks) =
     let v'  = showCore v in
     let m'  = concatMap (\(k,v) -> concat [" !", k, "=", showCore v]) m in
     let ks' = unwords [concat [c, ":", showCore b] | (c, _, b) <- ks] in
@@ -329,11 +329,11 @@ renamer names core = case core of
   Ctr k xs -> do
     xs' <- mapM (renamer names) xs
     return $ Ctr k xs'
-  Mat v m ks -> do
+  Mat k v m ks -> do
     v'  <- renamer names v
     m'  <- forM m $ \ (k,v) -> do v' <- renamer names v; return (k,v')
     ks' <- forM ks $ \ (c,vs,t) -> do t' <- renamer names t; return (c,vs,t')
-    return $ Mat v' m' ks'
+    return $ Mat k v' m' ks'
   Op2 o a b -> do
     a' <- renamer names a
     b' <- renamer names b
