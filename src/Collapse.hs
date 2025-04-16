@@ -1,5 +1,5 @@
--- //./Type.hs//
--- //./Extract.hs//
+{-./Type.hs-}
+{-./Extract.hs-}
 
 module Collapse where
 
@@ -75,12 +75,11 @@ collapseDupsAt :: IM.IntMap [Int] -> ReduceAt -> Book -> Loc -> HVM Core
 
 collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
   term <- reduceAt book host
-  case tagT (termTag term) of
-
-    ERA -> do
+  case termTag term of
+    t | t == _ERA_ -> do
       return Era
 
-    LET -> do
+    t | t == _LET_ -> do
       let loc = termLoc term
       let mode = modeT (termLab term)
       name <- return $ "$" ++ show (loc + 0)
@@ -88,19 +87,19 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
       bod0 <- collapseDupsAt state reduceAt book (loc + 2)
       return $ Let mode name val0 bod0
 
-    LAM -> do
+    t | t == _LAM_ -> do
       let loc = termLoc term
       name <- return $ "$" ++ show (loc + 0)
       bod0 <- collapseDupsAt state reduceAt book (loc + 0)
       return $ Lam name bod0
 
-    APP -> do
+    t | t == _APP_ -> do
       let loc = termLoc term
       fun0 <- collapseDupsAt state reduceAt book (loc + 0)
       arg0 <- collapseDupsAt state reduceAt book (loc + 1)
       return $ App fun0 arg0
 
-    SUP -> do
+    t | t == _SUP_ -> do
       let loc = termLoc term
       let lab = termLab term
       case IM.lookup (fromIntegral lab) paths of
@@ -112,7 +111,7 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
           tm11 <- collapseDupsAt state reduceAt book (loc + 1)
           return $ Sup lab tm00 tm11
 
-    VAR -> do
+    t | t == _VAR_ -> do
       let loc = termLoc term
       sub <- got loc
       if termGetBit sub /= 0
@@ -123,7 +122,7 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
         name <- return $ "$" ++ show loc
         return $ Var name
 
-    DP0 -> do
+    t | t == _DP0_ -> do
       let loc = termLoc term
       let lab = termLab term
       sb0 <- got (loc+0)
@@ -135,7 +134,7 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
         let newPaths = IM.alter (Just . maybe [0] (0:)) (fromIntegral lab) paths
         collapseDupsAt (newPaths) reduceAt book (loc + 0)
 
-    DP1 -> do
+    t | t == _DP1_ -> do
       let loc = termLoc term
       let lab = termLab term
       sb1 <- got (loc+0)
@@ -147,7 +146,7 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
         let newPaths = IM.alter (Just . maybe [1] (1:)) (fromIntegral lab) paths
         collapseDupsAt (newPaths) reduceAt book (loc + 0)
 
-    CTR -> do
+    t | t == _CTR_ -> do
       let loc = termLoc term
       let lab = termLab term
       let cid = fromIntegral lab
@@ -157,7 +156,7 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
       fds0 <- forM aux (\i -> collapseDupsAt state reduceAt book (loc + fromIntegral i))
       return $ Ctr nam fds0
 
-    MAT -> do
+    t | t == _MAT_ -> do
       let loc = termLoc term
       let lab = termLab term
       let cid = fromIntegral lab
@@ -171,7 +170,7 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
         return (ctr, fds, bod0)
       return $ Mat val0 [] css0
 
-    IFL -> do
+    t | t == _IFL_ -> do
       let loc = termLoc term
       let lab = termLab term
       let cid = fromIntegral lab
@@ -180,7 +179,7 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
       cs10 <- collapseDupsAt state reduceAt book (loc + 2)
       return $ Mat val0 [] [(mget (cidToCtr book) cid, [], cs00), ("_", [], cs10)]
 
-    SWI -> do
+    t | t == _SWI_ -> do
       let loc = termLoc term
       let lab = termLab term
       let len = fromIntegral lab
@@ -190,29 +189,29 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
         return (show i, [], bod0)
       return $ Mat val0 [] css0
 
-    W32 -> do
+    t | t == _W32_ -> do
       let val = termLoc term
       return $ U32 (fromIntegral val)
 
-    CHR -> do
+    t | t == _CHR_ -> do
       let val = termLoc term
       return $ Chr (chr (fromIntegral val))
 
-    OPX -> do
+    t | t == _OPX_ -> do
       let loc = termLoc term
       let opr = toEnum (fromIntegral (termLab term))
       nm00 <- collapseDupsAt state reduceAt book (loc + 0)
       nm10 <- collapseDupsAt state reduceAt book (loc + 1)
       return $ Op2 opr nm00 nm10
 
-    OPY -> do
+    t | t == _OPY_ -> do
       let loc = termLoc term
       let opr = toEnum (fromIntegral (termLab term))
       nm00 <- collapseDupsAt state reduceAt book (loc + 0)
       nm10 <- collapseDupsAt state reduceAt book (loc + 1)
       return $ Op2 opr nm00 nm10
 
-    REF -> do
+    t | t == _REF_ -> do
       let loc = termLoc term
       let lab = termLab term
       let fid = fromIntegral lab

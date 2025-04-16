@@ -12,20 +12,24 @@ type Lab  = Word32
 type Loc  = Word32
 type Term = Word64
 
+type Name = String
+type Move = (String,Core)
+type Case = (Name, [Name], Core) -- #Ctr{x0 x1...}: fn
+
 data Core
-  = Var String -- x
-  | Ref String Word16 [Core] -- @fn
-  | Era -- *
-  | Lam String Core -- λx(F)
-  | App Core Core -- (f x)
-  | Sup Lab Core Core -- &L{a b}
-  | Dup Lab String String Core Core -- ! &L{a b} = v body
-  | Ctr String [Core] -- #Ctr{a b ...}
-  | Mat Core [(String,Core)] [(String,[String],Core)] -- ~ v { #A{a b ...}: ... #B{a b ...}: ... ... }
-  | U32 Word32 -- 123
-  | Chr Char -- 'a'
-  | Op2 Oper Core Core -- (+ a b)
-  | Let Mode String Core Core -- ! x = v body
+  = Var Name                    -- x
+  | Ref Name Word16 [Core]      -- @fn
+  | Era                         -- *
+  | Lam Name Core               -- λx(F)
+  | App Core Core               -- (f x)
+  | Sup Lab Core Core           -- &L{a b}
+  | Dup Lab Name Name Core Core -- ! &L{a b} = v body
+  | Ctr Name [Core]             -- #Ctr{a b ...}
+  | Mat Core [Move] [Case]      -- ~ v !moves { cases }
+  | U32 Word32                  -- 123
+  | Chr Char                    -- 'a'
+  | Op2 Oper Core Core          -- (+ a b)
+  | Let Mode String Core Core   -- ! x = v body
   deriving (Show, Eq)
 
 data Mode
@@ -54,124 +58,51 @@ data Oper
 -- Note: ref-copy improves C speed, but increases interaction count
 type Func = ((Bool, [(Bool,String)]), Core)
 
+-- Set of labels in a function's body
+type HasLab = (MS.Map Lab ())
+
 data Book = Book
-  { fidToFun :: MS.Map Word16 Func -- function id to Function object
-  , fidToLab :: MS.Map Word16 (MS.Map Lab ()) -- function id to dup labels used in its body
-  , fidToNam :: MS.Map Word16 String -- function id to name
-  , namToFid :: MS.Map String Word16 -- function name to id
-  , cidToAri :: MS.Map Word16 Word16 -- constructor id to field count (arity)
-  , cidToLen :: MS.Map Word16 Word16 -- constructor id to cases length (ADT constructor count)
-  , cidToCtr :: MS.Map Word16 String -- constructor id to name
-  , ctrToCid :: MS.Map String Word16 -- constructor name to id
-  , cidToADT :: MS.Map Word16 Word16 -- constructor id to ADT id (first cid of its datatype)
+  { fidToFun :: MS.Map Word16 Func   -- func id to Func object
+  , fidToLab :: MS.Map Word16 HasLab -- func id to dup labels used
+  , fidToNam :: MS.Map Word16 String -- func id to name
+  , namToFid :: MS.Map String Word16 -- func name to id
+  , cidToAri :: MS.Map Word16 Word16 -- ctor id to field count (arity)
+  , cidToLen :: MS.Map Word16 Word16 -- ctor id to cases length (ADT ctors)
+  , cidToCtr :: MS.Map Word16 String -- ctor id to name
+  , ctrToCid :: MS.Map String Word16 -- ctor name to id
+  , cidToADT :: MS.Map Word16 Word16 -- ctor id to ADT id (first ADT cid)
   } deriving (Show, Eq)
 
 -- Runtime Types
 -- -------------
 
-data TAG
-  = DP0
-  | DP1
-  | VAR
-  | ERA
-  | APP
-  | LAM
-  | SUP
-  | FWD
-  | REF
-  | LET
-  | CTR
-  | MAT
-  | IFL
-  | SWI
-  | W32
-  | CHR
-  | OPX
-  | OPY
-  deriving (Eq, Show)
-
 type HVM = IO
-
 type ReduceAt = Book -> Loc -> HVM Term
 
 -- Constants
 -- ---------
 
-tagT :: Tag -> TAG
-tagT 0x00 = DP0
-tagT 0x01 = DP1
-tagT 0x02 = VAR
-tagT 0x03 = FWD
-tagT 0x04 = REF
-tagT 0x05 = LET
-tagT 0x06 = APP
-tagT 0x08 = MAT
-tagT 0x09 = IFL
-tagT 0x0A = SWI
-tagT 0x0B = OPX
-tagT 0x0C = OPY
-tagT 0x0D = ERA
-tagT 0x0E = LAM
-tagT 0x0F = SUP
-tagT 0x10 = CTR
-tagT 0x11 = W32
-tagT 0x12 = CHR
-tagT tag  = error $ "unknown tag: " ++ show tag
+-- Tags
+_DP0_ = 0x00 :: Tag
+_DP1_ = 0x01 :: Tag
+_VAR_ = 0x02 :: Tag
+_FWD_ = 0x03 :: Tag
+_REF_ = 0x04 :: Tag
+_LET_ = 0x05 :: Tag
+_APP_ = 0x06 :: Tag
+_MAT_ = 0x08 :: Tag
+_IFL_ = 0x09 :: Tag
+_SWI_ = 0x0A :: Tag
+_OPX_ = 0x0B :: Tag
+_OPY_ = 0x0C :: Tag
+_ERA_ = 0x0D :: Tag
+_LAM_ = 0x0E :: Tag
+_SUP_ = 0x0F :: Tag
+_CTR_ = 0x10 :: Tag
+_W32_ = 0x11 :: Tag
+_CHR_ = 0x12 :: Tag
 
-_DP0_ :: Tag
-_DP0_ = 0x00
-
-_DP1_ :: Tag
-_DP1_ = 0x01
-
-_VAR_ :: Tag
-_VAR_ = 0x02
-
-_FWD_ :: Tag
-_FWD_ = 0x03
-
-_REF_ :: Tag
-_REF_ = 0x04
-
-_LET_ :: Tag
-_LET_ = 0x05
-
-_APP_ :: Tag
-_APP_ = 0x06
-
-_MAT_ :: Tag
-_MAT_ = 0x08
-
-_IFL_ :: Tag
-_IFL_ = 0x09
-
-_SWI_ :: Tag
-_SWI_ = 0x0A
-
-_OPX_ :: Tag
-_OPX_ = 0x0B
-
-_OPY_ :: Tag
-_OPY_ = 0x0C
-
-_ERA_ :: Tag
-_ERA_ = 0x0D
-
-_LAM_ :: Tag
-_LAM_ = 0x0E
-
-_SUP_ :: Tag
-_SUP_ = 0x0F
-
-_CTR_ :: Tag
-_CTR_ = 0x10
-
-_W32_ :: Tag
-_W32_ = 0x11
-
-_CHR_ :: Tag
-_CHR_ = 0x12
-
+-- Match Modes
 modeT :: Lab -> Mode
 modeT 0x00 = LAZY
 modeT 0x01 = STRI
@@ -179,14 +110,9 @@ modeT 0x02 = PARA
 modeT mode = error $ "unknown mode: " ++ show mode
 
 -- Primitive Functions
-_DUP_F_ :: Lab
-_DUP_F_ = 0xFFFF
-
-_SUP_F_ :: Lab
-_SUP_F_ = 0xFFFE
-
-_LOG_F_ :: Lab
-_LOG_F_ = 0xFFFD
+_DUP_F_ = 0xFFFF :: Lab
+_SUP_F_ = 0xFFFE :: Lab
+_LOG_F_ = 0xFFFD :: Lab
 
 primitives :: [(String, Word16)]
 primitives =

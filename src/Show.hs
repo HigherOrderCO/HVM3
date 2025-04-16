@@ -1,4 +1,4 @@
--- //./Type.hs//
+{-./Type.hs-}
 
 module Show where
 
@@ -9,9 +9,9 @@ import Data.IORef
 import Data.List
 import Data.Word
 import Foreign
-import Type
 import Numeric (showIntAtBase)
 import System.IO.Unsafe (unsafePerformIO)
+import Type
 import qualified Data.Map.Strict as MS
 
 -- Core Stringification
@@ -22,7 +22,6 @@ showCore = coreToString . prettyRename
 
 coreToString :: Core -> String
 coreToString core =
-
   case pretty core of
     Just str -> str
     Nothing -> case core of
@@ -113,7 +112,26 @@ modeToString PARA = "^"
 -- -----------------------
 
 tagToString :: Tag -> String
-tagToString t = show (tagT t)
+tagToString tag
+  | tag == _DP0_ = "DP0"
+  | tag == _DP1_ = "DP1"
+  | tag == _VAR_ = "VAR"
+  | tag == _FWD_ = "FWD"
+  | tag == _REF_ = "REF"
+  | tag == _LET_ = "LET"
+  | tag == _APP_ = "APP"
+  | tag == _MAT_ = "MAT"
+  | tag == _IFL_ = "IFL"
+  | tag == _SWI_ = "SWI"
+  | tag == _OPX_ = "OPX"
+  | tag == _OPY_ = "OPY"
+  | tag == _ERA_ = "ERA"
+  | tag == _LAM_ = "LAM"
+  | tag == _SUP_ = "SUP"
+  | tag == _CTR_ = "CTR"
+  | tag == _W32_ = "W32"
+  | tag == _CHR_ = "CHR"
+  | otherwise    = error $ "unknown tag: " ++ show tag
 
 labToString :: Lab -> String
 labToString lab = padLeft (showHex (fromIntegral lab)) 6 '0'

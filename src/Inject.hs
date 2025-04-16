@@ -1,4 +1,4 @@
--- //./Type.hs//
+{-./Type.hs-}
 
 module Inject where
 
