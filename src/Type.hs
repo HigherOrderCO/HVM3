@@ -132,23 +132,6 @@ mget map key =
     Just val -> val
     Nothing  -> error $ "key not found: " ++ show key
 
--- -- Returns the first constructor ID in a pattern-match
--- matFirstCid :: Book -> Core -> Word16
--- matFirstCid book (Mat _ _ ((ctr,_,_):_)) =
-  -- case MS.lookup ctr (ctrToCid book) of
-    -- Just cid -> cid
-    -- Nothing  -> 0
--- matFirstCid _ _ = 0
-
--- matType :: Book -> Core -> MatT
--- matType book (Mat _ _ css) =
-  -- case css of
-    -- ((ctr,_,_):_) | ctr == "0"         -> Switch
-    -- [(ctr,_,_),("_",_,_)]              -> IfLet
-    -- cs | all (\(c,_,_) -> c /= "_") cs -> Match
-    -- _                                  -> error "invalid match"
--- matType _ _ = error "not a match"
-
 funArity :: Book -> Word16 -> Word16
 funArity book fid
   | fid == fromIntegral _SUP_F_ = 3

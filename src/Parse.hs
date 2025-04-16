@@ -1,4 +1,4 @@
--- //./Type.hs//
+{-./Type.hs-}
 
 module Parse where
 
@@ -38,51 +38,6 @@ data ParserState = ParserState
   }
 
 type ParserM = ParsecT String ParserState IO
-
--- Variable binding and usage
-bindVars :: [String] -> ParserM m -> ParserM m
-bindVars vars parse = do
-  st <- getState
-  let prev  = varUsages st
-  -- scopeless vars, regular vars
-  let (svars, rvars) = partition (\v -> head v == '$') vars
-
-  -- bind all scopeless vars
-  prev <- foldM
-    (\usgs var -> do
-      case MS.lookup var usgs  of
-        Just Bound -> fail $ "Scopeless variable " ++ show var ++ " has already been bound"
-        _          -> return $ MS.insert var Bound usgs
-    )
-    prev
-    svars
-
-  let tempBound = MS.fromList [(var, Bound) | var <- rvars]
-
-  putState st {varUsages = MS.union tempBound prev}
-
-  val <- parse
-
-  st <- getState
-  let curr  = varUsages st
-  putState st {varUsages = MS.union (MS.difference curr tempBound) prev}
-
-  return val
-
-useVar :: String -> ParserM ()
-useVar var = do
-  st <- getState
-  putState st {varUsages = MS.insert var Used (varUsages st)}
-
-checkVar :: String -> ParserM ()
-checkVar var = do
-  st <- getState
-  case (var, MS.lookup var $ varUsages st) of
-    ('&' : _, Just _)     -> return () -- &-vars can be used multiple times
-    ('$' : _, Nothing)    -> useVar var *> return () -- $-vars can be used before definition
-    (_,       Just Bound) -> useVar var *> return ()
-    (_,       Just Used)  -> fail $ "Variable " ++ show var ++ " used more than once"
-    (_,       Nothing)    -> fail $ "Unbound var " ++ show var
 
 -- Main parser
 parseCore :: ParserM Core
@@ -239,93 +194,105 @@ parseMat :: ParserM Core
 parseMat = do
   consume "~"
   val <- parseCore
-  -- Parse mov (external variables)
-  mov <- many $ do
-    try $ do
-      skip
-      consume "!"
-    key <- parseName1
-    val <- optionMaybe $ do
-      try $ consume "="
-      parseCore
-    case val of
-      Just v  -> return (key, v)
-      Nothing -> checkVar key >> return (key, Var key)
+  mov <- many parseMove  
   consume "{"
-  css <- many $ bindVars (map fst mov) $ do
-    closeWith "}"
-    skip
-    next <- lookAhead anyChar
-    -- Parse constructor case
-    if next == '#' then do
-      consume "#"
-      ctr <- parseName1
-      fds <- option [] $ do
-        try $ consume "{"
-        fds <- many $ do
-          closeWith "}"
-          parseName1
-        consume "}"
-        return fds
-      consume ":"
-      bod <- bindVars fds parseCore
-      return ('#':ctr, fds, bod)
-    -- Parse numeric or default case
-    else do
-      nam <- parseName1
-      case reads nam of
-        -- Numeric case
-        [(n :: Word64, "")] -> do
-          consume ":"
-          bod <- parseCore
-          return (nam, [], bod)
-        -- Default case
-        otherwise -> do
-          consume ":"
-          bod <- bindVars [nam] parseCore
-          return ("_", [nam], bod)
-
+  css <- many $ bindVars (map fst mov) parseCase
   consume "}"
-  css <- forM css $ \ (ctr, fds, bod) -> do
-    st <- getState
-    cid <- case ctr of
-      ('#':_) -> case MS.lookup ctr (pCtrToCid st) of
-        Nothing  -> fail $ "Constructor not defined: " ++ ctr
-        Just cid -> return $ cid -- Constructor Case: sort by CID
-      _ -> case reads ctr of
-        [(num :: Word16, "")] -> return $ num -- Numeric Case: sort by value
-        _                     -> return $ maxBound -- Default Case: always last
-    return (cid, (ctr, fds, bod))
-  css <- return $ map snd $ sortOn fst css
-  -- Switch
-  if (let (ctr, _, _) = head css in ctr == "0") then do
-    return $ Mat SWI val mov css
-  -- Match with only 1 case: a default case (forbidden)
-  else if length css == 1 && (let (ctr, _, _) = head css in ctr == "_") then do
-    fail "Match with only a default case is not allowed."
-  -- Match with a default case: turn into If-Let chain
-  else if (let (ctr, _, _) = last css in ctr == "_") then do
-    st <- getState
-    let adt     = mget (pCtrToCid st) (let (ctr,_,_) = head css in ctr)
-    let defName = (let (_,[nm],_) = last css in nm)
-    ifLets <- intoIfLetChain adt (Var defName) mov (init css) defName (last css)
-    return $ Let LAZY defName val ifLets
-  -- Match with all cases covered
-  else do
-    st <- getState
-    let adt = mget (pCtrToCid st) (let (ctr,_,_) = head css in ctr)
-    let len = mget (pCidToLen st) adt
-    if fromIntegral (length css) /= len then
-      fail $ "Incorrect number of cases"
-    else
-      return $ Mat (MAT adt) val mov css
+  css <- sortCases css
+  buildMatchExpr val mov css
 
-intoIfLetChain :: Word16 -> Core -> [(String, Core)] -> [(String, [String], Core)] -> String -> (String, [String], Core) -> ParserM Core
-intoIfLetChain adt _ _ [] defName (_,_,defBody) = return defBody
-intoIfLetChain adt val mov ((ctr,fds,bod):css) defName defCase = do
+-- Parse a move declaration (!x=expr)
+parseMove :: ParserM (String, Core)
+parseMove = do
+  try $ skip >> consume "!"
+  name <- parseName1
+  expr <- optionMaybe $ try $ consume "=" >> parseCore
+  case expr of
+    Just e  -> return (name, e)
+    Nothing -> checkVar name >> return (name, Var name) -- !x is shorthand for !x=x
+
+-- Parse a case pattern
+parseCase :: ParserM (String, [String], Core)
+parseCase = do
+  closeWith "}" >> skip
+  c <- lookAhead anyChar
+  if c == '#'
+    then parseCtrCase
+    else parseNumOrDefCase
+
+-- Parse constructor case (#Ctr{x y}: expr)
+parseCtrCase :: ParserM (String, [String], Core)
+parseCtrCase = do
+  consume "#"
+  name <- parseName1
+  vars <- option [] $ between (consume "{") (consume "}") (many $ closeWith "}" >> parseName1)
+  consume ":"
+  body <- bindVars vars parseCore
+  return ('#':name, vars, body)
+
+-- Parse numeric case (0: expr) or default case (x: expr)
+parseNumOrDefCase :: ParserM (String, [String], Core)
+parseNumOrDefCase = do
+  name <- parseName1
+  consume ":"
+  case reads name of
+    [(n :: Word64, "")] -> do 
+      body <- parseCore
+      return (name, [], body)  -- Numeric case
+    _ -> do
+      body <- bindVars [name] parseCore
+      return ("_", [name], body)  -- Default case
+
+-- Sort cases by constructor ID or numeric value
+sortCases :: [(String, [String], Core)] -> ParserM [(String, [String], Core)]
+sortCases cases = do
+  st <- getState
+  sorted <- forM cases $ \c@(name, _, _) -> do
+    key <- case name of
+      ('#':_) -> case MS.lookup name (pCtrToCid st) of
+        Nothing -> fail $ "Constructor not defined: " ++ name
+        Just id -> return id  -- Sort constructor cases by ID
+      _ -> return $ case reads name of
+        [(num :: Word16, "")] -> num  -- Sort numeric cases by value
+        _ -> maxBound  -- Default case goes last
+    return (key, c)
+  return $ map snd $ sortOn fst sorted
+
+-- Build match expression based on case types
+buildMatchExpr :: Core -> [(String, Core)] -> [(String, [String], Core)] -> ParserM Core
+buildMatchExpr val mov cases
+  | null cases = 
+      fail "Match needs at least one case"
+  | isSwitch (head cases) = 
+      return $ Mat SWI val mov cases  -- Switch case
+  | onlyDefault cases =
+      fail "Match with only a default case is not allowed"  -- Invalid case
+  | hasDefault (last cases) = do  -- Has default: use If-Let chain
+      st  <- getState
+      adt <- return $ mget (pCtrToCid st) (getName $ head cases)
+      var <- return $ getVar (last cases)
+      ifl <- intoIfLetChain (Var var) mov (init cases) var (last cases)
+      return $ Let LAZY var val ifl
+  | otherwise = do  -- All ADT cases covered
+      st <- getState
+      let adt = mget (pCtrToCid st) (getName $ head cases)
+      let len = mget (pCidToLen st) adt
+      if fromIntegral (length cases) /= len
+        then fail "Incorrect number of cases"
+        else return $ Mat (MAT adt) val mov cases
+  where
+    isSwitch (name, _, _) = name == "0"
+    hasDefault (name, _, _) = name == "_"
+    onlyDefault cases = length cases == 1 && hasDefault (head cases)
+    getName (name, _, _) = name
+    getVar (_, [v], _) = v
+
+intoIfLetChain :: Core -> [(String, Core)] -> [(String, [String], Core)] -> String -> (String, [String], Core) -> ParserM Core
+intoIfLetChain _ _ [] defName (_,_,defBody) = return defBody
+intoIfLetChain val mov ((ctr,fds,bod):css) defName defCase = do
   st  <- getState
   kin <- return $ IFL (mget (pCtrToCid st) ctr)
-  rec <- intoIfLetChain adt val mov css defName defCase
+  rec <- intoIfLetChain val mov css defName defCase
   css <- return $ [(ctr, fds, bod), ("_", [defName], rec)]
   return $ Mat kin val mov css
 
@@ -814,3 +781,67 @@ parseLog msg = do
   remaining <- getInput
   let preview = "[[[" ++ Data.List.take 20 remaining ++ (if length remaining > 20 then "..." else "") ++ "]]]"
   trace ("[" ++ show pos ++ "] " ++ msg ++ "\nRemaining code: " ++ preview) $ return ()
+
+
+-- Binding
+-- -------
+
+bindVars :: [String] -> ParserM a -> ParserM a
+bindVars vars parse = do
+  st <- getState
+  let prev = varUsages st
+  -- Split into scopeless vars (starting with $) and regular vars
+  let (svars, rvars) = partition (\v -> head v == '$') vars
+
+  -- Bind all scopeless vars
+  boundScopeless <- foldM bindScopelessVar prev svars
+  
+  -- Create temporary bindings for regular vars
+  let tempBound = MS.fromList [(var, Bound) | var <- rvars]
+  
+  -- Update parser state with all bindings
+  putState st {varUsages = MS.union tempBound boundScopeless}
+
+  -- Run the parser with the new bindings
+  val <- parse
+
+  -- Restore the original state for regular vars
+  st' <- getState
+  let curr = varUsages st'
+  putState st' {varUsages = MS.union (MS.difference curr tempBound) prev}
+
+  return val
+  
+  where
+    -- Helper to bind a scopeless variable
+    bindScopelessVar usages var =
+      case MS.lookup var usages of
+        Just Bound -> fail $ "Scopeless variable " ++ show var ++ " has already been bound"
+        _          -> return $ MS.insert var Bound usages
+
+useVar :: String -> ParserM ()
+useVar var = do
+  st <- getState
+  putState st {varUsages = MS.insert var Used (varUsages st)}
+
+checkVar :: String -> ParserM ()
+checkVar var = do
+  st <- getState
+  case (var, MS.lookup var $ varUsages st) of
+    ('&' : _, Just _)     -> return () -- &-vars can be used multiple times
+    ('$' : _, Nothing)    -> useVar var *> return () -- $-vars can be used before definition
+    (_,       Just Bound) -> useVar var *> return ()
+    (_,       Just Used)  -> fail $ "Variable " ++ show var ++ " used more than once"
+    (_,       Nothing)    -> fail $ "Unbound var " ++ show var
+
+
+
+
+
+
+
+
+
+
+
+
