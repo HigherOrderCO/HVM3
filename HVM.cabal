@@ -23,7 +23,6 @@ executable hvm
                     , Inject
                     , Parse
                     , Reduce
-                    , Show
     build-depends:    base ^>=4.21.0.0,
                       mtl ^>=2.3.1,
                       containers ^>=0.7,

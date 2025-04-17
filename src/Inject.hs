@@ -10,7 +10,6 @@ import Data.List (foldr, take)
 import Data.Word
 import Debug.Trace
 import Foreign
-import Show
 import Type
 import qualified Data.Map.Strict as MS
 
@@ -77,7 +76,7 @@ injectCore book (Ref nam fid arg) loc = do
   let ari = funArity book fid
   let lab = fromIntegral fid
   when (ari /= fromIntegral (length arg)) $ do
-    error $ "Arity mismatch on term: " ++ showCore (Ref nam fid arg) ++ ". Expected " ++ show ari ++ ", got " ++ show (length arg) ++ "."
+    error $ "Arity mismatch on term: " ++ show (Ref nam fid arg) ++ ". Expected " ++ show ari ++ ", got " ++ show (length arg) ++ "."
   ref <- lift $ allocNode (fromIntegral ari)
   sequence_ [injectCore book x (ref + i) | (i,x) <- zip [0..] arg]
   lift $ set loc (termNew _REF_ lab ref)
@@ -90,14 +89,13 @@ injectCore book (Ctr nam fds) loc = do
   sequence_ [injectCore book fd (ctr + ix) | (ix,fd) <- zip [0..] fds]
   lift $ set loc (termNew _CTR_ lab ctr)
 
-injectCore book tm@(Mat val mov css) loc = do
-  typ <- return $ matType book tm
+injectCore book tm@(Mat kin val mov css) loc = do
   mat <- lift $ allocNode (1 + fromIntegral (length css))
   injectCore book val (mat + 0)
   forM_ (zip [0..] css) $ \ (idx, (ctr, fds, bod)) -> do
     injectCore book (foldr (\x b -> Lam x b) (foldr (\x b -> Lam x b) bod (map fst mov)) fds) (mat + 1 + fromIntegral idx)
-  let tag = case typ of { Switch -> _SWI_ ; Match  -> _MAT_ ; IfLet -> _IFL_ }
-  let lab = case typ of { Switch -> fromIntegral $ length css ; _ -> fromIntegral $ matFirstCid book tm }
+  let tag = case kin of { SWI -> _SWI_ ; (MAT _) -> _MAT_ ; (IFL _) -> _IFL_ }
+  let lab = case kin of { SWI -> fromIntegral $ length css ; (MAT cid) -> fromIntegral cid ; (IFL cid) -> fromIntegral cid }
   trm <- return $ termNew tag lab mat
   ret <- foldM (\mat (_, val) -> do
       app <- lift $ allocNode 2
@@ -132,7 +130,7 @@ doInjectCoreAt book core host argList = do
         else do
           return $ m
       Nothing -> do
-        error $ "Unbound variable: \n\x1b[2m" ++ name ++ "\n\x1b[0mIn term:\n\x1b[2m" ++ Data.List.take 256 (coreToString core) ++ "...\x1b[0m")
+        error $ "Unbound variable: \n\x1b[2m" ++ name ++ "\n\x1b[0mIn term:\n\x1b[2m" ++ Data.List.take 256 (show core) ++ "...\x1b[0m")
     (args state)
     (vars state)
   got host
