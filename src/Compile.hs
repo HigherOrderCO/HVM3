@@ -478,7 +478,7 @@ compileFastBody book fid term ctx stop itr = do
   body <- compileFastCore book fid term
   emit $ "itrs += " ++ show itr ++ ";"
   compileFastSave book fid term ctx itr
-  emit $ "HVM.interactions->ref_fall[term_lab(ref)]++;"
+  --emit $ "HVM.interactions->ref_fall[term_lab(ref)]++;"
   emit $ "return " ++ body ++ ";"
 
 -- Completes a fast mode call
