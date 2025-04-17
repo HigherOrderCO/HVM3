@@ -308,7 +308,7 @@ parseMat = do
     st <- getState
     let adt     = mget (pCtrToCid st) (let (ctr,_,_) = head css in ctr)
     let defName = (let (_,[nm],_) = last css in nm)
-    let ifLets  = intoIfLetChain adt (Var defName) mov (init css) defName (last css)
+    ifLets <- intoIfLetChain adt (Var defName) mov (init css) defName (last css)
     return $ Let LAZY defName val ifLets
   -- Match with all cases covered
   else do
@@ -320,11 +320,14 @@ parseMat = do
     else
       return $ Mat (MAT adt) val mov css
 
-intoIfLetChain :: Word16 -> Core -> [(String, Core)] -> [(String, [String], Core)] -> String -> (String, [String], Core) -> Core
-intoIfLetChain adt _ _ [] defName (_,_,defBody) = defBody
-intoIfLetChain adt val mov ((ctr,fds,bod):css) defName defCase =
-  let rest = intoIfLetChain adt val mov css defName defCase in 
-  Mat (IFL adt) val mov [(ctr, fds, bod), ("_", [defName], rest)]
+intoIfLetChain :: Word16 -> Core -> [(String, Core)] -> [(String, [String], Core)] -> String -> (String, [String], Core) -> ParserM Core
+intoIfLetChain adt _ _ [] defName (_,_,defBody) = return defBody
+intoIfLetChain adt val mov ((ctr,fds,bod):css) defName defCase = do
+  st  <- getState
+  kin <- return $ IFL (mget (pCtrToCid st) ctr)
+  rec <- intoIfLetChain adt val mov css defName defCase
+  css <- return $ [(ctr, fds, bod), ("_", [defName], rec)]
+  return $ Mat kin val mov css
 
 parseLet :: ParserM Core
 parseLet = do
