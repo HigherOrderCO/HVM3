@@ -345,42 +345,16 @@ parseChr :: ParserM Core
 parseChr = do
   skip
   char '\''
-  c <- parseEscapedChar
+  c <- escaped
   char '\''
   return $ Chr c
-  where 
-  parseEscapedChar :: ParserM Char
-  parseEscapedChar
-    =   parseEscapeSequence
-    <|> parseUnicodeEscape
-    <|> parseRegularChar
-    where
-    parseEscapeSequence = try $ do
-      char '\\'
-      c <- oneOf "\\\"nrtbf0/\'"
-      return $ case c of
-        '\\' -> '\\'
-        '/'  -> '/'
-        '"'  -> '"'
-        '\'' -> '\''
-        'n'  -> '\n'
-        'r'  -> '\r'
-        't'  -> '\t'
-        'b'  -> '\b'
-        'f'  -> '\f'
-        '0'  -> '\0'
-    parseUnicodeEscape = try $ do
-      string "\\u"
-      code <- count 4 hexDigit
-      return $ toEnum (read ("0x" ++ code) :: Int)
-    parseRegularChar = noneOf "\"\\"
 
--- Str: "abc"
+-- -- Str: "abc"
 parseStr :: Char -> ParserM Core
 parseStr delim = do
   skip
   char delim
-  str <- many (noneOf [delim])
+  str <- many escaped
   char delim
   return $ foldr (\c acc -> Ctr "#Cons" [Chr c, acc]) (Ctr "#Nil" []) str
 
@@ -541,6 +515,32 @@ skip = skipMany (parseSpace <|> parseComment) where
     skipMany (noneOf "\n")
     (char '\n' >> return ()) <|> eof
     return ()) <?> "Comment"
+
+escaped :: ParserM Char
+escaped
+  =   parseEscapeSequence
+  <|> parseUnicodeEscape
+  <|> parseRegularChar
+  where
+  parseEscapeSequence = try $ do
+    char '\\'
+    c <- oneOf "\\\"nrtbf0/\'"
+    return $ case c of
+      '\\' -> '\\'
+      '/'  -> '/'
+      '"'  -> '"'
+      '\'' -> '\''
+      'n'  -> '\n'
+      'r'  -> '\r'
+      't'  -> '\t'
+      'b'  -> '\b'
+      'f'  -> '\f'
+      '0'  -> '\0'
+  parseUnicodeEscape = try $ do
+    string "\\u"
+    code <- count 4 hexDigit
+    return $ toEnum (read ("0x" ++ code) :: Int)
+  parseRegularChar = noneOf "\"\\"
 
 -- External API
 -- ------------
