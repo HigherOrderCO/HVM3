@@ -204,3 +204,10 @@ foreign import ccall unsafe "Runtime.c hvm_get_ref_fast"    hvmGetRefFast :: Wor
 foreign import ccall unsafe "Runtime.c hvm_get_ref_slow"    hvmGetRefSlow :: Word16 -> IO Word64
 foreign import ccall unsafe "Runtime.c hvm_get_ref_fall"    hvmGetRefFall :: Word16 -> IO Word64
 foreign import ccall unsafe "Runtime.c hvm_get_ref_itrs"    hvmGetRefItrs :: Word16 -> IO Word64
+
+showTerm :: Term -> String
+showTerm term =
+  let tag = showTag (termTag term)
+      lab = showLab (termLab term)
+      loc = showLoc (termLoc term)
+  in "term_new(" ++ tag ++ ",0x" ++ lab ++ ",0x" ++ loc ++ ")"

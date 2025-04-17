@@ -1,5 +1,5 @@
--- //./Type.hs//
--- //./Inject.hs//
+{-./Type.hs-}
+{-./Inject.hs-}
 
 module Extract where
 
@@ -11,9 +11,8 @@ import Data.IORef
 import Data.Word
 import Debug.Trace
 import Foreign
-import Show
-import Type
 import System.IO.Unsafe (unsafeInterleaveIO)
+import Type
 import qualified Data.IntSet as IS
 import qualified Data.Map.Strict as MS
 
@@ -22,12 +21,12 @@ extractCoreAt :: IORef IS.IntSet -> ReduceAt -> Book -> Loc -> HVM Core
 extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
   term <- reduceAt book host
   -- trace ("extract " ++ show host ++ " " ++ termToString term) $
-  case tagT (termTag term) of
-
-    ERA -> do
+  let tag = termTag term
+  case tag of
+    t | t == _ERA_ -> do
       return Era
 
-    LET -> do
+    t | t == _LET_ -> do
       let loc  = termLoc term
       let mode = modeT (termLab term)
       name <- return $ "$" ++ show (loc + 0)
@@ -35,26 +34,26 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
       bod  <- extractCoreAt dupsRef reduceAt book (loc + 1)
       return $ Let mode name val bod
 
-    LAM -> do
+    t | t == _LAM_ -> do
       let loc = termLoc term
       name <- return $ "$" ++ show (loc + 0)
       bod  <- extractCoreAt dupsRef reduceAt book (loc + 0)
       return $ Lam name bod
 
-    APP -> do
+    t | t == _APP_ -> do
       let loc = termLoc term
       fun <- extractCoreAt dupsRef reduceAt book (loc + 0)
       arg <- extractCoreAt dupsRef reduceAt book (loc + 1)
       return $ App fun arg
 
-    SUP -> do
+    t | t == _SUP_ -> do
       let loc = termLoc term
       let lab = termLab term
       tm0 <- extractCoreAt dupsRef reduceAt book (loc + 0)
       tm1 <- extractCoreAt dupsRef reduceAt book (loc + 1)
       return $ Sup lab tm0 tm1
 
-    VAR -> do
+    t | t == _VAR_ -> do
       let loc = termLoc term
       sub <- got (loc + 0)
       if termGetBit sub == 0
@@ -65,7 +64,7 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
           set (loc + 0) (termRemBit sub)
           extractCoreAt dupsRef reduceAt book (loc + 0)
 
-    DP0 -> do
+    t | t == _DP0_ -> do
       let loc = termLoc term
       let lab = termLab term
       dups <- readIORef dupsRef
@@ -80,7 +79,7 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
         modifyIORef' dupsRef (IS.insert (fromIntegral loc))
         return $ Dup lab dp0 dp1 val (Var dp0)
 
-    DP1 -> do
+    t | t == _DP1_ -> do
       let loc = termLoc term
       let lab = termLab term
       dups <- readIORef dupsRef
@@ -95,7 +94,7 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
         modifyIORef' dupsRef (IS.insert (fromIntegral loc))
         return $ Dup lab dp0 dp1 val (Var dp1)
 
-    CTR -> do
+    t | t == _CTR_ -> do
       let loc = termLoc term
       let lab = termLab term
       let cid = fromIntegral lab
@@ -105,7 +104,7 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
       fds <- mapM (\i -> extractCoreAt dupsRef reduceAt book (loc + i)) ars
       return $ Ctr nam fds
 
-    MAT -> do
+    t | t == _MAT_ -> do
       let loc = termLoc term
       let lab = termLab term
       let cid = fromIntegral lab
@@ -117,18 +116,18 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
         let fds = if ari == 0 then [] else ["$" ++ show (loc + 1 + j) | j <- [0..fromIntegral ari-1]]
         bod <- extractCoreAt dupsRef reduceAt book (loc + 1 + fromIntegral i)
         return $ (ctr,fds,bod):css) [] [0..len-1]
-      return $ Mat val [] (reverse css)
+      return $ Mat (MAT cid) val [] (reverse css)
 
-    IFL -> do
+    t | t == _IFL_ -> do
       let loc = termLoc term
       let lab = termLab term
       let cid = fromIntegral lab
       val <- extractCoreAt dupsRef reduceAt book (loc + 0)
       cs0 <- extractCoreAt dupsRef reduceAt book (loc + 1)
       cs1 <- extractCoreAt dupsRef reduceAt book (loc + 2)
-      return $ Mat val [] [(mget (cidToCtr book) cid, [], cs0), ("_", [], cs1)]
+      return $ Mat (IFL cid) val [] [(mget (cidToCtr book) cid, [], cs0), ("_", [], cs1)]
 
-    SWI -> do
+    t | t == _SWI_ -> do
       let loc = termLoc term
       let lab = termLab term
       let len = fromIntegral lab
@@ -136,31 +135,31 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
       css <- foldM (\css i -> do
         bod <- extractCoreAt dupsRef reduceAt book (loc + 1 + i)
         return $ (show i, [], bod):css) [] [0..len-1]
-      return $ Mat val [] (reverse css)
+      return $ Mat SWI val [] (reverse css)
 
-    W32 -> do
+    t | t == _W32_ -> do
       let val = termLoc term
       return $ U32 (fromIntegral val)
 
-    CHR -> do
+    t | t == _CHR_ -> do
       let val = termLoc term
       return $ Chr (chr (fromIntegral val))
 
-    OPX -> do
+    t | t == _OPX_ -> do
       let loc = termLoc term
       let opr = toEnum (fromIntegral (termLab term))
       nmx <- extractCoreAt dupsRef reduceAt book (loc + 0)
       nmy <- extractCoreAt dupsRef reduceAt book (loc + 1)
       return $ Op2 opr nmx nmy
 
-    OPY -> do
+    t | t == _OPY_ -> do
       let loc = termLoc term
       let opr = toEnum (fromIntegral (termLab term))
       nmy <- extractCoreAt dupsRef reduceAt book (loc + 0)
       nmx <- extractCoreAt dupsRef reduceAt book (loc + 1)
       return $ Op2 opr nmx nmy
 
-    REF -> do
+    t | t == _REF_ -> do
       let loc = termLoc term
       let lab = termLab term
       let fid = fromIntegral lab
@@ -169,6 +168,9 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
       arg <- mapM (\i -> extractCoreAt dupsRef reduceAt book (loc + i)) aux
       let name = MS.findWithDefault "?" fid (fidToNam book)
       return $ Ref name fid arg
+
+    t | t == _FWD_ -> do
+      return Era
 
     _ -> do
       return Era
@@ -218,11 +220,11 @@ liftDups (Ctr nam fds) =
   let (fdsT, fdsD) = liftDupsList fds
   in (Ctr nam fdsT, fdsD)
 
-liftDups (Mat val mov css) =
+liftDups (Mat kin val mov css) =
   let (valT, valD) = liftDups val
       (movT, movD) = liftDupsMov mov
       (cssT, cssD) = liftDupsCss css
-  in (Mat valT movT cssT, valD . movD . cssD)
+  in (Mat kin valT movT cssT, valD . movD . cssD)
 
 liftDups (U32 val) =
   (U32 val, id)
@@ -276,3 +278,21 @@ doLiftDups term =
   let termBody = termDups (Var "") in
   -- hack to print expr before dups
   Let LAZY "" termExpr termBody
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
