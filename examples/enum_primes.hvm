@@ -4,7 +4,7 @@ data Bin { #O{pred} #I{pred} #E }
 // If-Then-Else
 @if(b t f) = ~b {
   0: f
-  k: t
+  _: t
 }
 
 // Converts a Bin to an U32
@@ -17,9 +17,9 @@ data Bin { #O{pred} #I{pred} #E }
 // Converts an U32 to a Bin of given size
 @bin(s n) = ~s{
   0: #E
-  p: !&0{n0 n1}=n ~(% n0 2) !p !n1 {
+  1+p: !&0{n0 n1}=n ~(% n0 2) !p !n1 {
     0: #O{@bin(p (/ n1 2))}
-    k: #I{@bin(p (/ n1 2))}
+    _: #I{@bin(p (/ n1 2))}
   }
 }
 
@@ -88,13 +88,13 @@ data Bin { #O{pred} #I{pred} #E }
 // Enums all Bins of given size (label 1)
 @all1(s) = ~s{
   0: #E
-  p: !&1{p0 p1}=p &1{ #O{@all1(p0)} #I{@all1(p1)} }
+  1+p: !&1{p0 p1}=p &1{ #O{@all1(p0)} #I{@all1(p1)} }
 }
 
 // Enums all Bins of given size (label 2)
 @all2(s) = ~s{
   0: #E
-  p: !&2{p0 p1}=p &2{ #O{@all2(p0)} #I{@all2(p1)} }
+  1+p: !&2{p0 p1}=p &2{ #O{@all2(p0)} #I{@all2(p1)} }
 }
 
 // 8:

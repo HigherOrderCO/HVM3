@@ -49,7 +49,7 @@ parseCore = do
     'λ'  -> parseLam
     '('  -> parseExp
     '@'  -> parseRef
-    '&'  -> parseAmp
+    '&'  -> parseSup
     '!'  -> parseLet
     '#'  -> parseCtr
     '~'  -> parseMat
@@ -70,46 +70,33 @@ parseLam :: ParserM Core
 parseLam = do
   consume "λ"
   var <- parseName1
+  swallow "."
   bod <- bindVars [var] parseCore
   return $ Lam var bod
 
--- Amp: Sup | DynSup | DynLab
-parseAmp :: ParserM Core
-parseAmp = do
-  consume "&"
-  parseSup <|> parseDynSup
-
--- Sup: `&1{a b}`
+-- FshSup: `& {a,b}` -- uses a fresh label
+-- StaSup: `&0{a,b}` -- uses a static label
+-- DynSup: `&L{a,b}` -- uses a dynamic label
+-- DynLab: `&L`      -- a dynamic label variable
 parseSup :: ParserM Core
-parseSup = try $ do
-  digits <- many1 digit
-  case reads digits of
-    [(label :: Lab, "")] -> do
-      skip
-      consume "{"
-      tm0 <- parseCore
-      tm1 <- parseCore
-      consume "}"
-      return $ Sup label tm0 tm1
-    _ -> fail "Not a number"
-
--- DynSup: `&L{a b}`
--- DynLab: `&L`
-parseDynSup :: ParserM Core
-parseDynSup = do
+parseSup = do
+  consume "&"
   name <- parseName
   next <- optionMaybe $ try $ lookAhead anyChar
   case next of
     Just '{' -> do
       consume "{"
       tm0 <- parseCore
+      swallow ","
       tm1 <- parseCore
       consume "}"
-      if null name 
-        then do
-          num <- genFreshLabel
+      if null name then do
+        num <- genFreshLabel
+        return $ Sup num tm0 tm1
+      else case reads name of
+        [(num :: Lab, "")] -> do
           return $ Sup num tm0 tm1
-        else do  
+        otherwise -> do
           var <- makeVar ("&" ++ name)
           return $ Ref "SUP" (fromIntegral _SUP_F_) [var, tm0, tm1]
     _ -> makeVar ("&" ++ name)
@@ -170,6 +157,7 @@ parseRef = do
     try $ string "("
     args <- many $ do
       closeWith ")"
+      swallow ","
       parseCore
     consume ")"
     return args
@@ -196,9 +184,10 @@ parseMat = do
   val <- parseCore
   mov <- many parseMove  
   consume "{"
-  css <- many $ bindVars (map fst mov) parseCase
+  cs0 <- bindVars (map fst mov) (parseCase False)
+  css <- many $ bindVars (map fst mov) (parseCase (let (n,_,_)=cs0 in n=="0"))
   consume "}"
-  css <- sortCases css
+  css <- sortCases (cs0:css)
   buildMatchExpr val mov css
 
 -- Mov: `!m0 = v0` (used inside Mat)
@@ -214,15 +203,15 @@ parseMove = do
       return (name, var)  -- !x is shorthand for !x=x
 
 -- Case: CtrCase | NumCase | DefCase
-parseCase :: ParserM (String, [String], Core)
-parseCase = do
+parseCase :: Bool -> ParserM (String, [String], Core)
+parseCase isNumMat = do
   closeWith "}" >> skip
   c <- lookAhead anyChar
   if c == '#'
-    then parseCtrCase  -- Constructor case
+    then parseCtrCase -- Constructor case
     else if c >= '0' && c <= '9'
-      then parseNumCase  -- Numeric case
-      else parseDefCase  -- Default case
+      then parseNumCase -- Numeric case
+      else (parseDefCase isNumMat) -- Default case
 
 -- CtrCase: `#Ctr{x0 x1 ...}: f`
 parseCtrCase :: ParserM (String, [String], Core)
@@ -238,23 +227,49 @@ parseCtrCase = do
     return vars
   consume ":"
   body <- bindVars vars parseCore
+  swallow ";"
   return ('#':name, vars, body)
 
--- NumCase: `123: f`
+-- NumCase: LitCase | PreCase
 parseNumCase :: ParserM (String, [String], Core)
-parseNumCase = do
-  name <- parseName1
+parseNumCase = try parseLitCase <|> try parsePreCase
+
+-- LitCase: `123: f`
+parseLitCase :: ParserM (String, [String], Core)
+parseLitCase = do
+  digits <- many1 digit
   consume ":"
   body <- parseCore
-  return (name, [], body)
+  swallow ";"
+  return (digits, [], body)
 
--- DefCase: `_: f`
-parseDefCase :: ParserM (String, [String], Core)
-parseDefCase = do
+-- PreCase: `123+p: f`
+parsePreCase :: ParserM (String, [String], Core)
+parsePreCase = do
+  pred <- many1 digit
+  consume "+"
   name <- parseName1
   consume ":"
   body <- bindVars [name] parseCore
+  swallow ";"
   return ("_", [name], body)
+
+-- DefCase: `x: f`
+parseDefCase :: Bool -> ParserM (String, [String], Core)
+parseDefCase isNumMat = do
+  name <- parseName1
+  consume ":"
+  body <- bindVars [name] parseCore
+  swallow ";"
+  if isNumMat && name /= "_" then do
+    fail $ concat
+      [ "To avoid ambiguity, the switch syntax changed.\n"
+      , "- Old Syntax: ~ n { 0:zero_case x:pred_case }\n"
+      , "- New Syntax: ~ n { 0:zero_case 1+x:pred_case }\n"
+      , "- Please, update your code."
+      ]
+  else do
+    return ("_", [name], body)
 
 -- Let: Dup | StriLet | LazyLet
 parseLet :: ParserM Core
@@ -267,7 +282,9 @@ parseLet = do
     '!' -> parseStriLet
     _   -> parseLazyLet
 
--- Dup: `! &L{a b}=v f`
+-- Fresh Dup   : `! & {a b}=v f`
+-- Static Dup  : `! &0{a b}=v f`
+-- Dynamic Dup : `! &L{a b}=v f`
 parseDup :: ParserM Core
 parseDup = do
   consume "&"
@@ -278,12 +295,14 @@ parseDup = do
   consume "}"
   consume "="
   val <- parseCore
+  swallow ";"
   bod <- bindVars [dp0, dp1] parseCore
   if null nam then do
     num <- genFreshLabel
     return $ Dup num dp0 dp1 val bod
   else case reads nam of
-    [(num :: Lab, "")] -> return $ Dup num dp0 dp1 val bod
+    [(num :: Lab, "")] -> do
+      return $ Dup num dp0 dp1 val bod
     otherwise -> do
       var <- makeVar ("&" ++ nam)
       return $ Ref "DUP" (fromIntegral _DUP_F_) [var, val, Lam dp0 (Lam dp1 bod)]
@@ -297,6 +316,7 @@ parseStriLet = do
     consume "="
     return nam
   val <- parseCore
+  swallow ";"
   bod <- bindVars [fromMaybe "_" nam] parseCore
   case nam of
     Just nam -> return $ Let STRI nam val bod
@@ -308,6 +328,7 @@ parseLazyLet = do
   nam <- parseName1
   consume "="
   val <- parseCore
+  swallow ";"
   bod <- bindVars [nam] parseCore
   return $ Let LAZY nam val bod
 
@@ -370,6 +391,7 @@ parseLst = do
   char '['
   elems <- many $ do
     closeWith "]"
+    swallow ","
     parseCore
   skip
   char ']'
@@ -383,16 +405,17 @@ parseDef = do
     skip
     return True
   string "@"
-  name <- parseName
+  name <- parseName1
   args <- option [] $ do
     try $ string "("
     args <- many $ do
       closeWith ")"
+      swallow ","
       bang <- option False $ do
         try $ do
           consume "!"
           return True
-      arg <- parseName
+      arg <- parseName1
       let strict = bang || head arg == '&'
       return (strict, arg)
     consume ")"
@@ -406,7 +429,7 @@ parseDef = do
 parseADT :: ParserM ()
 parseADT = do
   string "data"
-  name <- parseName
+  name <- parseName1
   skip
   consume "{"
   constructors <- many parseADTCtr
@@ -418,7 +441,7 @@ parseADTCtr :: ParserM (String, [String])
 parseADTCtr = do
   skip
   consume "#"
-  name <- parseName
+  name <- parseName1
   st <- getState
   when (MS.member ('#':name) (pCtrToCid st)) $ do
     fail $ "Constructor '" ++ name ++ "' redefined"
@@ -426,7 +449,7 @@ parseADTCtr = do
     try $ consume "{"
     fds <- many $ do
       closeWith "}"
-      parseName
+      parseName1
     skip
     consume "}"
     return fds
@@ -496,6 +519,12 @@ parseName1 = skip >> many1 (alphaNum <|> char '_' <|> char '$' <|> char '&')
 
 consume :: String -> ParserM String
 consume str = skip >> string str
+
+swallow :: String -> ParserM ()
+swallow str = do
+  skip
+  _ <- optionMaybe $ try (string str)
+  return ()
 
 closeWith :: String -> ParserM ()
 closeWith str = try $ do
@@ -809,7 +838,7 @@ lexify term = evalState (go term MS.empty) 0 where
 sortCases :: [(String, [String], Core)] -> ParserM [(String, [String], Core)]
 sortCases cases = do
   st <- getState
-  sorted <- forM cases $ \c@(name, _, _) -> do
+  sorted <- forM cases $ \c@(name, fds, _) -> do
     key <- case name of
       ('#':_) -> case MS.lookup name (pCtrToCid st) of
         Nothing -> fail $ "Constructor not defined: " ++ name

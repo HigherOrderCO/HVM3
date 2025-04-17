@@ -7,7 +7,7 @@ data List { #Nil #Cons{ head tail } }
 
 @range(n xs) = ~n !xs {
   0: xs
-  p: !&0{p0 p1}=p @range(p0 #Cons{p1 xs})
+  1+p: !&0{p0 p1}=p @range(p0 #Cons{p1 xs})
 }
 
 @main = @sum(@range(50_000_000 #Nil) 0)

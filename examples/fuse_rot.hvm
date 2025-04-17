@@ -6,13 +6,13 @@ data List { #Nil #Cons{head tail} }
 // Repeated Application
 @rep(n f x) = ~ n !f !x {
   0: x
-  p: !&0{f0 f1}=f (f0 @rep(p f1 x))
+  1+p: !&0{f0 f1}=f (f0 @rep(p f1 x))
 }
 
 // Squared Application
 @sqr(n f x) = ~ n !f !x {
   0: x
-  p:!&0{p0 p1}=(+ p 1)
+  1+p:!&0{p0 p1}=(+ p 1)
     !&0{fA f0}=f
     !&0{f1 f2}=fA
     @sqr((/ p0 2) λk(f0 (f1 k)) @rep((% p1 2) f2 x))
@@ -23,41 +23,41 @@ data List { #Nil #Cons{head tail} }
 @L(x)   = x
 
 @view(&s) = ~&s {
-  0 : λx x
-  &p: λx (x
+  0: λx x
+  1+&p: λx (x
     λa λb [0 (@view(&p) a) (@view(&p) b)]
     λa λb [1 (@view(&p) a) (@view(&p) b)])
 }
 
 @read(&s) = ~&s {
-  0 : λx 0
-  &p: λx (x
+  0: λx 0
+  1+&p: λx (x
     λa λb (+ 0 (* (@read(&p) a) 2))
     λa λb (+ 1 (* (@read(&p) a) 2)))
 }
 
 @zero(s) = ~s {
   0: 0
-  &p: @O(@zero(&p) @zero(&p))
+  1+&p: @O(@zero(&p) @zero(&p))
 }
 
 @inc(s) = ~s {
   0: λx x
-  &p: λx λo λi (x
+  1+&p: λx λo λi (x
     λa λb (i b (@inc(&p) a))
     λa λb (o b (@inc(&p) a)))
 }
 
 @dec(s) = ~s {
   0: λx x
-  &p: λx λo λi (x
+  1+&p: λx λo λi (x
     λa λb (i (@dec(&p) b) a)
     λa λb (o (@dec(&p) b) a))
 }
 
 @neg(&s) = ~&s {
   0: λx x
-  &p: λx λo λi (x
+  1+&p: λx λo λi (x
     λa λb (o (@neg(&p) a) (@neg(&p) b))
     λa λb (i (@neg(&p) b) (@neg(&p) a)))
 }
@@ -65,7 +65,7 @@ data List { #Nil #Cons{head tail} }
 // What this does?
 @foo(&s) = ~&s {
   0: λx λy x
-  &p: λx (x
+  1+&p: λx (x
     λxa λxb !&1{xa0 xa1}=xa !&1{xb0 xb1}=xb λy λo λi (y
       λya λyb (o (@foo(&p) xa0 ya) (@foo(&p) xb0 yb))
       λya λyb (i (@foo(&p) xb1 yb) (@foo(&p) xa1 ya)))
@@ -78,7 +78,7 @@ data List { #Nil #Cons{head tail} }
 // fuse; but since we can't, it doesn't, making it slow
 @add(&s) = ~&s {
   0: λx λy y
-  &p: λx (x
+  1+&p: λx (x
     λxa λxb !&1{xa0 xa1}=xa !&1{xb0 xb1}=xb λy λo λi (y
       λya λyb (o (@add(&p) xa0 ya) (@add(&p) xb0 yb))
       λya λyb (i (@add(&p) xb1 ya) (@add(&p) xa1 yb)))
