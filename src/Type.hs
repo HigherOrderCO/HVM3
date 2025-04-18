@@ -72,6 +72,7 @@ data Book = Book
   , cidToCtr :: MS.Map Word16 Name   -- ctor id to name
   , ctrToCid :: MS.Map Name   Word16 -- ctor name to id
   , cidToADT :: MS.Map Word16 Word16 -- ctor id to ADT id (first ADT cid)
+  , freshLab :: Lab                  -- auto dup label counter
   } deriving (Show, Eq)
 
 -- Runtime Types

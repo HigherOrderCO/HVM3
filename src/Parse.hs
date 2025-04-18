@@ -28,13 +28,13 @@ import qualified Data.Map.Strict as MS
 data VarUsage = Bound | Used
 
 data ParserState = ParserState
-  { pCidToAri  :: MS.Map Word16 Word16
-  , pCidToLen  :: MS.Map Word16 Word16
-  , pCtrToCid  :: MS.Map String Word16
-  , pCidToADT  :: MS.Map Word16 Word16
-  , imported   :: MS.Map String ()
-  , varUsages  :: MS.Map String VarUsage
-  , freshLabel :: Lab
+  { pCidToAri :: MS.Map Word16 Word16
+  , pCidToLen :: MS.Map Word16 Word16
+  , pCtrToCid :: MS.Map String Word16
+  , pCidToADT :: MS.Map Word16 Word16
+  , imported  :: MS.Map String ()
+  , varUsages :: MS.Map String VarUsage
+  , pFreshLab :: Lab
   }
 
 type ParserM = ParsecT String ParserState IO
@@ -550,10 +550,10 @@ doParseBook filePath code = do
   result <- runParserT p (ParserState MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty 0) "" code
   case result of
     Right (defs, st) -> do
-      return $ createBook defs (pCtrToCid st) (pCidToAri st) (pCidToLen st) (pCidToADT st)
+      return $ createBook defs (pCtrToCid st) (pCidToAri st) (pCidToLen st) (pCidToADT st) (pFreshLab st)
     Left err -> do
       showParseError filePath code err
-      return $ Book MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty
+      return $ Book MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty 0
   where
     p = do
       defs <- parseBook
@@ -568,6 +568,31 @@ doParseCore code = do
     Left err -> do
       showParseError "" code err
       return $ Ref "⊥" 0 []
+
+doParseArgument :: String -> Book -> IO (Book, Core)
+doParseArgument code book = do
+  result <- runParserT p (ParserState 
+    { pCidToAri = cidToAri book
+    , pCidToLen = cidToLen book
+    , pCtrToCid = ctrToCid book
+    , pCidToADT = cidToADT book
+    , imported  = MS.empty
+    , varUsages = MS.empty
+    , pFreshLab = freshLab book
+    }) "" code
+  case result of
+    Right (core, st) -> do
+      let book' = book { freshLab = pFreshLab st }
+      return (book', core)
+    Left err -> do
+      showParseError "" code err
+      return (book, Ref "⊥" 0 [])
+  where
+      p = do
+        core <- parseCore
+        st <- getState
+        let core' = setRefIds (namToFid book) core
+        return (core', st)
 
 -- Errors
 -- ------
@@ -634,8 +659,8 @@ registerADT name constructors = do
     pCidToADT = MS.union (MS.fromList cidToADT) (pCidToADT s) })
 
 -- Book creation and setup functions
-createBook :: [(String, ((Bool,[(Bool,String)]), Core))] -> MS.Map String Word16 -> MS.Map Word16 Word16 -> MS.Map Word16 Word16 -> MS.Map Word16 Word16 -> Book
-createBook defs ctrToCid cidToAri cidToLen cidToADT =
+createBook :: [(String, ((Bool,[(Bool,String)]), Core))] -> MS.Map String Word16 -> MS.Map Word16 Word16 -> MS.Map Word16 Word16 -> MS.Map Word16 Word16 -> Lab -> Book
+createBook defs ctrToCid cidToAri cidToLen cidToADT freshLab =
   let withPrims = \n2i -> MS.union n2i (MS.fromList primitives)
       nameList  = zip (map fst defs) [0..] :: [(String, Word16)]
       namToFid' = withPrims (MS.fromList nameList)
@@ -653,6 +678,7 @@ createBook defs ctrToCid cidToAri cidToLen cidToADT =
        , ctrToCid = ctrToCid
        , cidToLen = cidToLen
        , cidToADT = cidToADT
+       , freshLab = freshLab
        }
 
 -- Binding
@@ -717,8 +743,8 @@ checkVar var = do
 genFreshLabel :: ParserM Lab
 genFreshLabel = do
   st <- getState
-  let lbl = freshLabel st
-  putState st { freshLabel = lbl + 1 }
+  let lbl = pFreshLab st
+  putState st { pFreshLab = lbl + 1 }
   when (lbl > 0x7FFFFF) $ do
     error "Label overflow: generated label would be too large"
   return $ lbl + 0x800000
