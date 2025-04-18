@@ -126,12 +126,10 @@ data Maybe {
   1+p: λk #Cons{'S' (@show_nat(p) k)}
 }
 
-@show_dec(n r) =
-  ! &{n n0} = n
-  ! &{n n1} = n
+@show_dec(&n r) =
   ! chr = (+ (% n 10) '0')
-  ~ (< n0 10) !chr !r {
-    0: @show_dec((/ n1 10) #Cons{chr r})
+  ~ (< n 10) !chr !r {
+    0: @show_dec((/ n 10) #Cons{chr r})
     _: #Cons{chr r}
   }
 
@@ -145,16 +143,14 @@ data Maybe {
 
 @do_show_bits(bits) = (@show_bits(bits) #Nil)
 
-@show_term(term dep) = ~term !dep {
+@show_term(term dep) = ~term !&dep {
   #Var{idx}: λk
     @show_dec((- (- dep idx) 1) k)
   #Lam{bod}: λk
-    !&{d0 d1}=dep
-    #Cons{'λ' (@show_term((bod #Var{d0}) (+ d1 1)) k)}
+    #Cons{'λ' (@show_term((bod #Var{dep}) (+ dep 1)) k)}
   #App{fun arg}: λk
-    !&{d0 d1}=dep
-    #Cons{'(' (@show_term(fun d0)
-    #Cons{' ' (@show_term(arg d1)
+    #Cons{'(' (@show_term(fun dep)
+    #Cons{' ' (@show_term(arg dep)
     #Cons{')' k})})}
   #Sub{val}: *
 }
@@ -165,22 +161,17 @@ data Maybe {
 // --------
 
 @eq(a b dep) = ~ a !b !dep {
-  #Lam{a_bod}: ~ b !dep {
+  #Lam{a_bod}: ~ b !&dep {
     #Lam{b_bod}:
-      !&{dep d0}=dep
-      !&{dep d1}=dep
-      !&{dep d2}=dep
-      @eq((a_bod #Var{d0}) (b_bod #Var{d1}) (+ 1 d2))
+      @eq((a_bod #Var{dep}) (b_bod #Var{dep}) (+ 1 dep))
     else: 0
   }
-  #App{a_fun a_arg}: ~ b !dep {
+  #App{a_fun a_arg}: ~ b !&dep {
     #App{b_fun b_arg}:
-      !&{dep d0}=dep
-      !&{dep d1}=dep
-      @and(@eq(a_fun b_fun d0) @eq(a_arg b_arg d1))
+      @and(@eq(a_fun b_fun dep) @eq(a_arg b_arg dep))
     else: 0
   }
-  #Var{a_idx}: ~ b !dep {
+  #Var{a_idx}: ~ b !&dep {
     #Var{b_idx}: (== a_idx b_idx)
     else: 0
   }
@@ -227,19 +218,19 @@ data Maybe {
 // - B. We select a variable from context.
 // Note that, every time we make a choice, we "fork" the current context by
 // using DUP nodes with the same label that we used in the choice SUP node.
-@all(&L &lim ctx) = ~&lim {
+@all(!&L !&lim ctx) = ~lim {
   0: *
   1+&lim:
     !&L{ctxL ctxR} = ctx
     &L{
-      @lam(&L &lim ctxL)
-      @ret(&L (+ &lim 1) ctxR λk(k))
+      @lam(L lim ctxL)
+      @ret(L (+ lim 1) ctxR λk(k))
     }
 }
 
 // Generate a fresh lambda and extend the context with its variable.
-@lam(&L &lim ctx) =
-  !&0{ctx bod} = @all(&L &lim #Cons{#Some{$x} ctx})
+@lam(!&L !&lim ctx) =
+  !&0{ctx bod} = @all(L lim #Cons{#Some{$x} ctx})
   &0{@tail(ctx) #Lam{λ$x(bod)}}
 
 // Return a variable from the context.
@@ -247,15 +238,15 @@ data Maybe {
 // Otherwise, make a choice.
 // - A. We emit the head of the context, and apply it to things.
 // - B. We keep the head of the context, and go to the next element.
-@ret(&L &lim ctx rem) = ~ctx {
+@ret(!&L !&lim ctx rem) = ~ctx {
   #Nil: *
   #Cons{val ctx}:
     !&L{remL remR} = rem
     !&L{valL valR} = val
     !&L{ctxL ctxR} = ctx
     &L{
-      @app(&L &lim (remL #Cons{#None ctxL}) valL)
-      @ret(&L &lim ctxR λk(remR #Cons{valR k}))
+      @app(L lim (remL #Cons{#None ctxL}) valL)
+      @ret(L lim ctxR λk(remR #Cons{valR k}))
     }
 }
 
@@ -265,7 +256,7 @@ data Maybe {
 // - C. Apply it to 2 arguments.
 // When we apply it to 2 arguments, as in `(App ?A ?B)`, we need to fork the
 // label, so that DUPs/SUPs in `?A` and `?B` never use the same label.
-@app(&L &lim ctx val) = ~ val {
+@app(!&L !&lim ctx val) = ~ val {
   #None: *
   #Some{val}: 
     !&L{val val0} = val
@@ -277,11 +268,11 @@ data Maybe {
     ! arity_0 =
       &0{ctx0 val0}
     ! arity_1 = 
-      !&0{ctx1 argX} = @all(&L &lim ctx1)
+      !&0{ctx1 argX} = @all(L lim ctx1)
       &0{ctx1 #App{val1 argX}}
     ! arity_2 =
-      !&0{ctx2 argX} = @all((+(*&L 2) 0) &lim ctx2)
-      !&0{ctx2 argY} = @all((+(*&L 2) 1) &lim ctx2)
+      !&0{ctx2 argX} = @all((+(* L 2) 0) lim ctx2)
+      !&0{ctx2 argY} = @all((+(* L 2) 1) lim ctx2)
       &0{ctx2 #App{#App{val2 argX} argY}}
     &L{arity_0 &L{arity_1 arity_2}}
 }

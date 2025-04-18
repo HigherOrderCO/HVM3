@@ -355,10 +355,10 @@ data Map { #BR{x y} #M0 #M1 }
 @map_spinr(xs map) =
   @bin_sqr(xs λx(@map_rotr(x)) map)
 
-@solve(&L) =
-  ! A = @map_set(@bin(&L 0x00) @map_set(@bin(&L 0x80) @map_zero))
-  ! B = @map_set(@bin(&L 0x40) @map_set(@bin(&L 0xC0) @map_zero))
-  ! E = @map_eql(@map_spinr(@bin_all(&L) A) B)
-  @when(E @bin_to_u32(@bin_all(&L)))
+@solve(!&L) =
+  ! A = @map_set(@bin(L 0x00) @map_set(@bin(L 0x80) @map_zero))
+  ! B = @map_set(@bin(L 0x40) @map_set(@bin(L 0xC0) @map_zero))
+  ! E = @map_eql(@map_spinr(@bin_all(L) A) B)
+  @when(E @bin_to_u32(@bin_all(L)))
 
 @main = @solve(20)

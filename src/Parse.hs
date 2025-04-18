@@ -25,16 +25,15 @@ import qualified Data.Map.Strict as MS
 -- Core Parsers
 -- ------------
 
-data VarUsage = Bound | Used
-
 data ParserState = ParserState
-  { pCidToAri :: MS.Map Word16 Word16
-  , pCidToLen :: MS.Map Word16 Word16
-  , pCtrToCid :: MS.Map String Word16
-  , pCidToADT :: MS.Map Word16 Word16
-  , imported  :: MS.Map String ()
-  , varUsages :: MS.Map String VarUsage
-  , pFreshLab :: Lab
+  { pCidToAri  :: MS.Map Word16 Word16
+  , pCidToLen  :: MS.Map Word16 Word16
+  , pCtrToCid  :: MS.Map String Word16
+  , pCidToADT  :: MS.Map Word16 Word16
+  , imported   :: MS.Map String ()
+  , bindDups   :: MS.Map String (Int, (Core -> Core))
+  , globalVars :: MS.Map String ()
+  , pFreshLab  :: Lab
   }
 
 type ParserM = ParsecT String ParserState IO
@@ -65,14 +64,14 @@ parseEra = do
   consume "*"
   return Era
 
--- Lam: `λx F`
+-- Lam: `λx.F` or `λ&x.F` for non-linear variables
 parseLam :: ParserM Core
 parseLam = do
   consume "λ"
   var <- parseName1
   swallow "."
   bod <- bindVars [var] parseCore
-  return $ Lam var bod
+  return $ Lam (stripName var) bod
 
 -- FshSup: `& {a,b}` -- uses a fresh label
 -- StaSup: `&0{a,b}` -- uses a static label
@@ -97,7 +96,7 @@ parseSup = do
         [(num :: Lab, "")] -> do
           return $ Sup num tm0 tm1
         otherwise -> do
-          var <- makeVar ("&" ++ name)
+          var <- makeVar name
           return $ Ref "SUP" (fromIntegral _SUP_F_) [var, tm0, tm1]
     _ -> makeVar ("&" ++ name)
 
@@ -182,10 +181,10 @@ parseMat :: ParserM Core
 parseMat = do
   consume "~"
   val <- parseCore
-  mov <- many parseMove  
+  mov <- many parseMove
   consume "{"
-  cs0 <- bindVars (map fst mov) (parseCase False)
-  css <- many $ bindVars (map fst mov) (parseCase (let (n,_,_)=cs0 in n=="0"))
+  cs0 <- parseCase False (map fst mov)
+  css <- many $ parseCase (let (n,_,_)=cs0 in n=="0") (map fst mov)
   consume "}"
   css <- sortCases (cs0:css)
   buildMatchExpr val mov css
@@ -199,23 +198,23 @@ parseMove = do
   case expr of
     Just e  -> return (name, e)
     Nothing -> do
-      var <- makeVar name
+      var <- makeVar (stripName name)
       return (name, var)  -- !x is shorthand for !x=x
 
 -- Case: CtrCase | NumCase | DefCase
-parseCase :: Bool -> ParserM (String, [String], Core)
-parseCase isNumMat = do
+parseCase :: Bool -> [String] -> ParserM (String, [String], Core)
+parseCase isNumMat mov = do
   closeWith "}" >> skip
   c <- lookAhead anyChar
   if c == '#'
-    then parseCtrCase -- Constructor case
+    then parseCtrCase mov -- Constructor case
     else if c >= '0' && c <= '9'
-      then parseNumCase -- Numeric case
-      else (parseDefCase isNumMat) -- Default case
+      then parseNumCase mov -- Numeric case
+      else (parseDefCase isNumMat mov) -- Default case
 
 -- CtrCase: `#Ctr{x0 x1 ...}: f`
-parseCtrCase :: ParserM (String, [String], Core)
-parseCtrCase = do
+parseCtrCase :: [String] -> ParserM (String, [String], Core)
+parseCtrCase mov = do
   consume "#"
   name <- parseName1
   vars <- option [] $ do
@@ -226,40 +225,40 @@ parseCtrCase = do
     consume "}"
     return vars
   consume ":"
-  body <- bindVars vars parseCore
+  body <- bindVars (mov ++ vars) parseCore
   swallow ";"
-  return ('#':name, vars, body)
+  return ('#':name, map stripName vars, body)
 
 -- NumCase: LitCase | PreCase
-parseNumCase :: ParserM (String, [String], Core)
-parseNumCase = try parseLitCase <|> try parsePreCase
+parseNumCase :: [String] -> ParserM (String, [String], Core)
+parseNumCase mov = try (parseLitCase mov) <|> try (parsePreCase mov)
 
 -- LitCase: `123: f`
-parseLitCase :: ParserM (String, [String], Core)
-parseLitCase = do
+parseLitCase :: [String] -> ParserM (String, [String], Core)
+parseLitCase mov = do
   digits <- many1 digit
   consume ":"
-  body <- parseCore
+  body <- bindVars mov parseCore
   swallow ";"
   return (digits, [], body)
 
 -- PreCase: `123+p: f`
-parsePreCase :: ParserM (String, [String], Core)
-parsePreCase = do
+parsePreCase :: [String] -> ParserM (String, [String], Core)
+parsePreCase mov = do
   pred <- many1 digit
   consume "+"
   name <- parseName1
   consume ":"
-  body <- bindVars [name] parseCore
+  body <- bindVars (mov ++ [name]) parseCore
   swallow ";"
-  return ("_", [name], body)
+  return ("_", [stripName name], body)
 
 -- DefCase: `x: f`
-parseDefCase :: Bool -> ParserM (String, [String], Core)
-parseDefCase isNumMat = do
+parseDefCase :: Bool -> [String] -> ParserM (String, [String], Core)
+parseDefCase isNumMat mov = do
   name <- parseName1
   consume ":"
-  body <- bindVars [name] parseCore
+  body <- bindVars (mov ++ [name]) parseCore
   swallow ";"
   if isNumMat && name /= "_" then do
     fail $ concat
@@ -269,7 +268,7 @@ parseDefCase isNumMat = do
       , "- Please, update your code."
       ]
   else do
-    return ("_", [name], body)
+    return ("_", [stripName name], body)
 
 -- Let: Dup | StriLet | LazyLet
 parseLet :: ParserM Core
@@ -278,7 +277,7 @@ parseLet = do
   skip
   next <- lookAhead anyChar
   case next of
-    '&' -> parseDup
+    '&' -> try parseDup <|> try parseLazyLet
     '!' -> parseStriLet
     _   -> parseLazyLet
 
@@ -299,28 +298,26 @@ parseDup = do
   bod <- bindVars [dp0, dp1] parseCore
   if null nam then do
     num <- genFreshLabel
-    return $ Dup num dp0 dp1 val bod
+    return $ Dup num (stripName dp0) (stripName dp1) val bod
   else case reads nam of
     [(num :: Lab, "")] -> do
-      return $ Dup num dp0 dp1 val bod
+      return $ Dup num (stripName dp0) (stripName dp1) val bod
     otherwise -> do
-      var <- makeVar ("&" ++ nam)
-      return $ Ref "DUP" (fromIntegral _DUP_F_) [var, val, Lam dp0 (Lam dp1 bod)]
+      var <- makeVar nam
+      return $ Ref "DUP" (fromIntegral _DUP_F_) [var, val, Lam (stripName dp0) (Lam (stripName dp1) bod)]
 
 -- StriLet: `! !x=v f`
 parseStriLet :: ParserM Core
 parseStriLet = do
   consume "!"
-  nam <- optionMaybe $ try $ do
+  nam <- option "_" $ try $ do
     nam <- parseName1
     consume "="
     return nam
   val <- parseCore
   swallow ";"
-  bod <- bindVars [fromMaybe "_" nam] parseCore
-  case nam of
-    Just nam -> return $ Let STRI nam val bod
-    Nothing  -> return $ Let STRI "_" val bod
+  bod <- bindVars [nam] parseCore
+  return $ Let STRI (stripName nam) val bod
 
 -- LazyLet: `! x=v f`
 parseLazyLet :: ParserM Core
@@ -330,7 +327,7 @@ parseLazyLet = do
   val <- parseCore
   swallow ";"
   bod <- bindVars [nam] parseCore
-  return $ Let LAZY nam val bod
+  return $ Let LAZY (stripName nam) val bod
 
 -- Lit: Var | U32
 parseLit :: ParserM Core
@@ -374,6 +371,8 @@ parseLst = do
 -- Def: `@foo(x0 x1...) = f`
 parseDef :: ParserM (String, ((Bool, [(Bool, String)]), Core))
 parseDef = do
+  -- Reset global binds
+  modifyState $ \st -> st { globalVars = MS.empty, bindDups = MS.empty }
   copy <- option False $ do
     string "!"
     skip
@@ -385,19 +384,19 @@ parseDef = do
     args <- many $ do
       closeWith ")"
       swallow ","
-      bang <- option False $ do
+      strict <- option False $ do
         try $ do
           consume "!"
           return True
       arg <- parseName1
-      let strict = bang || head arg == '&'
       return (strict, arg)
     consume ")"
     return args
   skip
   consume "="
   core <- bindVars (map snd args) parseCore
-  return (name, ((copy,args), core))
+  let args' = map (\(strict, arg) -> (strict, stripName arg)) args
+  return (name, ((copy,args'), core))
 
 -- ADT: `data Foo { #Ctr{x0 x1 ...} ... }`
 parseADT :: ParserM ()
@@ -547,7 +546,7 @@ escaped
 
 -- Parse Book and Core
 doParseBook filePath code = do
-  result <- runParserT p (ParserState MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty 0) "" code
+  result <- runParserT p (ParserState MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty 0) "" code
   case result of
     Right (defs, st) -> do
       return $ createBook defs (pCtrToCid st) (pCidToAri st) (pCidToLen st) (pCidToADT st) (pFreshLab st)
@@ -562,7 +561,7 @@ doParseBook filePath code = do
 
 doParseCore :: String -> IO Core
 doParseCore code = do
-  result <- runParserT parseCore (ParserState MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty 0) "" code
+  result <- runParserT parseCore (ParserState MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty 0) "" code
   case result of
     Right core -> return core
     Left err -> do
@@ -577,7 +576,8 @@ doParseArgument code book = do
     , pCtrToCid = ctrToCid book
     , pCidToADT = cidToADT book
     , imported  = MS.empty
-    , varUsages = MS.empty
+    , bindDups  = MS.empty
+    , globalVars = MS.empty
     , pFreshLab = freshLab book
     }) "" code
   case result of
@@ -684,58 +684,79 @@ createBook defs ctrToCid cidToAri cidToLen cidToADT freshLab =
 -- Binding
 -- -------
 
-bindVars :: [String] -> ParserM a -> ParserM a
+-- Strip the & prefix from a non-linear variable name
+-- e.g., "&x" -> "x", "x" -> "x"
+stripName :: String -> String
+stripName var = if not (null var) && head var == '&' then tail var else var
+
+bindVars :: [String] -> ParserM Core -> ParserM Core
 bindVars vars parse = do
   st <- getState
-  let prev = varUsages st
+  let prev = bindDups st
   -- Split into scopeless vars (starting with $) and regular vars
   let (svars, rvars) = partition (\v -> head v == '$') vars
 
   -- Bind all scopeless vars
   boundScopeless <- foldM bindScopelessVar prev svars
-  
+
   -- Create temporary bindings for regular vars
-  let tempBound = MS.fromList [(var, Bound) | var <- rvars]
-  
+  let tempBound = MS.fromList [(stripName var, (0, (\x -> x))) | var <- rvars]
+
   -- Update parser state with all bindings
-  putState st {varUsages = MS.union tempBound boundScopeless}
+  putState st {bindDups = MS.union tempBound boundScopeless}
 
   -- Run the parser with the new bindings
-  val <- parse
+  body <- parse
+
+  st' <- getState
+  let curr = bindDups st'
+
+  -- Add the duplications to the body and check linear variables - error if used more than once
+  result <- foldM (applyDups curr) body (reverse rvars)
 
   -- Restore the original state for regular vars
-  st' <- getState
-  let curr = varUsages st'
-  putState st' {varUsages = MS.union (MS.difference curr tempBound) prev}
+  putState st' {bindDups = MS.union (MS.difference curr tempBound) prev}
 
-  return val
-  
+  return result
+
   where
     -- Helper to bind a scopeless variable
-    bindScopelessVar usages var =
-      case MS.lookup var usages of
-        Just Bound -> fail $ "Scopeless variable " ++ show var ++ " has already been bound"
-        _          -> return $ MS.insert var Bound usages
+    bindScopelessVar usages var = do
+      st <- getState
+      case MS.lookup var (globalVars st) of
+        Just _ -> fail $ "Global variable " ++ show var ++ " already bound"
+        Nothing -> do
+          putState st {globalVars = MS.insert var () (globalVars st)}
+          return usages
 
-useVar :: String -> ParserM ()
-useVar var = do
-  st <- getState
-  putState st {varUsages = MS.insert var Used (varUsages st)}
+    -- Helper to apply the duplications to the body
+    applyDups usages body var = do
+      let (uses, dups) = mget usages (stripName var)
+      if (head var /= '&') && (uses > 1) then
+        fail $ "Linear variable " ++ show var ++ " used " ++ show uses ++ " times"
+      else
+        return (dups body)
 
 makeVar :: String -> ParserM Core
 makeVar name = do
-  checkVar name
-  return $ Var name
-
-checkVar :: String -> ParserM ()
-checkVar var = do
   st <- getState
-  case (var, MS.lookup var $ varUsages st) of
-    ('&' : _, Just _)     -> return () -- &-vars can be used multiple times
-    ('$' : _, Nothing)    -> useVar var *> return () -- $-vars can be used before definition
-    (_,       Just Bound) -> useVar var *> return ()
-    (_,       Just Used)  -> fail $ "Variable " ++ show var ++ " used more than once"
-    (_,       Nothing)    -> fail $ "Unbound var " ++ show var
+  case (head name, MS.lookup name (bindDups st)) of
+    ('$', Nothing) -> do -- $-vars can be used before definition
+      putState st {bindDups = MS.insert name (1, (\x -> x)) (bindDups st)}
+      return $ Var name
+    (_, Nothing) -> do
+      fail $ "Unbound variable " ++ show name
+    (_, Just (uses, dups)) -> do
+      -- Automatically add duplications if the variable is used more than once
+      label <- genFreshLabel
+      let dupName = if uses == 0
+                    then name
+                    else name ++ "_dup" ++ show uses
+      let dups' = if uses == 0
+                  then dups
+                  else \x -> Dup label name dupName (Var name) (dups x)
+      modifyState (\s -> s {bindDups = MS.insert name (uses + 1, dups') (bindDups s)})
+      return $ Var dupName
 
 -- Adjusters and Utils
 -- -------------------
@@ -881,14 +902,14 @@ buildMatchExpr val mov cases
   | null cases = 
       fail "Match needs at least one case"
   | isSwitch (head cases) = 
-      return $ Mat SWI val mov cases  -- Switch case
+      return $ Mat SWI val (stripMov mov  ) cases  -- Switch case
   | onlyDefault cases =
       fail "Match with only a default case is not allowed"  -- Invalid case
   | hasDefault (last cases) = do  -- Has default: use If-Let chain
       st  <- getState
       adt <- return $ mget (pCtrToCid st) (getName $ head cases)
       var <- return $ getVar (last cases)
-      ifl <- intoIfLetChain (Var var) mov (init cases) var (last cases)
+      ifl <- intoIfLetChain (Var var) (stripMov mov) (init cases) var (last cases)
       return $ Let LAZY var val ifl
   | otherwise = do  -- All ADT cases covered
       st <- getState
@@ -896,13 +917,14 @@ buildMatchExpr val mov cases
       let len = mget (pCidToLen st) adt
       if fromIntegral (length cases) /= len
         then fail "Incorrect number of cases"
-        else return $ Mat (MAT adt) val mov cases
+        else return $ Mat (MAT adt) val (stripMov mov) cases
   where
     isSwitch (name, _, _) = name == "0"
     hasDefault (name, _, _) = name == "_"
     onlyDefault cases = length cases == 1 && hasDefault (head cases)
     getName (name, _, _) = name
     getVar (_, [v], _) = v
+    stripMov mov = map (\(nm,cr) -> (stripName nm, cr)) mov
 
 intoIfLetChain :: Core -> [(String, Core)] -> [(String, [String], Core)] -> String -> (String, [String], Core) -> ParserM Core
 intoIfLetChain _ _ [] defName (_,_,defBody) = return defBody
