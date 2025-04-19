@@ -313,6 +313,10 @@ compileFastBody book fid term@(Mat kin val mov css) ctx stop@False itr = do
     tabDec
     emit $ "}"
     tabDec
+    emit $ "} else if (term_tag(" ++ valNam ++ ") == ERA) {"
+    tabInc
+    compileFastBody book fid Era ctx stop (itr + 1)
+    tabDec
     emit $ "} else {"
     tabInc
     val <- compileFastCore book fid term
@@ -364,6 +368,10 @@ compileFastBody book fid term@(Mat kin val mov css) ctx stop@False itr = do
     tabDec
     emit $ "}"
     tabDec
+    emit $ "} else if (term_tag(" ++ valNam ++ ") == ERA) {"
+    tabInc
+    compileFastBody book fid Era ctx stop (itr + 1)
+    tabDec
     emit $ "} else {"
     tabInc
     val <- compileFastCore book fid term
@@ -397,6 +405,10 @@ compileFastBody book fid term@(Mat kin val mov css) ctx stop@False itr = do
       modify $ \st -> st { reus = reuse' }
     tabDec
     emit $ "}"
+    tabDec
+    emit $ "} else if (term_tag(" ++ valNam ++ ") == ERA) {"
+    tabInc
+    compileFastBody book fid Era ctx stop (itr + 1)
     tabDec
     emit $ "} else {"
     tabInc

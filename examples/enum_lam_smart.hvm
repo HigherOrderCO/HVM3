@@ -92,12 +92,12 @@ data Maybe {
 
 @if(c t f) = ~ c {
   0: f
-  p: t
+  _: t
 }
 
 @when(c t) = ~ c {
   0: *
-  p: t
+  _: t
 }
 
 @tail(xs) = ~ xs {
@@ -107,7 +107,7 @@ data Maybe {
 
 @and(a b) = ~ a !b {
   0: 0
-  p: b
+  _: b
 }
 
 @unwrap(mb) = ~ mb {
@@ -123,7 +123,7 @@ data Maybe {
 
 @show_nat(nat) = ~nat { 
   0: λk #Cons{'Z' k}
-  p: λk #Cons{'S' (@show_nat(p) k)}
+  1+p: λk #Cons{'S' (@show_nat(p) k)}
 }
 
 @show_dec(n r) =
@@ -132,7 +132,7 @@ data Maybe {
   ! chr = (+ (% n 10) '0')
   ~ (< n0 10) !chr !r {
     0: @show_dec((/ n1 10) #Cons{chr r})
-    t: #Cons{chr r}
+    _: #Cons{chr r}
   }
 
 @do_show_dec(n) = @show_dec(n #Nil)
@@ -229,7 +229,7 @@ data Maybe {
 // using DUP nodes with the same label that we used in the choice SUP node.
 @all(&L &lim ctx) = ~&lim {
   0: *
-  &lim:
+  1+&lim:
     !&L{ctxL ctxR} = ctx
     &L{
       @lam(&L &lim ctxL)

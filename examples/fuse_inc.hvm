@@ -10,13 +10,13 @@ data Bits {
 // Repeated Application
 @rep(n f x) = ~ n !f !x {
   0: x
-  p: !&0{f0 f1}=f (f0 @rep(p f1 x))
+  1+p: !&0{f0 f1}=f (f0 @rep(p f1 x))
 }
 
 // Squared Application
 @sqr(n f x) = ~ n !f !x {
   0: x
-  p:
+  1+p:
     !&0{p0 p1}=(+ p 1)
     !&0{fA f0}=f
     !&0{f1 f2}=fA
@@ -34,7 +34,7 @@ data Bits {
 // Creates an all-zero Bits
 @zero(s) = ~s{
   0: @e
-  p: @o(@zero(p))
+  1+p: @o(@zero(p))
 }
 
 // Converts a Bits to an U32

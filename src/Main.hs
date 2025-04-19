@@ -8,7 +8,7 @@ module Main where
 
 import Network.Socket as Network
 import System.IO (hSetEncoding, utf8)
-import Control.Monad (guard, when, forM_, unless)
+import Control.Monad (guard, when, foldM, forM_, unless)
 import Data.FileEmbed
 import Data.List (partition, isPrefixOf, take, find)
 import Data.Word
@@ -104,93 +104,9 @@ printHelp = do
 -- CLI Commands
 -- ------------
 
-cliServe :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> IO (Either String ())
-cliServe filePath debug compiled mode showStats hideQuotes = do
-  -- Initialize the HVM
-  hvmInit
-  code <- readFile' filePath
-  book <- doParseBook filePath code
-  -- Set constructor arities, case lengths, and ADT IDs
-  forM_ (MS.toList (cidToAri book)) $ \(cid, ari) -> do
-    hvmSetCari cid (fromIntegral ari)
-  forM_ (MS.toList (cidToLen book)) $ \(cid, len) -> do
-    hvmSetClen cid (fromIntegral len)
-  forM_ (MS.toList (cidToADT book)) $ \(cid, adt) -> do
-    hvmSetCadt cid (fromIntegral adt)
-  forM_ (MS.toList (fidToFun book)) $ \(fid, ((_, args), _)) -> do
-    hvmSetFari fid (fromIntegral $ length args)
-
-  when compiled $ do
-    let decls = compileHeaders book
-    let funcs = map (\(fid, _) -> compile book fid) (MS.toList (fidToFun book))
-    let mainC = unlines [runtime_c, decls] ++ unlines funcs
-    callCommand "mkdir -p .build"
-    let fName = last $ words $ map (\c -> if c == '/' then ' ' else c) filePath
-    let cPath = ".build/" ++ fName ++ ".c"
-    let oPath = ".build/" ++ fName ++ ".so"
-    oldCFile <- tryIOError (readFile' cPath)
-    bookLib <- if oldCFile == Right mainC then do
-      dlopen oPath [RTLD_NOW]
-    else do
-      writeFile cPath mainC
-      callCommand $ "gcc -O2 -fPIC -shared " ++ cPath ++ " -o " ++ oPath
-      dlopen oPath [RTLD_NOW]
-    forM_ (MS.keys (fidToFun book)) $ \fid -> do
-      funPtr <- dlsym bookLib (mget (fidToNam book) fid ++ "_f")
-      hvmDefine fid funPtr
-    hvmGotState <- hvmGetState
-    hvmSetState <- dlsym bookLib "hvm_set_state"
-    callFFI hvmSetState retVoid [argPtr hvmGotState]
-
-    when (not $ MS.member "main" (namToFid book)) $ do
-      putStrLn "Error: 'main' not found."
-      exitWith (ExitFailure 1)
-
-  serveSocket book debug compiled mode showStats hideQuotes
-
-  hvmFree
-  return $ Right ()
-
 cliRun :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> [String] -> IO (Either String ())
 cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
-  hvmInit
-  code <- readFile' filePath
-  book <- doParseBook filePath code
-
-  forM_ (MS.toList (cidToAri book)) $ \ (cid, ari) -> do
-    hvmSetCari cid (fromIntegral ari)
-  forM_ (MS.toList (cidToLen book)) $ \ (cid, len) -> do
-    hvmSetClen cid (fromIntegral len)
-  forM_ (MS.toList (cidToADT book)) $ \ (cid, adt) -> do
-    hvmSetCadt cid (fromIntegral adt)
-  forM_ (MS.toList (fidToFun book)) $ \ (fid, ((_, args), _)) -> do
-    hvmSetFari fid (fromIntegral $ length args)
-
-  when compiled $ do
-    let decls = compileHeaders book
-    let funcs = map (\ (fid, _) -> compile book fid) (MS.toList (fidToFun book))
-    let mainC = unlines $ [runtime_c] ++ [decls] ++ funcs ++ [genMain book]
-    -- Try to use a cached .so file
-    callCommand "mkdir -p .build"
-    let fName = last $ words $ map (\c -> if c == '/' then ' ' else c) filePath
-    let cPath = ".build/" ++ fName ++ ".c"
-    let oPath = ".build/" ++ fName ++ ".so"
-
-    oldCFile <- tryIOError (readFile' cPath)
-    bookLib <- if oldCFile == Right mainC then do
-      dlopen oPath [RTLD_NOW]
-    else do
-      writeFile cPath mainC
-      callCommand $ "gcc -O2 -fPIC -shared " ++ cPath ++ " -o " ++ oPath
-      dlopen oPath [RTLD_NOW]
-
-    forM_ (MS.keys (fidToFun book)) $ \ fid -> do
-      funPtr <- dlsym bookLib (mget (fidToNam book) fid ++ "_f")
-      hvmDefine fid funPtr
-    -- Link compiled state
-    hvmGotState <- hvmGetState
-    hvmSetState <- dlsym bookLib "hvm_set_state"
-    callFFI hvmSetState retVoid [argPtr hvmGotState]
+  book <- loadBook filePath compiled
   -- Abort when main isn't present
   when (not $ MS.member "main" (namToFid book)) $ do
     putStrLn "Error: 'main' not found."
@@ -203,13 +119,7 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
     exitWith (ExitFailure 1)
   -- Normalize main
   init <- getMonotonicTimeNSec
-
-  -- Convert arguments to Core terms and inject them at runtime
-  let args = map parseArgument strArgs
-  let mainFid = mget (namToFid book) "main"
-  let rawTerm = Ref "main" mainFid args
-  let updatedTerm = setRefIds (namToFid book) rawTerm
-  root <- doInjectCoreAt book updatedTerm 0 []
+  root <- injectMain book strArgs
   rxAt <- if compiled
     then return (reduceCAt debug)
     else return (reduceAt debug)
@@ -252,51 +162,31 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
   hvmFree
   return $ Right ()
 
-parseArgument :: String -> Core
-parseArgument str = unsafePerformIO $ doParseCore (str)
-
-genMain :: Book -> String
-genMain book =
-  let mainFid = mget (namToFid book) "main"
-      registerFuncs = unlines ["  hvm_define(" ++ show fid ++ ", " ++ mget (fidToNam book) fid ++ "_f);" | fid <- MS.keys (fidToFun book)]
-  in unlines
-    [ "int main() {"
-    , "  hvm_init();"
-    , registerFuncs
-    , "  clock_t start = clock();"
-    , "  Term root = term_new(REF, "++show mainFid++", 0);"
-    , "  normal(root);"
-    , "  double time = (double)(clock() - start) / CLOCKS_PER_SEC * 1000;"
-    , "  printf(\"WORK: %\"PRIu64\" interactions\\n\", get_itr());"
-    , "  printf(\"TIME: %.3fs seconds\\n\", time / 1000.0);"
-    , "  printf(\"SIZE: %llu nodes\\n\", get_len());"
-    , "  printf(\"PERF: %.3f MIPS\\n\", (get_itr() / 1000000.0) / (time / 1000.0));"
-    , "  hvm_free();"
-    , "  return 0;"
-    , "}"
-    ]
-
-serveSocket :: Book -> Bool -> Bool -> RunMode -> Bool -> Bool -> IO ()
-serveSocket book debug compiled mode showStats hideQuotes = do
+cliServe :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> IO (Either String ())
+cliServe filePath debug compiled mode showStats hideQuotes = do
+  book <- loadBook filePath compiled
+  -- Abort when main isn't present
+  when (not $ MS.member "main" (namToFid book)) $ do
+    putStrLn "Error: 'main' not found."
+    exitWith (ExitFailure 1)
   putStrLn "HVM serve mode. Listening on port 8080."
   sock <- socket AF_INET Stream 0
   setSocketOption sock ReuseAddr 1
   Network.bind sock (SockAddrInet 8080 0)
   listen sock 5
-  loop sock
+  loop sock book
+  hvmFree
+  return $ Right ()
   where
-    loop sock = do
+    loop sock book = do
       (conn, _) <- accept sock
       h <- socketToHandle conn ReadWriteMode
       hSetBuffering h LineBuffering
       hSetEncoding h utf8 
       input <- hGetLine h
       unless (input == "exit" || input == "quit") $ do
-        term <- doParseCore input
-        let updatedTerm = setRefIds (namToFid book) term
         oldSize <- getLen
-        let mainFid = mget (namToFid book) "main"
-        root <- doInjectCoreAt book (Ref "main" mainFid [updatedTerm]) 0 []
+        root <- injectMain book [input]
         rxAt <- if compiled then return (reduceCAt debug) else return (reduceAt debug)
         vals <- case mode of
           Collapse _ -> doCollapseFlatAt rxAt book 0
@@ -320,7 +210,82 @@ serveSocket book debug compiled mode showStats hideQuotes = do
           hPutStrLn h $ "SIZE: " ++ (show size) ++ " nodes"
           setItr 0
       hClose h
-      loop sock
+      loop sock book
+
+-- Load and initialize a book from a file
+loadBook :: FilePath -> Bool -> IO Book
+loadBook filePath compiled = do
+  hvmInit
+  code <- readFile' filePath
+  book <- doParseBook filePath code
+
+  forM_ (MS.toList (cidToAri book)) $ \ (cid, ari) -> do
+    hvmSetCari cid (fromIntegral ari)
+  forM_ (MS.toList (cidToLen book)) $ \ (cid, len) -> do
+    hvmSetClen cid (fromIntegral len)
+  forM_ (MS.toList (cidToADT book)) $ \ (cid, adt) -> do
+    hvmSetCadt cid (fromIntegral adt)
+  forM_ (MS.toList (fidToFun book)) $ \ (fid, ((_, args), _)) -> do
+    hvmSetFari fid (fromIntegral $ length args)
+
+  when compiled $ do
+    let decls = compileHeaders book
+    let funcs = map (\ (fid, _) -> compile book fid) (MS.toList (fidToFun book))
+    let mainC = unlines $ [runtime_c] ++ [decls] ++ funcs ++ [genMain book]
+    -- Try to use a cached .so file
+    callCommand "mkdir -p .build"
+    let fName = last $ words $ map (\c -> if c == '/' then ' ' else c) filePath
+    let cPath = ".build/" ++ fName ++ ".c"
+    let oPath = ".build/" ++ fName ++ ".so"
+
+    oldCFile <- tryIOError (readFile' cPath)
+    bookLib <- if oldCFile == Right mainC then do
+      dlopen oPath [RTLD_NOW]
+    else do
+      writeFile cPath mainC
+      callCommand $ "gcc -O2 -fPIC -shared " ++ cPath ++ " -o " ++ oPath
+      dlopen oPath [RTLD_NOW]
+
+    forM_ (MS.keys (fidToFun book)) $ \ fid -> do
+      funPtr <- dlsym bookLib (mget (fidToNam book) fid ++ "_f")
+      hvmDefine fid funPtr
+    -- Link compiled state
+    hvmGotState <- hvmGetState
+    hvmSetState <- dlsym bookLib "hvm_set_state"
+    callFFI hvmSetState retVoid [argPtr hvmGotState]
+  return book
+
+genMain :: Book -> String
+genMain book =
+  let mainFid = mget (namToFid book) "main"
+      registerFuncs = unlines ["  hvm_define(" ++ show fid ++ ", " ++ mget (fidToNam book) fid ++ "_f);" | fid <- MS.keys (fidToFun book)]
+  in unlines
+    [ "int main() {"
+    , "  hvm_init();"
+    , registerFuncs
+    , "  clock_t start = clock();"
+    , "  Term root = term_new(REF, "++show mainFid++", 0);"
+    , "  normal(root);"
+    , "  double time = (double)(clock() - start) / CLOCKS_PER_SEC * 1000;"
+    , "  printf(\"WORK: %\"PRIu64\" interactions\\n\", get_itr());"
+    , "  printf(\"TIME: %.3fs seconds\\n\", time / 1000.0);"
+    , "  printf(\"SIZE: %llu nodes\\n\", get_len());"
+    , "  printf(\"PERF: %.3f MIPS\\n\", (get_itr() / 1000000.0) / (time / 1000.0));"
+    , "  hvm_free();"
+    , "  return 0;"
+    , "}"
+    ]
+
+-- Parse arguments and create a term with the given function name
+injectMain :: Book -> [String] -> IO Term
+injectMain book args = do
+  (book, parsedArgs) <- foldM (\(b, as) str -> do
+                               (b', a) <- doParseArgument str b
+                               return (b', a:as)) (book, []) args
+  let fid = mget (namToFid book) "main"
+  let main = Ref "main" fid (reverse parsedArgs)
+  root <- doInjectCoreAt book main 0 []
+  return root
 
 removeQuotes :: String -> String
 removeQuotes s = case s of

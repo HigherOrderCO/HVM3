@@ -30,28 +30,29 @@ data Map { #BR{x y} #M0 #M1 }
 // If/Exit
 @when(!c t) = ~ c {
   0: *
-  p: t
+  _: t
 }
 
 // And
 !@and(!a b) = ~ a {
   0: 0
-  p: b
+  _: b
 }
 
 // Repeated Application
 @rep(n f x) = ~ n !f !x {
   0: x
-  p: !&0{f0 f1}=f (f0 @rep(p f1 x))
+  1+p: !&0{f0 f1}=f (f0 @rep(p f1 x))
 }
 
 // Squared Application
 @sqr(n f x) = ~ n !f !x {
   0: x
-  p: !&0{p0 p1}=(+ p 1)
-     !&0{fA f0}=f
-     !&0{f1 f2}=fA
-     @sqr((/ p0 2) λk(f0 (f1 k)) @rep((% p1 2) f2 x))
+  1+p:
+    !&0{p0 p1}=(+ p 1)
+    !&0{fA f0}=f
+    !&0{f1 f2}=fA
+    @sqr((/ p0 2) λk(f0 (f1 k)) @rep((% p1 2) f2 x))
 }
 
 // Church Nat (with fusion)
@@ -79,7 +80,7 @@ data Map { #BR{x y} #M0 #M1 }
 // U32 → Nat
 @nat(n) = ~ n {
   0: @Z
-  n: @S(@nat(n))
+  1+n: @S(@nat(n))
 }
 
 // λ-Encoded Bitstrings
@@ -93,7 +94,7 @@ data Map { #BR{x y} #M0 #M1 }
 // Bin
 @bin_zero(n) = ~ n {
   0: @E
-  n: @O(@bin_zero(n))
+  1+n: @O(@bin_zero(n))
 }
 
 // U32 → U32 → Bin
@@ -166,7 +167,7 @@ data Map { #BR{x y} #M0 #M1 }
 // U32 → Bin
 @bin_all(n) = ~ n {
   0: λo λi λe e
-  n:
+  1+n:
     ! &1{n0 n1} = n
     &1{
       λo λi λe (o @bin_all(n0))
