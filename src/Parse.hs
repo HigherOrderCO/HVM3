@@ -591,7 +591,7 @@ doParseArgument code book = do
       p = do
         core <- parseCore
         st <- getState
-        let core' = setRefIds (namToFid book) core
+        let core' = lexify (setRefIds (namToFid book) core)
         return (core', st)
 
 -- Errors
