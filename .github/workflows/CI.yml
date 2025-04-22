@@ -31,7 +31,7 @@ jobs:
         uses: haskell-actions/setup@v2
         id: setup-haskell
         with:
-          ghc-version: '9.12.1'
+          ghc-version: '9.12.2'
           cabal-version: '3.14.1.1'
           setup-haskell-bin: ${{ steps.cache-ghc.outputs.cache-hit != 'true' }}
           setup-haskell-cabal: ${{ steps.cache-ghc.outputs.cache-hit != 'true' }}
