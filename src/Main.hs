@@ -7,7 +7,8 @@
 module Main where
 
 import Network.Socket as Network
-import System.IO (hSetEncoding, utf8)
+import System.IO (hSetEncoding, utf8, hPutStrLn, stderr)
+import Control.Exception (try, SomeException, finally)
 import Control.Monad (guard, when, foldM, forM_, unless)
 import Data.FileEmbed
 import Data.List (partition, isPrefixOf, take, find)
@@ -170,14 +171,30 @@ cliServe filePath debug compiled mode showStats hideQuotes = do
     putStrLn "Error: 'main' not found."
     exitWith (ExitFailure 1)
   putStrLn "HVM serve mode. Listening on port 8080."
-  sock <- socket AF_INET Stream 0
-  setSocketOption sock ReuseAddr 1
-  Network.bind sock (SockAddrInet 8080 0)
-  listen sock 5
-  loop sock book
+  serverLoop book
   hvmFree
   return $ Right ()
   where
+    serverLoop book = do
+      sock <- socket AF_INET Stream 0
+      setSocketOption sock ReuseAddr 1
+      
+      -- Use 'finally' to ensure the socket is closed even if an exception occurs
+      result <- try $ finally
+        (do
+          Network.bind sock (SockAddrInet 8080 0)
+          listen sock 5
+          loop sock book
+        )
+        (close sock)  -- This will always run, even if an exception occurs
+      
+      case result of
+        Left e -> do
+          hPutStrLn stderr $ "Server error: " ++ show (e :: SomeException)
+          putStrLn "Restarting server..."
+          serverLoop book  -- Restart the server
+        Right _ -> return ()
+    
     loop sock book = do
       (conn, _) <- accept sock
       h <- socketToHandle conn ReadWriteMode
