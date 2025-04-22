@@ -8,7 +8,7 @@ module Main where
 
 import Network.Socket as Network
 import System.IO (hSetEncoding, utf8, hPutStrLn, stderr)
-import Control.Exception (try, SomeException, finally)
+import Control.Exception (try, fromException, SomeException, finally, AsyncException(UserInterrupt))
 import Control.Monad (guard, when, foldM, forM_, unless)
 import Data.FileEmbed
 import Data.List (partition, isPrefixOf, take, find)
@@ -171,24 +171,23 @@ cliServe filePath debug compiled mode showStats hideQuotes = do
     putStrLn "Error: 'main' not found."
     exitWith (ExitFailure 1)
   putStrLn "HVM serve mode. Listening on port 8080."
-  serverLoop book
-  hvmFree
+  sock <- socket AF_INET Stream 0
+  setSocketOption sock ReuseAddr 1
+  Network.bind sock (SockAddrInet 8080 0)
+  listen sock 5
+  putStrLn "Server started. Listening on port 8080."
+  serverLoop sock book `finally` do
+    close sock
+    hvmFree
+    putStrLn "\nServer terminated."
   return $ Right ()
   where
-    serverLoop book = do
-      sock <- socket AF_INET Stream 0
-      setSocketOption sock ReuseAddr 1
-      Network.bind sock (SockAddrInet 8080 0)
-      listen sock 5
-      putStrLn "Server started. Listening on port 8080."
-      loop sock book `finally` close sock
-    
-    loop sock book = do
+    serverLoop sock book = do
       result <- try $ do
         (conn, _) <- accept sock
         h <- socketToHandle conn ReadWriteMode
         hSetBuffering h LineBuffering
-        hSetEncoding h utf8 
+        hSetEncoding h utf8
         input <- hGetLine h
         unless (input == "exit" || input == "quit") $ do
           oldSize <- getLen
@@ -212,14 +211,18 @@ cliServe filePath debug compiled mode showStats hideQuotes = do
           when showStats $ do
             itrs <- getItr
             size <- getLen
-            hPutStrLn h $ "WORK: " ++ (show itrs) ++ " interactions"
-            hPutStrLn h $ "SIZE: " ++ (show size) ++ " nodes"
+            hPutStrLn h $ "WORK: " ++ show itrs ++ " interactions"
+            hPutStrLn h $ "SIZE: " ++ show size ++ " nodes"
             setItr 0
         hClose h
       case result of
-        Left e -> hPutStrLn stderr $ "Connection error: " ++ show (e :: SomeException)
-        Right _ -> return ()
-      loop sock book
+        Left e -> case fromException e of
+          Just UserInterrupt -> return () -- Exit loop on Ctrl+C
+          _ -> do
+            hPutStrLn stderr $ "Connection error: " ++ show (e :: SomeException)
+            serverLoop sock book
+        Right _ -> serverLoop sock book
+
 
 -- Load and initialize a book from a file
 loadBook :: FilePath -> Bool -> IO Book
