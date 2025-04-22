@@ -178,55 +178,47 @@ cliServe filePath debug compiled mode showStats hideQuotes = do
     serverLoop book = do
       sock <- socket AF_INET Stream 0
       setSocketOption sock ReuseAddr 1
-      
-      -- Use 'finally' to ensure the socket is closed even if an exception occurs
-      result <- try $ finally
-        (do
-          Network.bind sock (SockAddrInet 8080 0)
-          listen sock 5
-          loop sock book
-        )
-        (close sock)  -- This will always run, even if an exception occurs
-      
-      case result of
-        Left e -> do
-          hPutStrLn stderr $ "Server error: " ++ show (e :: SomeException)
-          putStrLn "Restarting server..."
-          serverLoop book  -- Restart the server
-        Right _ -> return ()
+      Network.bind sock (SockAddrInet 8080 0)
+      listen sock 5
+      putStrLn "Server started. Listening on port 8080."
+      loop sock book `finally` close sock
     
     loop sock book = do
-      (conn, _) <- accept sock
-      h <- socketToHandle conn ReadWriteMode
-      hSetBuffering h LineBuffering
-      hSetEncoding h utf8 
-      input <- hGetLine h
-      unless (input == "exit" || input == "quit") $ do
-        oldSize <- getLen
-        root <- injectMain book [input]
-        rxAt <- if compiled then return (reduceCAt debug) else return (reduceAt debug)
-        vals <- case mode of
-          Collapse _ -> doCollapseFlatAt rxAt book 0
-          Normalize -> do
-            core <- doExtractCoreAt rxAt book 0
-            return [doLiftDups core]
-        let output = case mode of
-              Collapse limit -> do
-                let limitedVals = maybe id Data.List.take limit vals
-                let outputs = map (\term -> if hideQuotes then removeQuotes (show term) else show term) limitedVals
-                unlines outputs
-              Normalize -> do
-                let result = head vals
-                if hideQuotes then removeQuotes (show result) else show result
-        hPutStrLn h output
-        setLen oldSize
-        when showStats $ do
-          itrs <- getItr
-          size <- getLen
-          hPutStrLn h $ "WORK: " ++ (show itrs) ++ " interactions"
-          hPutStrLn h $ "SIZE: " ++ (show size) ++ " nodes"
-          setItr 0
-      hClose h
+      result <- try $ do
+        (conn, _) <- accept sock
+        h <- socketToHandle conn ReadWriteMode
+        hSetBuffering h LineBuffering
+        hSetEncoding h utf8 
+        input <- hGetLine h
+        unless (input == "exit" || input == "quit") $ do
+          oldSize <- getLen
+          root <- injectMain book [input]
+          rxAt <- if compiled then return (reduceCAt debug) else return (reduceAt debug)
+          vals <- case mode of
+            Collapse _ -> doCollapseFlatAt rxAt book 0
+            Normalize -> do
+              core <- doExtractCoreAt rxAt book 0
+              return [doLiftDups core]
+          let output = case mode of
+                Collapse limit -> do
+                  let limitedVals = maybe id Data.List.take limit vals
+                  let outputs = map (\term -> if hideQuotes then removeQuotes (show term) else show term) limitedVals
+                  unlines outputs
+                Normalize -> do
+                  let result = head vals
+                  if hideQuotes then removeQuotes (show result) else show result
+          hPutStrLn h output
+          setLen oldSize
+          when showStats $ do
+            itrs <- getItr
+            size <- getLen
+            hPutStrLn h $ "WORK: " ++ (show itrs) ++ " interactions"
+            hPutStrLn h $ "SIZE: " ++ (show size) ++ " nodes"
+            setItr 0
+        hClose h
+      case result of
+        Left e -> hPutStrLn stderr $ "Connection error: " ++ show (e :: SomeException)
+        Right _ -> return ()
       loop sock book
 
 -- Load and initialize a book from a file
