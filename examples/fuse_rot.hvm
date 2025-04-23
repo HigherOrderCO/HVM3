@@ -22,69 +22,69 @@ data List { #Nil #Cons{head tail} }
 @I(a b) = λo λi (i a b)
 @L(x)   = x
 
-@view(&s) = ~&s {
+@view(!&s) = ~s {
   0: λx x
   1+&p: λx (x
-    λa λb [0 (@view(&p) a) (@view(&p) b)]
-    λa λb [1 (@view(&p) a) (@view(&p) b)])
+    λa λb [0 (@view(p) a) (@view(p) b)]
+    λa λb [1 (@view(p) a) (@view(p) b)])
 }
 
-@read(&s) = ~&s {
+@read(!&s) = ~s {
   0: λx 0
   1+&p: λx (x
-    λa λb (+ 0 (* (@read(&p) a) 2))
-    λa λb (+ 1 (* (@read(&p) a) 2)))
+    λa λb (+ 0 (* (@read(p) a) 2))
+    λa λb (+ 1 (* (@read(p) a) 2)))
 }
 
 @zero(s) = ~s {
   0: 0
-  1+&p: @O(@zero(&p) @zero(&p))
+  1+&p: @O(@zero(p) @zero(p))
 }
 
 @inc(s) = ~s {
   0: λx x
   1+&p: λx λo λi (x
-    λa λb (i b (@inc(&p) a))
-    λa λb (o b (@inc(&p) a)))
+    λa λb (i b (@inc(p) a))
+    λa λb (o b (@inc(p) a)))
 }
 
 @dec(s) = ~s {
   0: λx x
   1+&p: λx λo λi (x
-    λa λb (i (@dec(&p) b) a)
-    λa λb (o (@dec(&p) b) a))
+    λa λb (i (@dec(p) b) a)
+    λa λb (o (@dec(p) b) a))
 }
 
-@neg(&s) = ~&s {
+@neg(!&s) = ~s {
   0: λx x
   1+&p: λx λo λi (x
-    λa λb (o (@neg(&p) a) (@neg(&p) b))
-    λa λb (i (@neg(&p) b) (@neg(&p) a)))
+    λa λb (o (@neg(p) a) (@neg(p) b))
+    λa λb (i (@neg(p) b) (@neg(p) a)))
 }
 
 // What this does?
-@foo(&s) = ~&s {
+@foo(!&s) = ~s {
   0: λx λy x
   1+&p: λx (x
     λxa λxb !&1{xa0 xa1}=xa !&1{xb0 xb1}=xb λy λo λi (y
-      λya λyb (o (@foo(&p) xa0 ya) (@foo(&p) xb0 yb))
-      λya λyb (i (@foo(&p) xb1 yb) (@foo(&p) xa1 ya)))
+      λya λyb (o (@foo(p) xa0 ya) (@foo(p) xb0 yb))
+      λya λyb (i (@foo(p) xb1 yb) (@foo(p) xa1 ya)))
     λxa λxb !&1{xa0 xa1}=xa !&1{xb0 xb1}=xb λy λo λi (y
-      λya λyb (i (@foo(&p) xb0 yb) (@foo(&p) xa0 ya))
-      λya λyb (o (@foo(&p) xa1 ya) (@foo(&p) xb1 yb))))
+      λya λyb (i (@foo(p) xb0 yb) (@foo(p) xa0 ya))
+      λya λyb (o (@foo(p) xa1 ya) (@foo(p) xb1 yb))))
 }
 
 // Removing the recursive calls to @dec/@inc makes this
 // fuse; but since we can't, it doesn't, making it slow
-@add(&s) = ~&s {
+@add(!&s) = ~s {
   0: λx λy y
   1+&p: λx (x
     λxa λxb !&1{xa0 xa1}=xa !&1{xb0 xb1}=xb λy λo λi (y
-      λya λyb (o (@add(&p) xa0 ya) (@add(&p) xb0 yb))
-      λya λyb (i (@add(&p) xb1 ya) (@add(&p) xa1 yb)))
+      λya λyb (o (@add(p) xa0 ya) (@add(p) xb0 yb))
+      λya λyb (i (@add(p) xb1 ya) (@add(p) xa1 yb)))
     λxa λxb !&1{xa0 xa1}=xa !&1{xb0 xb1}=xb λy λo λi (y
-      λya λyb (i (@add(&p) xa0 yb) (@add(&p) xb0 ya))
-      λya λyb (o (@dec(&p) (@add(&p) xb1 yb)) (@inc(&p) (@add(&p) xa1 ya)))))
+      λya λyb (i (@add(p) xa0 yb) (@add(p) xb0 ya))
+      λya λyb (o (@dec(p) (@add(p) xb1 yb)) (@inc(p) (@add(p) xa1 ya)))))
 }
 
 @S    = 32
