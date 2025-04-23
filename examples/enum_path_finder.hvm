@@ -1,0 +1,100 @@
+// Simple path finding with superpositions
+
+// Lists
+data List { #Nil #Cons{head tail} }
+
+// Directions (Left/Right/Up/Down)
+data Dir { #L #R #U #D }
+
+// Collapses an universe when c=0
+@when(!c t) =
+  ~ c {
+    0: *
+    _: t
+  }
+
+// Decrements/increments a number
+@dec(x) = ~ x { 0:*; 1+x:x }
+@inc(x) = (+ x 1)
+
+// Swaps a element in an array
+@swap(xs i v) = ~ i !xs !v {
+  0: ~ xs {
+    #Nil: *
+    #Cons{x xs}:
+      &0{#Cons{v xs} x}
+  }
+  1+i: ~ xs {
+    #Nil: *
+    #Cons{x xs}:
+      ! &0{xs v} = @swap(xs i v)
+      &0{#Cons{x xs} v}
+  }
+}
+
+// Swaps an element in a 2D grid
+@swap2D(xs pos v) =
+  ! &0{i  j } = pos
+  ! & {i0 i1} = i
+  ! & {j0 j1} = j
+  ! &0{xs ys} = @swap(xs j0 *)
+  ! &0{ys k } = @swap(ys i0 *)
+  ! &0{ys _ } = @swap(ys i1 v)
+  ! &0{xs _ } = @swap(xs j1 ys)
+  &0{xs k}
+
+// Moves a position to a direction
+@move(pos dir) =
+  ! &0{x y} = pos
+  ~ dir !x !y {
+    #L: &0{@dec(x) y}
+    #R: &0{@inc(x) y}
+    #U: &0{x @dec(y)}
+    #D: &0{x @inc(y)}
+  }
+
+// Walks through the map via a path
+// Destroys on walls or out-of-bounds
+// Returns the ending position
+@walk(map pos path) =
+  ~ path !pos !map {
+    #Nil:
+      pos
+    #Cons{dir path}:
+      ! & {pos0 pos1} = @move(pos dir)
+      ! &0{map  got}  = @swap2D(map pos0 1)
+      ~ got {
+        0: @walk(map pos1 path)
+        _: *
+      }
+  }
+
+// An example map
+@map = [
+  [0 1 0 1 0 0 0 0 0]
+  [0 1 0 1 0 1 1 1 0]
+  [0 0 0 1 0 0 0 1 0]
+  [0 1 1 1 0 1 1 0 0]
+  [0 0 0 0 0 1 0 1 0]
+  [0 1 1 1 0 1 0 1 0]
+  [0 1 0 0 0 1 0 1 0]
+  [0 1 0 1 1 1 0 1 0]
+  [0 0 0 0 0 0 0 1 0]
+]
+
+// A list of directions
+@dirs =
+  &{#Nil
+  &{#Cons{#L @dirs}
+  &{#Cons{#R @dirs}
+  &{#Cons{#U @dirs}
+    #Cons{#D @dirs}
+  }}}}
+
+// Finds a path from (0,0) to (8,8)
+@main =
+  ! ini = &0{0 0}
+  ! end = &0{8 8}
+  ! &0{i j} = @walk(@map ini @dirs)
+  ! &0{I J} = end
+  @when((& (== i I) (== j J)) @dirs)
