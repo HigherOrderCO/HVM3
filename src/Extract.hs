@@ -278,21 +278,3 @@ doLiftDups term =
   let termBody = termDups (Var "") in
   -- hack to print expr before dups
   Let LAZY "" termExpr termBody
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

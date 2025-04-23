@@ -13,7 +13,7 @@
 #include <stdbool.h>
 #include <string.h>
 
-#define MAX_HEAP_SIZE (3ULL << 29) // 12 GB
+#define MAX_HEAP_SIZE (1ULL << 32)
 #define MAX_STACK_SIZE (1ULL << 28)
 
 typedef uint8_t  Tag;

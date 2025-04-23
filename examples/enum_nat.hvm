@@ -8,13 +8,13 @@ data Nat { #Z #S{pred} }
 // If-Then-Else
 @if(b t f) = ~b {
   0: f
-  k: t
+  _: t
 }
 
 // Converts an U32 to a Nat
 @nat(n) = ~n{
   0: #Z
-  p: #S{@nat(p)}
+  1+p: #S{@nat(p)}
 }
 
 // Converts a Nat to an U32

@@ -15,7 +15,7 @@ data Tree { #Leaf #Node{lft rgt} }
 
 @range(n r) = ~n !r {
   0: r
-  p: !&0{p0 p1}=p @range(p0 #Cons{p1 r})
+  1+p: !&0{p0 p1}=p @range(p0 #Cons{p1 r})
 }
 
 @fst(p) = ~p {
@@ -49,7 +49,7 @@ data Tree { #Leaf #Node{lft rgt} }
   // - recurse to the lft, get the new ctx and 'lft' tree
   // - recurse to the rgt, get the new ctx and 'rgt' tree
   // - return the final context and a '#Node{lft rgt}'
-  p:
+  1+p:
     !&0{p0 p1}=p
     ~ @list_to_tree_slow(p0 ctx) {
       #Pair{ctx lft}: ~ @list_to_tree_slow(p1 ctx) {
@@ -69,7 +69,7 @@ data Tree { #Leaf #Node{lft rgt} }
     #Nil: *
     #Cons{head tail}: &0{tail #Leaf{head}}
   }
-  p:
+  1+p:
     ! &0{p0 p1}   = p
     ! &0{ctx lft} = @list_to_tree_fast_par(p0 ctx)
     ! &0{ctx rgt} = @list_to_tree_fast_par(p1 ctx)
@@ -92,7 +92,7 @@ data Tree { #Leaf #Node{lft rgt} }
   // - split the mutable reference into two
   // - recurse to the lft and rgt, passing the split mut refs
   // - return just '#Node{lft rgt}' directly (no pairs!)
-  p:
+  1+p:
     !&0{pL pR}=p
     !! @spt(ctx λ$ctxL λ$ctxR *)
     #Node{

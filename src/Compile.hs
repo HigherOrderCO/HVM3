@@ -29,19 +29,15 @@ type Compile = State CompileState
 
 compileHeaders :: Book -> String
 compileHeaders book =
-  let funcs   = MS.toList (fidToNam book)
-      decls_f = map (\(_, name) -> "Term " ++ name ++ "_f(Term);") funcs
-      decls_t = map (\(_, name) -> "Term " ++ name ++ "_t(Term);") funcs
-  in unlines $ decls_f ++ decls_t
+  let funcs = MS.toList (fidToNam book)
+      decls = map (\(_, name) -> "Term " ++ name ++ "_f(Term);") funcs
+  in unlines decls
 
 compile :: Book -> Word16 -> String
 compile book fid =
   let full = compileWith compileFull book fid in
   let fast = compileWith compileFast book fid in
-  let slow = compileWith compileSlow book fid in
-  if "<ERR>" `isInfixOf` fast
-    then unlines [ full , slow ]
-    else unlines [ full , fast ]
+  if "<ERR>" `isInfixOf` fast then full else fast
 
 -- Compiles a function using either Fast-Mode or Full-Mode
 compileWith :: (Book -> Word16 -> Core -> Bool -> [(Bool,String)] -> Compile ()) -> Book -> Word16 -> String
@@ -79,8 +75,9 @@ reuse arity loc = modify $ \st -> st { reus = MS.insertWith (++) arity [loc] (re
 
 compileFull :: Book -> Word16 -> Core -> Bool -> [(Bool,String)] -> Compile ()
 compileFull book fid core copy args = do
-  emit $ "Term " ++ mget (fidToNam book) fid ++ "_t(Term ref) {"
+  emit $ "Term " ++ mget (fidToNam book) fid ++ "_f(Term ref) {"
   tabInc
+  emit $ "HVM.interactions->ref_slow[term_lab(ref)]++;"
   forM_ (zip [0..] args) $ \(i, arg) -> do
     argVar <- fresh "arg"
     if fst arg
@@ -316,6 +313,10 @@ compileFastBody book fid term@(Mat kin val mov css) ctx stop@False itr = do
     tabDec
     emit $ "}"
     tabDec
+    emit $ "} else if (term_tag(" ++ valNam ++ ") == ERA) {"
+    tabInc
+    compileFastBody book fid Era ctx stop (itr + 1)
+    tabDec
     emit $ "} else {"
     tabInc
     val <- compileFastCore book fid term
@@ -368,6 +369,10 @@ compileFastBody book fid term@(Mat kin val mov css) ctx stop@False itr = do
     tabDec
     emit $ "}"
     tabDec
+    emit $ "} else if (term_tag(" ++ valNam ++ ") == ERA) {"
+    tabInc
+    compileFastBody book fid Era ctx stop (itr + 1)
+    tabDec
     emit $ "} else {"
     tabInc
     val <- compileFastCore book fid term
@@ -402,6 +407,10 @@ compileFastBody book fid term@(Mat kin val mov css) ctx stop@False itr = do
       modify $ \st -> st { reus = reuse' }
     tabDec
     emit $ "}"
+    tabDec
+    emit $ "} else if (term_tag(" ++ valNam ++ ") == ERA) {"
+    tabInc
+    compileFastBody book fid Era ctx stop (itr + 1)
     tabDec
     emit $ "} else {"
     tabInc
@@ -723,15 +732,6 @@ compileFastVar var = do
       return entry
     Nothing -> do
       return $ "<ERR>"
-
--- Compiles a function using Fast-Mode
-compileSlow :: Book -> Word16 -> Core -> Bool -> [(Bool,String)] -> Compile ()
-compileSlow book fid core copy args = do
-  book <- return book
-  emit $ "Term " ++ mget (fidToNam book) fid ++ "_f(Term ref) {"
-  emit $ "  HVM.interactions->ref_slow[term_lab(ref)]++;"
-  emit $ "  return " ++ mget (fidToNam book) fid ++ "_t(ref);"
-  emit $ "}"
 
 checkRefAri :: Book -> Core -> Compile ()
 checkRefAri book core = do

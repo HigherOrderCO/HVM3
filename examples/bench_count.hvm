@@ -1,6 +1,6 @@
 @count(!n k) = ~n !k {
   0: k
-  p: @count(p (+ k 2))
+  1+p: @count(p,(+ k 2))
 }
 
 @main = @count(2_000_000 0)
