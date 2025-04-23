@@ -17,7 +17,7 @@ data Dir { #L #R #U #D }
 @dec(x) = ~ x { 0:*; 1+x:x }
 @inc(x) = (+ x 1)
 
-// Swaps a element in an array
+// Swaps an element in an array
 @swap(xs i v) = ~ i !xs !v {
   0: ~ xs {
     #Nil: *
@@ -82,7 +82,7 @@ data Dir { #L #R #U #D }
   [0 0 0 0 0 0 0 1 0]
 ]
 
-// A list of directions
+// Superposition of all possible paths
 @dirs =
   &{#Nil
   &{#Cons{#L @dirs}
