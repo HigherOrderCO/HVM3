@@ -1,6 +1,5 @@
-{-./../IC.md-}
-{-./Type.hs-}
-{-./Inject.hs-}
+-- //./Type.hs//
+-- //./Inject.hs//
 
 module Compile where
 
@@ -210,20 +209,6 @@ compileFullCore book fid t@(Ref rNam rFid rArg) host = do
   argsT <- mapM (\ (i,arg) -> compileFullCore book fid arg (refNam ++ " + " ++ show i)) (zip [0..] rArg)
   sequence_ [emit $ "set(" ++ refNam ++ " + " ++ show i ++ ", " ++ argT ++ ");" | (i,argT) <- zip [0..] argsT]
   return $ "term_new(REF, " ++ show rFid ++ ", " ++ refNam ++ ")"
-
-compileFullCore book fid (Inc val) host = do
-  incNam <- fresh "inc"
-  emit $ "Loc " ++ incNam ++ " = alloc_node(1);"
-  valT <- compileFullCore book fid val (incNam ++ " + 0")
-  emit $ "set(" ++ incNam ++ " + 0, " ++ valT ++ ");"
-  return $ "term_new(INC, 0, " ++ incNam ++ ")"
-
-compileFullCore book fid (Dec val) host = do
-  decNam <- fresh "dec"
-  emit $ "Loc " ++ decNam ++ " = alloc_node(1);"
-  valT <- compileFullCore book fid val (decNam ++ " + 0")
-  emit $ "set(" ++ decNam ++ " + 0, " ++ valT ++ ");"
-  return $ "term_new(DEC, 0, " ++ decNam ++ ")"
 
 -- Fast Compiler
 -- -------------
@@ -730,20 +715,6 @@ compileFastCore book fid t@(Ref rNam rFid rArg) = do
     sequence_ [emit $ "set(" ++ refNam ++ " + " ++ show i ++ ", " ++ argT ++ ");" | (i,argT) <- zip [0..] argsT]
     return $ "term_new(REF, " ++ show rFid ++ ", " ++ refNam ++ ")"
 
-compileFastCore book fid (Inc val) = do
-  incNam <- fresh "inc"
-  compileFastAlloc incNam 1
-  valT <- compileFastCore book fid val
-  emit $ "set(" ++ incNam ++ " + 0, " ++ valT ++ ");"
-  return $ "term_new(INC, 0, " ++ incNam ++ ")"
-
-compileFastCore book fid (Dec val) = do
-  decNam <- fresh "dec"
-  compileFastAlloc decNam 1
-  valT <- compileFastCore book fid val
-  emit $ "set(" ++ decNam ++ " + 0, " ++ valT ++ ");"
-  return $ "term_new(DEC, 0, " ++ decNam ++ ")"
-
 -- Compiles a variable in fast mode
 compileFastVar :: String -> Compile String
 compileFastVar var = do
@@ -764,3 +735,11 @@ checkRefAri book core = do
       when (ari /= fromIntegral len) $ do
         error $ "Arity mismatch on term: " ++ show core ++ ". Expected " ++ show ari ++ ", got " ++ show len ++ "."
     _ -> return ()
+
+-- isTailRecursive :: Book -> Word16 -> Core -> Bool
+-- isTailRecursive book fid core = go core where
+  -- go (Mat _ _ _ css)              = any (\(_, _, bod) -> go bod) css
+  -- go (Dup _ _ _ _ bod)            = go bod
+  -- go (Let _ _ _ bod)              = go bod
+  -- go (Ref _ rFid _) | rFid == fid = True
+  -- go _                            = False

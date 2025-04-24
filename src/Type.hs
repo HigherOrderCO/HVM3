@@ -43,8 +43,6 @@ data Core
   | Op2 Oper Core Core          -- (+ a b)
   | Let LetT Name Core Core     -- ! x = v body
   | Mat MatT Core [Move] [Case] -- ~ v !moves { cases }
-  | Inc Core                    -- ↑ x
-  | Dec Core                    -- ↓ x
   deriving (Eq)
 
 data Oper
@@ -105,8 +103,6 @@ _SUP_ = 0x0F :: Tag
 _CTR_ = 0x10 :: Tag
 _W32_ = 0x11 :: Tag
 _CHR_ = 0x12 :: Tag
-_INC_ = 0x13 :: Tag
-_DEC_ = 0x14 :: Tag
 
 -- Let Types
 modeT :: Lab -> LetT
@@ -181,8 +177,6 @@ showTag tag
   | tag == _CTR_ = "CTR"
   | tag == _W32_ = "W32"
   | tag == _CHR_ = "CHR"
-  | tag == _INC_ = "INC"
-  | tag == _DEC_ = "DEC"
   | otherwise    = error $ "unknown tag: " ++ show tag
 
 showLab :: Lab -> String
@@ -282,12 +276,6 @@ showCore core = maybe (format core) id (sugar core) where
       let v' = showCore v in
       let f' = showCore f in
       concat ["! ", show m, k, " = ", v', "\n", f']
-  format (Inc x) =
-    let x' = showCore x in
-    concat ["↑", x']
-  format (Dec x) =
-    let x' = showCore x in
-    concat ["↓", x']
 
 rename :: Core -> Core
 rename core = unsafePerformIO $ do
@@ -337,12 +325,6 @@ renamer names core = case core of
   Ref k i xs -> do
     xs' <- mapM (renamer names) xs
     return $ Ref k i xs'
-  Inc x -> do
-    x' <- renamer names x
-    return $ Inc x'
-  Dec x -> do
-    x' <- renamer names x
-    return $ Dec x'
   other -> 
     return other
 

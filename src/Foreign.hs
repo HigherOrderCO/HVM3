@@ -1,5 +1,3 @@
-{-./Runtime.c-}
-
 module Foreign where
 
 import Data.Word
@@ -90,12 +88,6 @@ foreign import ccall unsafe "Runtime.c reduce_app_ctr"
 foreign import ccall unsafe "Runtime.c reduce_app_w32"
   reduceAppW32 :: Term -> Term -> IO Term
 
-foreign import ccall unsafe "Runtime.c reduce_app_inc"
-  reduceAppInc :: Term -> Term -> IO Term
-
-foreign import ccall unsafe "Runtime.c reduce_app_dec"
-  reduceAppDec :: Term -> Term -> IO Term
-
 foreign import ccall unsafe "Runtime.c reduce_dup_era"
   reduceDupEra :: Term -> Term -> IO Term
 
@@ -114,12 +106,6 @@ foreign import ccall unsafe "Runtime.c reduce_dup_w32"
 foreign import ccall unsafe "Runtime.c reduce_dup_ref"
   reduceDupRef :: Term -> Term -> IO Term
 
-foreign import ccall unsafe "Runtime.c reduce_dup_inc"
-  reduceDupInc :: Term -> Term -> IO Term
-
-foreign import ccall unsafe "Runtime.c reduce_dup_dec"
-  reduceDupDec :: Term -> Term -> IO Term
-
 foreign import ccall unsafe "Runtime.c reduce_mat_era"
   reduceMatEra :: Term -> Term -> IO Term
 
@@ -134,12 +120,6 @@ foreign import ccall unsafe "Runtime.c reduce_mat_ctr"
 
 foreign import ccall unsafe "Runtime.c reduce_mat_w32"
   reduceMatW32 :: Term -> Term -> IO Term
-
-foreign import ccall unsafe "Runtime.c reduce_mat_inc"
-  reduceMatInc :: Term -> Term -> IO Term
-
-foreign import ccall unsafe "Runtime.c reduce_mat_dec"
-  reduceMatDec :: Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opx_era"
   reduceOpxEra :: Term -> Term -> IO Term
@@ -156,12 +136,6 @@ foreign import ccall unsafe "Runtime.c reduce_opx_ctr"
 foreign import ccall unsafe "Runtime.c reduce_opx_w32"
   reduceOpxW32 :: Term -> Term -> IO Term
 
-foreign import ccall unsafe "Runtime.c reduce_opx_inc"
-  reduceOpxInc :: Term -> Term -> IO Term
-
-foreign import ccall unsafe "Runtime.c reduce_opx_dec"
-  reduceOpxDec :: Term -> Term -> IO Term
-
 foreign import ccall unsafe "Runtime.c reduce_opy_era"
   reduceOpyEra :: Term -> Term -> IO Term
 
@@ -176,12 +150,6 @@ foreign import ccall unsafe "Runtime.c reduce_opy_ctr"
 
 foreign import ccall unsafe "Runtime.c reduce_opy_w32"
   reduceOpyW32 :: Term -> Term -> IO Term
-
-foreign import ccall unsafe "Runtime.c reduce_opy_inc"
-  reduceOpyInc :: Term -> Term -> IO Term
-
-foreign import ccall unsafe "Runtime.c reduce_opy_dec"
-  reduceOpyDec :: Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_ref_sup"
   reduceRefSup :: Term -> Word16 -> IO Term

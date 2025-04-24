@@ -1,5 +1,7 @@
 //./Type.hs//
 //./../IC.md//
+//./../HVM.md//
+//./../GOAL//
 
 #include <inttypes.h>
 #include <stdint.h>
@@ -73,8 +75,6 @@ static State HVM = {
 #define CTR 0x10
 #define W32 0x11
 #define CHR 0x12
-#define INC 0x13
-#define DEC 0x14
 
 #define OP_ADD 0x00
 #define OP_SUB 0x01
@@ -260,8 +260,6 @@ void print_tag(Tag tag) {
     case CHR: printf("CHR"); break;
     case OPX: printf("OPX"); break;
     case OPY: printf("OPY"); break;
-    case INC: printf("INC"); break;
-    case DEC: printf("DEC"); break;
     default : printf("???"); break;
   }
 }
@@ -436,35 +434,6 @@ Term reduce_app_w32(Term app, Term w32) {
   //printf("reduce_app_w32 "); print_term(app); printf("\n");
   printf("invalid:app-w32");
   exit(0);
-}
-
-// (↑f x)
-// ------- APP-INC
-// ↑(f x)
-Term reduce_app_una(Term app, Term una, Tag tag) {
-  inc_itr();
-  Loc app_loc = term_loc(app);
-  Loc una_loc = term_loc(una);
-  Term fun    = got(una_loc + 0);
-  Term arg    = got(app_loc + 1);
-
-  /* build the inner application in-place, re-using app_loc */
-  set(app_loc + 0, fun);
-  set(app_loc + 1, arg);
-
-  /* point INC/DEC to the freshly built APP */
-  set(una_loc + 0, term_new(APP, 0, app_loc));
-  return una;
-}
-
-Term reduce_app_inc(Term app, Term inc) {
-  //printf("reduce_app_inc "); print_term(app); printf("\n");
-  return reduce_app_una(app, inc, INC);
-}
-
-Term reduce_app_dec(Term app, Term dec) {
-  //printf("reduce_app_dec "); print_term(app); printf("\n");
-  return reduce_app_una(app, dec, DEC);
 }
 
 // ! &L{x y} = *
@@ -651,50 +620,6 @@ Term reduce_dup_ref(Term dup, Term ref) {
   }
 }
 
-// ! &L{a b} = ↑x
-// ------------- DUP-INC/DEC
-// ! &L{A B} = x
-// a <- ↑A
-// b <- ↑B
-Term reduce_dup_una(Term dup, Term una, Tag tag) {
-  inc_itr();
-  Loc dup_loc = term_loc(dup);
-  Lab lab     = term_lab(dup);
-  Loc una_loc = term_loc(una);
-  Term inner  = got(una_loc + 0);
-
-  /* duplicate inner value */
-  Loc du_loc  = alloc_node(1);
-  set(du_loc + 0, inner);
-
-  Term dp0 = term_new(DP0, lab, du_loc);
-  Term dp1 = term_new(DP1, lab, du_loc);
-
-  /* wrap duplicates in INC / DEC */
-  Loc w0_loc = alloc_node(1); set(w0_loc + 0, dp0);
-  Loc w1_loc = alloc_node(1); set(w1_loc + 0, dp1);
-  Term w0 = term_new(tag, 0, w0_loc);
-  Term w1 = term_new(tag, 0, w1_loc);
-
-  if (term_tag(dup) == DP0) {
-    sub(dup_loc + 0, w1);
-    return w0;
-  } else {
-    sub(dup_loc + 0, w0);
-    return w1;
-  }
-}
-
-Term reduce_dup_inc(Term dup, Term inc) {
-  //printf("reduce_dup_inc "); print_term(dup); printf("\n");
-  return reduce_dup_una(dup, inc, INC);
-}
-
-Term reduce_dup_dec(Term dup, Term dec) {
-  //printf("reduce_dup_dec "); print_term(dup); printf("\n");
-  return reduce_dup_una(dup, dec, DEC);
-}
-
 // ~ * {K0 K1 K2 ...} 
 // ------------------ MAT-ERA
 // *
@@ -824,28 +749,6 @@ Term reduce_mat_w32(Term mat, Term w32) {
   }
 }
 
-// ~(↑x) {…}  →  ↑(~x {…})
-Term reduce_mat_una(Term mat, Term una, Tag tag) {
-  inc_itr();
-  Loc mat_loc = term_loc(mat);
-  Loc una_loc = term_loc(una);
-  Term inner  = got(una_loc + 0);
-
-  set(mat_loc + 0, inner);       /* plug x inside the matcher */
-  set(una_loc + 0, mat);         /* re-attach wrapped matcher */
-  return una;
-}
-
-Term reduce_mat_inc(Term mat, Term inc) {
-  //printf("reduce_mat_inc "); print_term(mat); printf("\n");
-  return reduce_mat_una(mat, inc, INC);
-}
-
-Term reduce_mat_dec(Term mat, Term dec) {
-  //printf("reduce_mat_dec "); print_term(mat); printf("\n");
-  return reduce_mat_una(mat, dec, DEC);
-}
-
 // <op(* b)
 // -------- OPX-ERA
 // *
@@ -913,30 +816,6 @@ Term reduce_opx_w32(Term opx, Term nmx) {
   set(opx_loc + 0, nmy);
   set(opx_loc + 1, nmx);
   return term_new(OPY, opx_lab, opx_loc);
-}
-
-// <op(↑x y)  →  ↑<op(x y)
-Term reduce_opx_una(Term opx, Term una, Tag tag) {
-  inc_itr();
-  Loc opx_loc = term_loc(opx);
-  Loc una_loc = term_loc(una);
-  Term lhs    = got(una_loc + 0);
-  Term rhs    = got(opx_loc + 1);         /* already stored */
-
-  set(opx_loc + 0, lhs);
-  set(opx_loc + 1, rhs);
-  set(una_loc + 0, term_new(OPX, term_lab(opx), opx_loc));
-  return una;
-}
-
-Term reduce_opx_inc(Term opx, Term inc) {
-  //printf("reduce_opx_inc "); print_term(opx); printf("\n");
-  return reduce_opx_una(opx, inc, INC);
-}
-
-Term reduce_opx_dec(Term opx, Term dec) {
-  //printf("reduce_opx_dec "); print_term(opx); printf("\n");
-  return reduce_opx_una(opx, dec, DEC);
 }
 
 // >op(a *)
@@ -1024,30 +903,6 @@ Term reduce_opy_w32(Term opy, Term w32) {
     }
   }
   return term_new(t, 0, result);
-}
-
-// >op(a ↑y)  →  ↑>op(a y)
-Term reduce_opy_una(Term opy, Term una, Tag tag) {
-  inc_itr();
-  Loc opy_loc = term_loc(opy);
-  Loc una_loc = term_loc(una);
-  Term rhs    = got(una_loc + 0);
-  Term lhs    = got(opy_loc + 1);         /* first operand stored at +1 */
-
-  set(opy_loc + 0, rhs);
-  set(opy_loc + 1, lhs);
-  set(una_loc + 0, term_new(OPY, term_lab(opy), opy_loc));
-  return una;
-}
-
-Term reduce_opy_inc(Term opy, Term inc) {
-  //printf("reduce_opy_inc "); print_term(opy); printf("\n");
-  return reduce_opy_una(opy, inc, INC);
-}
-
-Term reduce_opy_dec(Term opy, Term dec) {
-  //printf("reduce_opy_dec "); print_term(opy); printf("\n");
-  return reduce_opy_una(opy, dec, DEC);
 }
 
 Term reduce(Term term) {
@@ -1163,8 +1018,6 @@ Term reduce(Term term) {
           case CTR: next = reduce_app_ctr(prev, next); continue;
           case W32: next = reduce_app_w32(prev, next); continue;
           case CHR: next = reduce_app_w32(prev, next); continue;
-          case INC: next = reduce_app_inc(prev, next); continue;
-          case DEC: next = reduce_app_dec(prev, next); continue;
           default: break;
         }
       }
@@ -1178,8 +1031,6 @@ Term reduce(Term term) {
           case CTR: next = reduce_dup_ctr(prev, next); continue;
           case W32: next = reduce_dup_w32(prev, next); continue;
           case CHR: next = reduce_dup_w32(prev, next); continue;
-          case INC: next = reduce_dup_inc(prev, next); continue;
-          case DEC: next = reduce_dup_dec(prev, next); continue;
           default: break;
         }
       }
@@ -1194,8 +1045,6 @@ Term reduce(Term term) {
           case CTR: next = reduce_mat_ctr(prev, next); continue;
           case W32: next = reduce_mat_w32(prev, next); continue;
           case CHR: next = reduce_mat_w32(prev, next); continue;
-          case INC: next = reduce_mat_inc(prev, next); continue;
-          case DEC: next = reduce_mat_dec(prev, next); continue;
           default: break;
         }
       }
@@ -1208,8 +1057,6 @@ Term reduce(Term term) {
           case CTR: next = reduce_opx_ctr(prev, next); continue;
           case W32: next = reduce_opx_w32(prev, next); continue;
           case CHR: next = reduce_opx_w32(prev, next); continue;
-          case INC: next = reduce_opx_inc(prev, next); continue;
-          case DEC: next = reduce_opx_dec(prev, next); continue;
           default: break;
         }
       }
@@ -1222,8 +1069,6 @@ Term reduce(Term term) {
           case CTR: next = reduce_opy_ctr(prev, next); continue;
           case W32: next = reduce_opy_w32(prev, next); continue;
           case CHR: next = reduce_opy_w32(prev, next); continue;
-          case INC: next = reduce_opy_inc(prev, next); continue;
-          case DEC: next = reduce_opy_dec(prev, next); continue;
           default: break;
         }
       }
@@ -1511,4 +1356,3 @@ void hvm_set_clen(u16 cid, u16 cases) {
 void hvm_set_cadt(u16 cid, u16 adt) {
   HVM.cadt[cid] = adt;
 }
-

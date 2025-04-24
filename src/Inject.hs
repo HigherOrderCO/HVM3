@@ -118,16 +118,6 @@ injectCore book (Op2 opr nm0 nm1) loc = do
   injectCore book nm1 (opx + 1)
   lift $ set loc (termNew _OPX_ (fromIntegral $ fromEnum opr) opx)
 
-injectCore book (Inc val) loc = do
-  inc <- lift $ allocNode 1
-  injectCore book val (inc + 0)
-  lift $ set loc (termNew _INC_ 0 inc)
-
-injectCore book (Dec val) loc = do
-  dec <- lift $ allocNode 1
-  injectCore book val (dec + 0)
-  lift $ set loc (termNew _DEC_ 0 dec)
-
 doInjectCoreAt :: Book -> Core -> Loc -> [(String,Term)] -> HVM Term
 doInjectCoreAt book core host argList = do
   (_, state) <- runStateT (injectCore book core host) (emptyState { args = MS.fromList argList })

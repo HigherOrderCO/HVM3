@@ -53,41 +53,23 @@ data Dir { #L #R #U #D }
     #D: &0{x @inc(y)}
   }
 
-@diff(&a &b) =
-  ~ (< a b) {
-    0: (- a b)
-    _: (- b a)
-  }
-
-@gdist(pos goal) =
-  ! &0{px py} = pos
-  ! &0{gx gy} = goal
-  ! dx = @diff(px gx)
-  ! dy = @diff(py gy)
-  (+ dx dy)
-
-@closer(prev curr &goal) =
-  ! d_prev = @gdist(prev goal) // distance from prev → goal
-  ! d_curr = @gdist(curr goal) // distance from cur  → goal
-  (< d_curr d_prev)
-
-!@walk(map &pos !path &goal) =
-  ~ path {
+// Walks through the map via a path
+// Destroys on walls or out-of-bounds
+// Returns the ending position
+@walk(map pos path) =
+  ~ path !pos !map {
     #Nil:
       pos
     #Cons{dir path}:
-      ! &new_pos    = @move(pos dir)
-      ! &0{map got} = @swap2D(map new_pos 0) // <- 0 means we don't replace the prev tile by a wall, making it much harder
+      ! & {pos0 pos1} = @move(pos dir)
+      ! &0{map  got}  = @swap2D(map pos0 1)
       ~ got {
-        0: ↑@walk(map new_pos path goal) // <- generates a weird path? and ↓ hangs...
-          //~ @closer(pos new_pos goal) !map !path {
-            //0: ↓↓@walk(map new_pos path goal)
-            //_: ↓@walk(map new_pos path goal)
-          //}
+        0: @walk(map pos1 path)
         _: *
       }
   }
 
+// An example map
 @map = [
   [0 1 0 1 0 0 0 0 0]
   [0 1 0 1 0 1 1 1 0]
@@ -101,17 +83,18 @@ data Dir { #L #R #U #D }
 ]
 
 // Superposition of all possible paths
-@dirs(&L) = ~ L {
-  0: #Nil
-  1+&L: &1{#Nil &1{#Cons{#L @dirs(L)} &1{#Cons{#R @dirs(L)} &1{#Cons{#U @dirs(L)} #Cons{#D @dirs(L)}}}}}
-}
+@dirs =
+  &{#Nil
+  &{#Cons{#L @dirs}
+  &{#Cons{#R @dirs}
+  &{#Cons{#U @dirs}
+    #Cons{#D @dirs}
+  }}}}
 
 // Finds a path from (0,0) to (8,8)
 @main =
-  ! &lim = 32
-  ! &ini = &0{0 0}
-  ! &end = &0{4 0}
-  ! &0{i j} = @walk(@map ini @dirs(lim) end)
+  ! ini = &0{0 0}
+  ! end = &0{8 8}
+  ! &0{i j} = @walk(@map ini @dirs)
   ! &0{I J} = end
-  @when((& (== i I) (== j J)) @dirs(lim))
-  //@when((& (== i I) (== j J)) 1)
+  @when((& (== i I) (== j J)) @dirs)
