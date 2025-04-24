@@ -1,6 +1,3 @@
--- Type.hs:
--- //./Type.hs//
-
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
