@@ -52,6 +52,8 @@ parseCore = do
     '!'  -> parseLet
     '#'  -> parseCtr
     '~'  -> parseMat
+    '↑'  -> parseInc
+    '↓'  -> parseDec
     '['  -> parseLst
     '\'' -> parseChr
     '"'  -> parseStr '"'
@@ -269,6 +271,20 @@ parseDefCase isNumMat mov = do
       ]
   else do
     return ("_", [stripName name], body)
+
+-- Inc: `↑x`
+parseInc :: ParserM Core
+parseInc = do
+  consume "↑"
+  term <- parseCore
+  return $ Inc term
+
+-- Dec: `↓x`
+parseDec :: ParserM Core
+parseDec = do
+  consume "↓"
+  term <- parseCore
+  return $ Dec term
 
 -- Let: Dup | StriLet | LazyLet
 parseLet :: ParserM Core
@@ -784,6 +800,8 @@ setRefIds fids term = case term of
   U32 n           -> U32 n
   Chr c           -> Chr c
   Era             -> Era
+  Inc x           -> Inc (setRefIds fids x)
+  Dec x           -> Dec (setRefIds fids x)
   Ref nam _ arg   -> case MS.lookup nam fids of
     Just fid -> Ref nam fid (map (setRefIds fids) arg)
     Nothing  -> unsafePerformIO $ do
@@ -806,6 +824,8 @@ collectLabels term = case term of
   Ctr _ fds           -> MS.unions $ map collectLabels fds
   Mat kin val mov css -> MS.unions $ collectLabels val : map (collectLabels . snd) mov ++ map (\(_,_,bod) -> collectLabels bod) css
   Op2 _ x y           -> MS.union (collectLabels x) (collectLabels y)
+  Inc x               -> collectLabels x
+  Dec x               -> collectLabels x
 
 -- Gives unique names to lexically scoped vars, unless they start with '$'.
 -- Example: `λx λt (t λx(x) x)` will read as `λx0 λt1 (t1 λx2(x2) x0)`.
@@ -879,6 +899,12 @@ lexify term = evalState (go term MS.empty) 0 where
       return $ Chr c
     Era -> 
       return Era
+    Inc x -> do
+      x <- go x ctx
+      return $ Inc x
+    Dec x -> do
+      x <- go x ctx
+      return $ Dec x
 
 -- Sorts cases by constructor ID or numeric value
 sortCases :: [(String, [String], Core)] -> ParserM [(String, [String], Core)]

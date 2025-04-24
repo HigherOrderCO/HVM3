@@ -1,5 +1,4 @@
 {-./Type.hs-}
-{-./Extract.hs-}
 
 module Collapse where
 
@@ -29,7 +28,12 @@ data Bin
   deriving Show
 
 -- A Collapse is a tree of superposed values
-data Collapse a = CSup Lab (Collapse a) (Collapse a) | CVal a | CEra
+data Collapse a
+  = CSup Lab (Collapse a) (Collapse a)
+  | CInc (Collapse a)
+  | CDec (Collapse a)
+  | CVal a
+  | CEra
   deriving Show
 
 bind :: Collapse a -> (a -> Collapse b) -> Collapse b
@@ -37,6 +41,8 @@ bind k f = fork k IM.empty where
   -- fork :: Collapse a -> IntMap (Bin -> Bin) -> Collapse b
   fork CEra         paths = CEra
   fork (CVal v)     paths = pass (f v) (IM.map (\x -> x E) paths)
+  fork (CInc x)     paths = CInc (fork x paths)
+  fork (CDec x)     paths = CDec (fork x paths)
   fork (CSup k x y) paths =
     let lft = fork x $ IM.alter (\x -> Just (maybe (putO id) putO x)) (fromIntegral k) paths in
     let rgt = fork y $ IM.alter (\x -> Just (maybe (putI id) putI x)) (fromIntegral k) paths in
@@ -44,6 +50,8 @@ bind k f = fork k IM.empty where
   -- pass :: Collapse b -> IntMap Bin -> Collapse b
   pass CEra         paths = CEra
   pass (CVal v)     paths = CVal v
+  pass (CInc x)     paths = CInc (pass x paths)
+  pass (CDec x)     paths = CDec (pass x paths)
   pass (CSup k x y) paths = case IM.lookup (fromIntegral k) paths of
     Just (O p) -> pass x (IM.insert (fromIntegral k) p paths)
     Just (I p) -> pass y (IM.insert (fromIntegral k) p paths)
@@ -57,6 +65,8 @@ bind k f = fork k IM.empty where
 instance Functor Collapse where
   fmap f (CVal v)     = CVal (f v)
   fmap f (CSup k x y) = CSup k (fmap f x) (fmap f y)
+  fmap f (CInc x)     = CInc (fmap f x)
+  fmap f (CDec x)     = CDec (fmap f x)
   fmap _ CEra         = CEra
 
 instance Applicative Collapse where
@@ -219,6 +229,16 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
       let name = MS.findWithDefault "?" fid (fidToNam book)
       return $ Ref name fid arg0
 
+    t | t == _INC_ -> do
+      let loc = termLoc term
+      val0 <- collapseDupsAt state reduceAt book (loc + 0)
+      return $ Inc val0
+
+    t | t == _DEC_ -> do
+      let loc = termLoc term
+      val0 <- collapseDupsAt state reduceAt book (loc + 0)
+      return $ Dec val0
+
     tag -> do
       return $ Var "?"
       -- exitFailure
@@ -289,6 +309,14 @@ collapseSups book core = case core of
     let tm1' = collapseSups book tm1
     CSup lab tm0' tm1'
 
+  Inc val -> do
+    let val' = collapseSups book val
+    CInc val'
+
+  Dec val -> do
+    let val' = collapseSups book val
+    CDec val'
+
 -- Tree Collapser
 -- --------------
 
@@ -298,28 +326,6 @@ doCollapseAt reduceAt book host = do
   let state = (IM.empty)
   core <- collapseDupsAt state reduceAt book host
   return $ collapseSups book core
-
--- Priority Queue
--- --------------
-
-data PQ a
-  = PQLeaf
-  | PQNode (Word64, a) (PQ a) (PQ a)
-  deriving (Show)
-
-pqUnion :: PQ a -> PQ a -> PQ a
-pqUnion PQLeaf heap = heap
-pqUnion heap PQLeaf = heap
-pqUnion heap1@(PQNode (k1,v1) l1 r1) heap2@(PQNode (k2,v2) l2 r2)
-  | k1 <= k2  = PQNode (k1,v1) (pqUnion heap2 r1) l1
-  | otherwise = PQNode (k2,v2) (pqUnion heap1 r2) l2
-
-pqPop :: PQ a -> Maybe ((Word64, a), PQ a)
-pqPop PQLeaf         = Nothing
-pqPop (PQNode x l r) = Just (x, pqUnion l r)
-
-pqPut :: (Word64,a) -> PQ a -> PQ a
-pqPut (k,v) = pqUnion (PQNode (k,v) PQLeaf PQLeaf)
 
 -- Simple Queue
 -- ------------
@@ -343,26 +349,73 @@ sqPut x (SQ xs ys) = SQ xs (x:ys)
 flattenDFS :: Collapse a -> [a]
 flattenDFS (CSup k a b) = flatten a ++ flatten b
 flattenDFS (CVal x)     = [x]
+flattenDFS (CInc x)     = flattenDFS x
+flattenDFS (CDec x)     = flattenDFS x
 flattenDFS CEra         = []
 
 flattenBFS :: Collapse a -> [a]
 flattenBFS term = go term (SQ [] [] :: SQ (Collapse a)) where
   go (CSup k a b) sq = go CEra (sqPut b $ sqPut a $ sq)
   go (CVal x)     sq = x : go CEra sq
+  go (CInc x)     sq = go x sq
+  go (CDec x)     sq = go x sq
   go CEra         sq = case sqPop sq of
     Just (v,sq) -> go v sq
     Nothing     -> []
 
-flattenPQ :: Collapse a -> [a]
-flattenPQ term = go term (PQLeaf :: PQ (Collapse a)) where
-  go (CSup k a b) pq = go CEra (pqPut (fromIntegral k,a) $ pqPut (fromIntegral k,b) $ pq)
-  go (CVal x)     pq = x : go CEra pq
-  go CEra         pq = case pqPop pq of
-    Just ((k,v),pq) -> go v pq
-    Nothing         -> []
+-- Priority Queue
+-- --------------
+
+-- | A stable min-heap that orders first by priority, then by insertion order.
+data PQ a
+  = PQLeaf
+  | PQNode (Int, Int, a) (PQ a) (PQ a)  -- (priority, seq#, payload)
+  deriving Show
+
+pqUnion :: PQ a -> PQ a -> PQ a
+pqUnion PQLeaf h = h
+pqUnion h PQLeaf = h
+pqUnion h1@(PQNode x@(p1,i1,_) l1 r1) h2@(PQNode y@(p2,i2,_) l2 r2)
+  | p1 <  p2  = PQNode x (pqUnion r1 h2) l1
+  | p1 >  p2  = PQNode y (pqUnion h1 r2) l2
+  | i1 <= i2  = PQNode x (pqUnion r1 h2) l1
+  | otherwise = PQNode y (pqUnion h1 r2) l2
+
+pqPut :: (Int, Int, a) -> PQ a -> PQ a
+pqPut x = pqUnion (PQNode x PQLeaf PQLeaf)
+
+pqPop :: PQ a -> Maybe ((Int, Int, a), PQ a)
+pqPop PQLeaf         = Nothing
+pqPop (PQNode x l r) = Just (x, pqUnion l r)
+
+-- Priority-Queue Flattener
+-- ------------------------
+-- * priority starts at 0
+-- * since PQ is a min-queue, we invert the scoers:
+-- * passing through (CInc t) subs 1 ; (CDec t) adds 1
+-- * when no Inc/Dec are present every node has priority 0,
+--   hence the order matches plain BFS exactly (stable heap).
+
+flattenPRI :: Collapse a -> [a]
+flattenPRI term = go 1 (pqPut (0, 0, term) PQLeaf) where
+  go :: Int -> PQ (Collapse a) -> [a]
+  go idx pq = case pqPop pq of
+    Nothing -> []
+    Just ((pr, _seq, node), pq') -> case node of
+      CEra   -> go idx pq'
+      CVal v -> v : go idx pq'
+      CInc t -> go (idx + 1) (pqPut (pr - 1, idx, t) pq')
+      CDec t -> go (idx + 1) (pqPut (pr + 1, idx, t) pq')
+      CSup _ a b ->
+        let pq1 = pqPut (pr, idx    , b) pq'   -- push right first
+            pq2 = pqPut (pr, idx + 1, a) pq1   -- then left (matches BFS order)
+        in  go (idx + 2) pq2
+
+-- Default Flattener
+-- -----------------
 
 flatten :: Collapse a -> [a]
-flatten = flattenBFS
+flatten = flattenPRI
 
 -- Flat Collapser
 -- --------------
