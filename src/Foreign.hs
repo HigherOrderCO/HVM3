@@ -86,7 +86,7 @@ foreign import ccall unsafe "Runtime.c reduce_app_ctr"
   reduceAppCtr :: Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_app_u32"
-  reduceAppU32 :: Term -> Term -> IO Term
+  reduceAppW32 :: Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_dup_era"
   reduceDupEra :: Term -> Term -> IO Term
@@ -101,7 +101,7 @@ foreign import ccall unsafe "Runtime.c reduce_dup_ctr"
   reduceDupCtr :: Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_dup_u32"
-  reduceDupU32 :: Term -> Term -> IO Term
+  reduceDupW32 :: Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_dup_ref"
   reduceDupRef :: Term -> Term -> IO Term
@@ -119,7 +119,7 @@ foreign import ccall unsafe "Runtime.c reduce_mat_ctr"
   reduceMatCtr :: Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_mat_u32"
-  reduceMatU32 :: Term -> Term -> IO Term
+  reduceMatW32 :: Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opx_era"
   reduceOpxEra :: Term -> Term -> IO Term
@@ -134,7 +134,7 @@ foreign import ccall unsafe "Runtime.c reduce_opx_ctr"
   reduceOpxCtr :: Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opx_u32"
-  reduceOpxU32 :: Term -> Term -> IO Term
+  reduceOpxW32 :: Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opy_era"
   reduceOpyEra :: Term -> Term -> IO Term
@@ -149,7 +149,7 @@ foreign import ccall unsafe "Runtime.c reduce_opy_ctr"
   reduceOpyCtr :: Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_opy_u32"
-  reduceOpyU32 :: Term -> Term -> IO Term
+  reduceOpyW32 :: Term -> Term -> IO Term
 
 foreign import ccall unsafe "Runtime.c reduce_ref_sup"
   reduceRefSup :: Term -> Word16 -> IO Term

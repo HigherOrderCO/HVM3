@@ -188,9 +188,9 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
         return (show i, [], bod0)
       return $ Mat SWI val0 [] css0
 
-    t | t == _U32_ -> do
+    t | t == _W32_ -> do
       let val = termLoc term
-      return $ U32 (fromIntegral val)
+      return $ W32 (fromIntegral val)
 
     t | t == _CHR_ -> do
       let val = termLoc term
@@ -257,16 +257,16 @@ collapseSups book core = case core of
 
   Mat kin val mov css -> do
     val <- collapseSups book val
-    mov <- mapM (\(key, expr) -> do
+    mov <- mapM (\ (key, expr) -> do
       expr <- collapseSups book expr
       return (key, expr)) mov
-    css <- mapM (\(ctr, fds, bod) -> do
+    css <- mapM (\ (ctr, fds, bod) -> do
       bod <- collapseSups book bod
       return (ctr, fds, bod)) css
     return $ Mat kin val mov css
 
-  U32 val -> do
-    return $ U32 val
+  W32 val -> do
+    return $ W32 val
 
   Chr val -> do
     return $ Chr val

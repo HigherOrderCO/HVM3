@@ -106,8 +106,8 @@ injectCore book tm@(Mat kin val mov css) loc = do
     mov
   lift $ set loc ret
 
-injectCore book (U32 val) loc = do
-  lift $ set loc (termNew _U32_ 0 (fromIntegral val))
+injectCore book (W32 val) loc = do
+  lift $ set loc (termNew _W32_ 0 (fromIntegral val))
 
 injectCore book (Chr val) loc = do
   lift $ set loc (termNew _CHR_ 0 (fromIntegral $ ord val))
@@ -117,6 +117,26 @@ injectCore book (Op2 opr nm0 nm1) loc = do
   injectCore book nm0 (opx + 0)
   injectCore book nm1 (opx + 1)
   lift $ set loc (termNew _OPX_ (fromIntegral $ fromEnum opr) opx)
+
+injectCore _ Set loc = do
+  lift $ set loc (termNew _SET_ 0 0)
+
+injectCore book (All typ bod) loc = do
+  all_node <- lift $ allocNode 2
+  injectCore book typ (all_node + 0)
+  injectCore book bod (all_node + 1)
+  lift $ set loc (termNew _ALL_ 0 all_node)
+
+injectCore book (Adt nam fds) loc = do
+  let ari = length fds
+  let cid = mget (ctrToCid book) nam
+  let lab = fromIntegral cid
+  adt <- lift $ allocNode (fromIntegral ari)
+  sequence_ [injectCore book fd (adt + ix) | (ix,fd) <- zip [0..] fds]
+  lift $ set loc (termNew _ADT_ lab adt)
+
+injectCore _ U32 loc = do
+  lift $ set loc (termNew _W32_ 0 0)
 
 doInjectCoreAt :: Book -> Core -> Loc -> [(String,Term)] -> HVM Term
 doInjectCoreAt book core host argList = do

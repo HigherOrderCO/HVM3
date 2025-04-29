@@ -329,12 +329,12 @@ parseLazyLet = do
   bod <- bindVars [nam] parseCore
   return $ Let LAZY (stripName nam) val bod
 
--- Lit: Var | U32
+-- Lit: Var | W32
 parseLit :: ParserM Core
 parseLit = do
   name <- parseName1
   case reads (filter (/= '_') name) of
-    [(num, "")] -> return $ U32 (fromIntegral (num :: Integer))
+    [(num, "")] -> return $ W32 (fromIntegral (num :: Integer))
     _           -> makeVar name
 
 -- Chr: 'x'
@@ -782,7 +782,7 @@ setRefIds fids term = case term of
   Ctr nam fds     -> Ctr nam (map (setRefIds fids) fds)
   Mat k x mov css -> Mat k (setRefIds fids x) (map (\ (k,v) -> (k, setRefIds fids v)) mov) (map (\ (ctr,fds,cs) -> (ctr, fds, setRefIds fids cs)) css)
   Op2 op x y      -> Op2 op (setRefIds fids x) (setRefIds fids y)
-  U32 n           -> U32 n
+  W32 n           -> W32 n
   Chr c           -> Chr c
   Era             -> Era
   Ref nam _ arg   -> case MS.lookup nam fids of
@@ -795,7 +795,7 @@ setRefIds fids term = case term of
 collectLabels :: Core -> MS.Map Lab ()
 collectLabels term = case term of
   Var _               -> MS.empty
-  U32 _               -> MS.empty
+  W32 _               -> MS.empty
   Chr _               -> MS.empty
   Era                 -> MS.empty
   Ref _ _ args        -> MS.unions $ map collectLabels args
@@ -874,8 +874,8 @@ lexify term = evalState (go term MS.empty) 0 where
       nm0 <- go nm0 ctx
       nm1 <- go nm1 ctx
       return $ Op2 op nm0 nm1
-    U32 n -> 
-      return $ U32 n
+    W32 n -> 
+      return $ W32 n
     Chr c ->
       return $ Chr c
     Era -> 

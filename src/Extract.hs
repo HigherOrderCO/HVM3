@@ -137,9 +137,9 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
         return $ (show i, [], bod):css) [] [0..len-1]
       return $ Mat SWI val [] (reverse css)
 
-    t | t == _U32_ -> do
+    t | t == _W32_ -> do
       let val = termLoc term
-      return $ U32 (fromIntegral val)
+      return $ W32 (fromIntegral val)
 
     t | t == _CHR_ -> do
       let val = termLoc term
@@ -168,9 +168,6 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
       arg <- mapM (\i -> extractCoreAt dupsRef reduceAt book (loc + i)) aux
       let name = MS.findWithDefault "?" fid (fidToNam book)
       return $ Ref name fid arg
-
-    t | t == _FWD_ -> do
-      return Era
 
     _ -> do
       return Era
@@ -226,8 +223,8 @@ liftDups (Mat kin val mov css) =
       (cssT, cssD) = liftDupsCss css
   in (Mat kin valT movT cssT, valD . movD . cssD)
 
-liftDups (U32 val) =
-  (U32 val, id)
+liftDups (W32 val) =
+  (W32 val, id)
 
 liftDups (Chr val) =
   (Chr val, id)
@@ -241,6 +238,21 @@ liftDups (Let mod nam val bod) =
   let (valT, valD) = liftDups val
       (bodT, bodD) = liftDups bod
   in (Let mod nam valT bodT, valD . bodD)
+
+liftDups Set =
+  (Set, id)
+
+liftDups (All typ bod) =
+  let (typT, typD) = liftDups typ
+      (bodT, bodD) = liftDups bod
+  in (All typT bodT, typD . bodD)
+
+liftDups U32 =
+  (U32, id)
+
+liftDups (Adt nam fds) =
+  let (fdsT, fdsD) = liftDupsList fds
+  in (Adt nam fdsT, fdsD)
 
 liftDupsList :: [Core] -> ([Core], Core -> Core)
 

@@ -73,7 +73,7 @@ static State HVM = {
 #define LAM 0x0E
 #define SUP 0x0F
 #define CTR 0x10
-#define U32 0x11
+#define W32 0x11
 #define CHR 0x12
 
 #define OP_ADD 0x00
@@ -166,7 +166,7 @@ Term term_set_loc(Term x, Loc loc) {
 _Bool term_is_atom(Term term) {
   switch (term_tag(term)) {
     case ERA:
-    case U32:
+    case W32:
     case CHR: return 1;
     default: return 0;
   }
@@ -256,7 +256,7 @@ void print_tag(Tag tag) {
     case MAT: printf("MAT"); break;
     case IFL: printf("IFL"); break;
     case SWI: printf("SWI"); break;
-    case U32: printf("U32"); break;
+    case W32: printf("W32"); break;
     case CHR: printf("CHR"); break;
     case OPX: printf("OPX"); break;
     case OPY: printf("OPY"); break;
@@ -428,7 +428,7 @@ Term reduce_app_ctr(Term app, Term ctr) {
 }
 
 // &L(123 a)
-// --------- APP-U32
+// --------- APP-W32
 // ⊥
 Term reduce_app_u32(Term app, Term u32) {
   //printf("reduce_app_u32 "); print_term(app); printf("\n");
@@ -574,7 +574,7 @@ Term reduce_dup_ctr(Term dup, Term ctr) {
 }
 
 // ! &L{x y} = 123
-// --------------- DUP-U32
+// --------------- DUP-W32
 // x <- 123
 // y <- 123
 Term reduce_dup_u32(Term dup, Term u32) {
@@ -728,7 +728,7 @@ Term reduce_mat_ctr(Term mat, Term ctr) {
 }
 
 // ~ num {K0 K1 K2 ... KN}
-// ----------------------- MAT-U32
+// ----------------------- MAT-W32
 // if n < N: Kn
 // else    : KN(num-N)
 Term reduce_mat_u32(Term mat, Term u32) {
@@ -805,7 +805,7 @@ Term reduce_opx_ctr(Term opx, Term ctr) {
 }
 
 // <op(x0 x1)
-// ---------- OPX-U32
+// ---------- OPX-W32
 // >op(x0 x1)
 Term reduce_opx_u32(Term opx, Term nmx) {
   //printf("reduce_opx_u32 "); print_term(opx); printf("\n");
@@ -870,7 +870,7 @@ Term reduce_opy_ctr(Term opy, Term ctr) {
 }
 
 // >op(x y)
-// --------- OPY-U32
+// --------- OPY-W32
 // x op y
 Term reduce_opy_u32(Term opy, Term val) {
   //printf("reduce_opy_u32 "); print_term(opy); printf("\n");
@@ -1016,7 +1016,7 @@ Term reduce(Term term) {
           case LAM: next = reduce_app_lam(prev, next); continue;
           case SUP: next = reduce_app_sup(prev, next); continue;
           case CTR: next = reduce_app_ctr(prev, next); continue;
-          case U32: next = reduce_app_u32(prev, next); continue;
+          case W32: next = reduce_app_u32(prev, next); continue;
           case CHR: next = reduce_app_u32(prev, next); continue;
           default: break;
         }
@@ -1029,7 +1029,7 @@ Term reduce(Term term) {
           case LAM: next = reduce_dup_lam(prev, next); continue;
           case SUP: next = reduce_dup_sup(prev, next); continue;
           case CTR: next = reduce_dup_ctr(prev, next); continue;
-          case U32: next = reduce_dup_u32(prev, next); continue;
+          case W32: next = reduce_dup_u32(prev, next); continue;
           case CHR: next = reduce_dup_u32(prev, next); continue;
           default: break;
         }
@@ -1043,7 +1043,7 @@ Term reduce(Term term) {
           case LAM: next = reduce_mat_lam(prev, next); continue;
           case SUP: next = reduce_mat_sup(prev, next); continue;
           case CTR: next = reduce_mat_ctr(prev, next); continue;
-          case U32: next = reduce_mat_u32(prev, next); continue;
+          case W32: next = reduce_mat_u32(prev, next); continue;
           case CHR: next = reduce_mat_u32(prev, next); continue;
           default: break;
         }
@@ -1055,7 +1055,7 @@ Term reduce(Term term) {
           case LAM: next = reduce_opx_lam(prev, next); continue;
           case SUP: next = reduce_opx_sup(prev, next); continue;
           case CTR: next = reduce_opx_ctr(prev, next); continue;
-          case U32: next = reduce_opx_u32(prev, next); continue;
+          case W32: next = reduce_opx_u32(prev, next); continue;
           case CHR: next = reduce_opx_u32(prev, next); continue;
           default: break;
         }
@@ -1067,7 +1067,7 @@ Term reduce(Term term) {
           case LAM: next = reduce_opy_lam(prev, next); continue;
           case SUP: next = reduce_opy_sup(prev, next); continue;
           case CTR: next = reduce_opy_ctr(prev, next); continue;
-          case U32: next = reduce_opy_u32(prev, next); continue;
+          case W32: next = reduce_opy_u32(prev, next); continue;
           case CHR: next = reduce_opy_u32(prev, next); continue;
           default: break;
         }
@@ -1183,7 +1183,7 @@ Term SUP_f(Term ref) {
   Loc ref_loc = term_loc(ref);
   Term lab = reduce(got(ref_loc + 0));
   Term lab_val = term_loc(lab);
-  if (term_tag(lab) != U32) {
+  if (term_tag(lab) != W32) {
     printf("ERROR:non-numeric-sup-label\n");
   }
   if (lab_val > 0xFFFF) {
@@ -1205,7 +1205,7 @@ Term DUP_f(Term ref) {
   Loc ref_loc = term_loc(ref);
   Term lab = reduce(got(ref_loc + 0));
   Term lab_val = term_loc(lab);
-  if (term_tag(lab) != U32) {
+  if (term_tag(lab) != W32) {
     printf("ERROR:non-numeric-dup-label\n");
   }
   if (lab_val > 0xFFFF) {
