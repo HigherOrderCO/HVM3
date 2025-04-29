@@ -46,8 +46,8 @@ reduceAt debug book host = do
         t | t == _LAM_ -> cont host (reduceAppLam term fun)
         t | t == _SUP_ -> cont host (reduceAppSup term fun)
         t | t == _CTR_ -> cont host (reduceAppCtr term fun)
-        t | t == _W32_ -> cont host (reduceAppW32 term fun)
-        t | t == _CHR_ -> cont host (reduceAppW32 term fun)
+        t | t == _U32_ -> cont host (reduceAppU32 term fun)
+        t | t == _CHR_ -> cont host (reduceAppU32 term fun)
         _   -> set (loc + 0) fun >> return term
 
     t | t == _MAT_ -> do
@@ -57,8 +57,8 @@ reduceAt debug book host = do
         t | t == _LAM_ -> cont host (reduceMatLam term val)
         t | t == _SUP_ -> cont host (reduceMatSup term val)
         t | t == _CTR_ -> cont host (reduceMatCtr term val)
-        t | t == _W32_ -> cont host (reduceMatW32 term val)
-        t | t == _CHR_ -> cont host (reduceMatW32 term val)
+        t | t == _U32_ -> cont host (reduceMatU32 term val)
+        t | t == _CHR_ -> cont host (reduceMatU32 term val)
         _   -> set (loc + 0) val >> return term
 
     t | t == _IFL_ -> do
@@ -68,8 +68,8 @@ reduceAt debug book host = do
         t | t == _LAM_ -> cont host (reduceMatLam term val)
         t | t == _SUP_ -> cont host (reduceMatSup term val)
         t | t == _CTR_ -> cont host (reduceMatCtr term val)
-        t | t == _W32_ -> cont host (reduceMatW32 term val)
-        t | t == _CHR_ -> cont host (reduceMatW32 term val)
+        t | t == _U32_ -> cont host (reduceMatU32 term val)
+        t | t == _CHR_ -> cont host (reduceMatU32 term val)
         _   -> set (loc + 0) val >> return term
 
     t | t == _SWI_ -> do
@@ -79,8 +79,8 @@ reduceAt debug book host = do
         t | t == _LAM_ -> cont host (reduceMatLam term val)
         t | t == _SUP_ -> cont host (reduceMatSup term val)
         t | t == _CTR_ -> cont host (reduceMatCtr term val)
-        t | t == _W32_ -> cont host (reduceMatW32 term val)
-        t | t == _CHR_ -> cont host (reduceMatW32 term val)
+        t | t == _U32_ -> cont host (reduceMatU32 term val)
+        t | t == _CHR_ -> cont host (reduceMatU32 term val)
         _   -> set (loc + 0) val >> return term
 
     t | t == _OPX_ -> do
@@ -90,8 +90,8 @@ reduceAt debug book host = do
         t | t == _LAM_ -> cont host (reduceOpxLam term val)
         t | t == _SUP_ -> cont host (reduceOpxSup term val)
         t | t == _CTR_ -> cont host (reduceOpxCtr term val)
-        t | t == _W32_ -> cont host (reduceOpxW32 term val)
-        t | t == _CHR_ -> cont host (reduceOpxW32 term val)
+        t | t == _U32_ -> cont host (reduceOpxU32 term val)
+        t | t == _CHR_ -> cont host (reduceOpxU32 term val)
         _   -> set (loc + 0) val >> return term
 
     t | t == _OPY_ -> do
@@ -101,8 +101,8 @@ reduceAt debug book host = do
         t | t == _LAM_ -> cont host (reduceOpyLam term val)
         t | t == _SUP_ -> cont host (reduceOpySup term val)
         t | t == _CTR_ -> cont host (reduceOpyCtr term val)
-        t | t == _W32_ -> cont host (reduceOpyW32 term val)
-        t | t == _CHR_ -> cont host (reduceOpyW32 term val)
+        t | t == _U32_ -> cont host (reduceOpyU32 term val)
+        t | t == _CHR_ -> cont host (reduceOpyU32 term val)
         _   -> set (loc + 0) val >> return term
 
     t | t == _DP0_ -> do
@@ -115,8 +115,8 @@ reduceAt debug book host = do
             t | t == _LAM_ -> cont host (reduceDupLam term val)
             t | t == _SUP_ -> cont host (reduceDupSup term val)
             t | t == _CTR_ -> cont host (reduceDupCtr term val)
-            t | t == _W32_ -> cont host (reduceDupW32 term val)
-            t | t == _CHR_ -> cont host (reduceDupW32 term val)
+            t | t == _U32_ -> cont host (reduceDupU32 term val)
+            t | t == _CHR_ -> cont host (reduceDupU32 term val)
             _   -> set (loc + 0) val >> return term
         else do
           set host (termRemBit sb0)
@@ -132,8 +132,8 @@ reduceAt debug book host = do
             t | t == _LAM_ -> cont host (reduceDupLam term val)
             t | t == _SUP_ -> cont host (reduceDupSup term val)
             t | t == _CTR_ -> cont host (reduceDupCtr term val)
-            t | t == _W32_ -> cont host (reduceDupW32 term val)
-            t | t == _CHR_ -> cont host (reduceDupW32 term val)
+            t | t == _U32_ -> cont host (reduceDupU32 term val)
+            t | t == _CHR_ -> cont host (reduceDupU32 term val)
             _   -> set (loc + 0) val >> return term
         else do
           set host (termRemBit sb1)
@@ -204,7 +204,7 @@ reduceRefAt_DupF book host loc ari = do
   bod <- got (loc + 2)
   dup <- allocNode 1
   case termTag lab of
-    t | t == _W32_ -> do
+    t | t == _U32_ -> do
       when (termLoc lab > 0xFFFFFF) $ do
         error "RUNTIME_ERROR: dynamic DUP label too large"
       -- Create the DUP node with value
@@ -238,7 +238,7 @@ reduceRefAt_SupF book host loc ari = do
   tm1 <- got (loc + 2)
   sup <- allocNode 2
   case termTag lab of
-    t | t == _W32_ -> do
+    t | t == _U32_ -> do
       when (termLoc lab > 0xFFFFFF) $ do
         error "RUNTIME_ERROR: dynamic SUP label too large"
       let ret = termNew _SUP_ (termLoc lab) sup
@@ -262,7 +262,7 @@ reduceRefAt_LogF book host loc ari = do
   -- msgs <- doCollapseFlatAt gotT book (loc + 0)
   -- forM_ msgs $ \msg -> do
     -- putStrLn $ showCore msg
-  let ret = termNew _W32_ 0 0
+  let ret = termNew _U32_ 0 0
   set host ret
   return ret
 
@@ -275,7 +275,7 @@ reduceRefAt_FreshF book host loc ari = do
     putStrLn $ "RUNTIME_ERROR: arity mismatch on call to '@Fresh'."
     exitFailure
   num <- fromIntegral <$> fresh
-  let ret = termNew _W32_ 0 num
+  let ret = termNew _U32_ 0 num
   set host ret
   return ret
 

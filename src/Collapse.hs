@@ -188,7 +188,7 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
         return (show i, [], bod0)
       return $ Mat SWI val0 [] css0
 
-    t | t == _W32_ -> do
+    t | t == _U32_ -> do
       let val = termLoc term
       return $ U32 (fromIntegral val)
 

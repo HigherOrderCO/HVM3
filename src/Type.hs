@@ -33,10 +33,11 @@ data Core
   = Var Name                    -- x
   | Ref Name Word16 [Core]      -- @fn
   | Era                         -- *
-  | Lam Name Core               -- λx(F)
-  | App Core Core               -- (f x)
   | Sup Lab Core Core           -- &L{a b}
   | Dup Lab Name Name Core Core -- ! &L{a b} = v body
+  | All Core Core               -- ∀x:A.B
+  | Lam Name Core               -- λx(F)
+  | App Core Core               -- (f x)
   | Ctr Name [Core]             -- #Ctr{a b ...}
   | U32 Word32                  -- 123
   | Chr Char                    -- 'a'
@@ -101,7 +102,7 @@ _ERA_ = 0x0D :: Tag
 _LAM_ = 0x0E :: Tag
 _SUP_ = 0x0F :: Tag
 _CTR_ = 0x10 :: Tag
-_W32_ = 0x11 :: Tag
+_U32_ = 0x11 :: Tag
 _CHR_ = 0x12 :: Tag
 
 -- Let Types
@@ -175,7 +176,7 @@ showTag tag
   | tag == _LAM_ = "LAM"
   | tag == _SUP_ = "SUP"
   | tag == _CTR_ = "CTR"
-  | tag == _W32_ = "W32"
+  | tag == _U32_ = "U32"
   | tag == _CHR_ = "CHR"
   | otherwise    = error $ "unknown tag: " ++ show tag
 

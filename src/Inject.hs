@@ -107,7 +107,7 @@ injectCore book tm@(Mat kin val mov css) loc = do
   lift $ set loc ret
 
 injectCore book (U32 val) loc = do
-  lift $ set loc (termNew _W32_ 0 (fromIntegral val))
+  lift $ set loc (termNew _U32_ 0 (fromIntegral val))
 
 injectCore book (Chr val) loc = do
   lift $ set loc (termNew _CHR_ 0 (fromIntegral $ ord val))

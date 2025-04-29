@@ -137,7 +137,7 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
         return $ (show i, [], bod):css) [] [0..len-1]
       return $ Mat SWI val [] (reverse css)
 
-    t | t == _W32_ -> do
+    t | t == _U32_ -> do
       let val = termLoc term
       return $ U32 (fromIntegral val)
 

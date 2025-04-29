@@ -187,7 +187,7 @@ compileFullCore book fid tm@(Mat kin val mov css) host = do
     return $ "term_new(APP, 0, " ++ appNam ++ ")") mat mov
 
 compileFullCore book fid (U32 val) _ =
-  return $ "term_new(W32, 0, " ++ show (fromIntegral val) ++ ")"
+  return $ "term_new(U32, 0, " ++ show (fromIntegral val) ++ ")"
 
 compileFullCore book fid (Chr val) _ =
   return $ "term_new(CHR, 0, " ++ show (fromEnum val) ++ ")"
@@ -278,7 +278,7 @@ compileFastBody book fid term@(Mat kin val mov css) ctx stop@False itr = do
   -- Numeric Pattern-Matching
   if isNumeric then do
     numNam <- fresh "num"
-    emit $ "if (term_tag("++valNam++") == W32) {"
+    emit $ "if (term_tag("++valNam++") == U32) {"
     tabInc
     emit $ "u32 " ++ numNam ++ " = term_loc(" ++ valNam ++ ");"
     emit $ "switch (" ++ numNam ++ ") {"
@@ -297,7 +297,7 @@ compileFastBody book fid term@(Mat kin val mov css) ctx stop@False itr = do
         emit $ "default: {"
         tabInc
         preNam <- fresh "pre"
-        emit $ "Term " ++ preNam ++ " = " ++ "term_new(W32, 0, "++numNam++" - "++show (length css - 1)++");"
+        emit $ "Term " ++ preNam ++ " = " ++ "term_new(U32, 0, "++numNam++" - "++show (length css - 1)++");"
         forM_ fds $ \ fd -> do
           bind fd preNam
         forM_ mov $ \ (key,val) -> do
@@ -622,7 +622,7 @@ compileFastCore book fid tm@(Mat kin val mov css) = do
     return $ "term_new(APP, 0, " ++ appNam ++ ")") retNam mov
 
 compileFastCore book fid (U32 val) =
-  return $ "term_new(W32, 0, " ++ show (fromIntegral val) ++ ")"
+  return $ "term_new(U32, 0, " ++ show (fromIntegral val) ++ ")"
 
 compileFastCore book fid (Chr val) =
   return $ "term_new(CHR, 0, " ++ show (fromEnum val) ++ ")"
@@ -637,7 +637,7 @@ compileFastCore book fid (Op2 opr nu0 nu1) = do
   emit $ "Term " ++ nu0Nam ++ " = (" ++ nu0T ++ ");"
   emit $ "Term " ++ nu1Nam ++ " = (" ++ nu1T ++ ");"
   emit $ "Term " ++ retNam ++ ";"
-  emit $ "if (term_tag(" ++ nu0Nam ++ ") == W32 && term_tag(" ++ nu1Nam ++ ") == W32) {"
+  emit $ "if (term_tag(" ++ nu0Nam ++ ") == U32 && term_tag(" ++ nu1Nam ++ ") == U32) {"
   emit $ "  itrs += 2;"
   let oprStr = case opr of
         OP_ADD -> "+"
@@ -656,7 +656,7 @@ compileFastCore book fid (Op2 opr nu0 nu1) = do
         OP_XOR -> "^"
         OP_LSH -> "<<"
         OP_RSH -> ">>"
-  emit $ "  " ++ retNam ++ " = term_new(W32, 0, term_loc(" ++ nu0Nam ++ ") " ++ oprStr ++ " term_loc(" ++ nu1Nam ++ "));"
+  emit $ "  " ++ retNam ++ " = term_new(U32, 0, term_loc(" ++ nu0Nam ++ ") " ++ oprStr ++ " term_loc(" ++ nu1Nam ++ "));"
   emit $ "} else {"
   tabInc
   compileFastAlloc opxNam 2
@@ -677,7 +677,7 @@ compileFastCore book fid t@(Ref rNam rFid rArg) = do
     labNam <- fresh "lab"
     labT <- compileFastCore book fid lab
     emit $ "Term " ++ labNam ++ " = reduce(" ++ labT ++ ");"
-    emit $ "if (term_tag(" ++ labNam ++ ") != W32) {"
+    emit $ "if (term_tag(" ++ labNam ++ ") != U32) {"
     emit $ "  printf(\"ERROR:non-numeric-sup-label\\n\");"
     emit $ "}"
     emit $ "itrs += 1;"
@@ -695,7 +695,7 @@ compileFastCore book fid t@(Ref rNam rFid rArg) = do
     labNam <- fresh "lab"
     labT <- compileFastCore book fid lab
     emit $ "Term " ++ labNam ++ " = reduce(" ++ labT ++ ");"
-    emit $ "if (term_tag(" ++ labNam ++ ") != W32) {"
+    emit $ "if (term_tag(" ++ labNam ++ ") != U32) {"
     emit $ "  printf(\"ERROR:non-numeric-sup-label\\n\");"
     emit $ "}"
     emit $ "itrs += 3;"
