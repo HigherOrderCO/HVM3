@@ -56,6 +56,8 @@ parseCore = do
     '\'' -> parseChr
     '"'  -> parseStr '"'
     '`'  -> parseStr '`'
+    'm'  -> 
+      try (lookAhead (string "match") >> parseMatch)
     _    -> parseLit
 
 -- Era: `*`
@@ -188,6 +190,23 @@ parseMat = do
   consume "}"
   css <- sortCases (cs0:css)
   buildMatchExpr val mov css
+
+testShow :: [Core] -> String
+testShow [] = ""
+testShow ((Var name) : xs) = name ++ "\n" ++ (testShow xs)
+testShow _ = ""
+
+parseMatch :: ParserM Core
+parseMatch = do
+  consume "match"           -- Parse and consume the "match" keyword
+  skip                      -- Skip any whitespace after "match"
+  scrutinees <- manyTill (parseCore <* skip) (lookAhead (char '{'))
+  liftIO $ putStrLn $ testShow scrutinees
+                            -- Parse scrutinees until '{' is next
+  -- liftIO $ putStrLn $ "Scrutinees: " ++ show scrutinees
+  char '{'                  -- Consume the '{'
+  error "LMAO"
+  return $ Era
 
 -- Mov: `!m0 = v0` (used inside Mat)
 parseMove :: ParserM (String, Core)
