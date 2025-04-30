@@ -23,36 +23,6 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
   -- trace ("extract " ++ show host ++ " " ++ termToString term) $
   let tag = termTag term
   case tag of
-    t | t == _ERA_ -> do
-      return Era
-
-    t | t == _LET_ -> do
-      let loc  = termLoc term
-      let mode = modeT (termLab term)
-      name <- return $ "$" ++ show (loc + 0)
-      val  <- extractCoreAt dupsRef reduceAt book (loc + 0)
-      bod  <- extractCoreAt dupsRef reduceAt book (loc + 1)
-      return $ Let mode name val bod
-
-    t | t == _LAM_ -> do
-      let loc = termLoc term
-      name <- return $ "$" ++ show (loc + 0)
-      bod  <- extractCoreAt dupsRef reduceAt book (loc + 0)
-      return $ Lam name bod
-
-    t | t == _APP_ -> do
-      let loc = termLoc term
-      fun <- extractCoreAt dupsRef reduceAt book (loc + 0)
-      arg <- extractCoreAt dupsRef reduceAt book (loc + 1)
-      return $ App fun arg
-
-    t | t == _SUP_ -> do
-      let loc = termLoc term
-      let lab = termLab term
-      tm0 <- extractCoreAt dupsRef reduceAt book (loc + 0)
-      tm1 <- extractCoreAt dupsRef reduceAt book (loc + 1)
-      return $ Sup lab tm0 tm1
-
     t | t == _VAR_ -> do
       let loc = termLoc term
       sub <- got (loc + 0)
@@ -64,6 +34,34 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
           set (loc + 0) (termRemBit sub)
           extractCoreAt dupsRef reduceAt book (loc + 0)
 
+    t | t == _REF_ -> do
+      let loc = termLoc term
+      let lab = termLab term
+      let fid = fromIntegral lab
+      let ari = fromIntegral $ funArity book fid
+      let aux = if ari == 0 then [] else [0..ari-1]
+      xs <- mapM (\i -> extractCoreAt dupsRef reduceAt book (loc + i)) aux
+      let name = MS.findWithDefault "?" fid (fidToNam book)
+      return $ Ref name fid xs
+
+    t | t == _LET_ -> do
+      let loc  = termLoc term
+      let mode = modeT (termLab term)
+      name <- return $ "$" ++ show (loc + 0)
+      v  <- extractCoreAt dupsRef reduceAt book (loc + 0)
+      f  <- extractCoreAt dupsRef reduceAt book (loc + 1)
+      return $ Let mode name v f
+
+    t | t == _ERA_ -> do
+      return Era
+
+    t | t == _SUP_ -> do
+      let loc = termLoc term
+      let lab = termLab term
+      a <- extractCoreAt dupsRef reduceAt book (loc + 0)
+      b <- extractCoreAt dupsRef reduceAt book (loc + 1)
+      return $ Sup lab a b
+
     t | t == _DP0_ -> do
       let loc = termLoc term
       let lab = termLab term
@@ -73,11 +71,11 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
         name <- return $ "$" ++ show (loc + 0) ++ "_0"
         return $ Var name
       else do
-        dp0 <- return $ "$" ++ show (loc + 0) ++ "_0"
-        dp1 <- return $ "$" ++ show (loc + 0) ++ "_1"
-        val <- extractCoreAt dupsRef reduceAt book (loc + 0)
+        x <- return $ "$" ++ show (loc + 0) ++ "_0"
+        y <- return $ "$" ++ show (loc + 0) ++ "_1"
+        v <- extractCoreAt dupsRef reduceAt book (loc + 0)
         modifyIORef' dupsRef (IS.insert (fromIntegral loc))
-        return $ Dup lab dp0 dp1 val (Var dp0)
+        return $ Dup lab x y v (Var x)
 
     t | t == _DP1_ -> do
       let loc = termLoc term
@@ -88,86 +86,98 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
         name <- return $ "$" ++ show (loc + 0) ++ "_1"
         return $ Var name
       else do
-        dp0 <- return $ "$" ++ show (loc + 0) ++ "_0"
-        dp1 <- return $ "$" ++ show (loc + 0) ++ "_1"
-        val <- extractCoreAt dupsRef reduceAt book (loc + 0)
+        x <- return $ "$" ++ show (loc + 0) ++ "_0"
+        y <- return $ "$" ++ show (loc + 0) ++ "_1"
+        v <- extractCoreAt dupsRef reduceAt book (loc + 0)
         modifyIORef' dupsRef (IS.insert (fromIntegral loc))
-        return $ Dup lab dp0 dp1 val (Var dp1)
+        return $ Dup lab x y v (Var y)
 
-    t | t == _CTR_ -> do
-      let loc = termLoc term
-      let lab = termLab term
-      let cid = fromIntegral lab
-      let nam = mget (cidToCtr book) cid
-      let ari = mget (cidToAri book) cid
-      let ars = if ari == 0 then [] else [0..fromIntegral ari-1]
-      fds <- mapM (\i -> extractCoreAt dupsRef reduceAt book (loc + i)) ars
-      return $ Ctr nam fds
+    t | t == _SET_ -> do
+      return Set
 
-    t | t == _MAT_ -> do
-      let loc = termLoc term
-      let lab = termLab term
-      let cid = fromIntegral lab
-      let len = mget (cidToLen book) cid
-      val <- extractCoreAt dupsRef reduceAt book (loc + 0)
-      css <- foldM (\css i -> do
-        let ctr = mget (cidToCtr book) (cid + i)
-        let ari = mget (cidToAri book) (cid + i)
-        let fds = if ari == 0 then [] else ["$" ++ show (loc + 1 + j) | j <- [0..fromIntegral ari-1]]
-        bod <- extractCoreAt dupsRef reduceAt book (loc + 1 + fromIntegral i)
-        return $ (ctr,fds,bod):css) [] [0..len-1]
-      return $ Mat (MAT cid) val [] (reverse css)
+    t | t == _EMP_ -> do
+      return Emp
 
-    t | t == _IFL_ -> do
+    t | t == _EFQ_ -> do
       let loc = termLoc term
-      let lab = termLab term
-      let cid = fromIntegral lab
-      val <- extractCoreAt dupsRef reduceAt book (loc + 0)
-      cs0 <- extractCoreAt dupsRef reduceAt book (loc + 1)
-      cs1 <- extractCoreAt dupsRef reduceAt book (loc + 2)
-      return $ Mat (IFL cid) val [] [(mget (cidToCtr book) cid, [], cs0), ("_", [], cs1)]
+      c <- extractCoreAt dupsRef reduceAt book (loc + 0)
+      return $ Efq c []
 
-    t | t == _SWI_ -> do
+    t | t == _UNI_ -> do
+      return Uni
+
+    t | t == _NIL_ -> do
+      return Nil
+
+    t | t == _USE_ -> do
       let loc = termLoc term
-      let lab = termLab term
-      let len = fromIntegral lab
-      val <- extractCoreAt dupsRef reduceAt book (loc + 0)
-      css <- foldM (\css i -> do
-        bod <- extractCoreAt dupsRef reduceAt book (loc + 1 + i)
-        return $ (show i, [], bod):css) [] [0..len-1]
-      return $ Mat SWI val [] (reverse css)
+      c <- extractCoreAt dupsRef reduceAt book (loc + 0)
+      b <- extractCoreAt dupsRef reduceAt book (loc + 1)
+      return $ Use c [] b
+
+    t | t == _U32_ -> do
+      return U32
 
     t | t == _W32_ -> do
       let val = termLoc term
       return $ W32 (fromIntegral val)
 
-    t | t == _CHR_ -> do
-      let val = termLoc term
-      return $ Chr (chr (fromIntegral val))
+    t | t == _SWI_ -> do
+      let loc = termLoc term
+      c <- extractCoreAt dupsRef reduceAt book (loc + 0)
+      z <- extractCoreAt dupsRef reduceAt book (loc + 1)
+      s <- extractCoreAt dupsRef reduceAt book (loc + 2)
+      return $ Swi c [] z s
 
     t | t == _OPX_ -> do
       let loc = termLoc term
       let opr = toEnum (fromIntegral (termLab term))
-      nmx <- extractCoreAt dupsRef reduceAt book (loc + 0)
-      nmy <- extractCoreAt dupsRef reduceAt book (loc + 1)
-      return $ Op2 opr nmx nmy
+      a <- extractCoreAt dupsRef reduceAt book (loc + 0)
+      b <- extractCoreAt dupsRef reduceAt book (loc + 1)
+      return $ Op2 opr a b
 
     t | t == _OPY_ -> do
       let loc = termLoc term
       let opr = toEnum (fromIntegral (termLab term))
-      nmy <- extractCoreAt dupsRef reduceAt book (loc + 0)
-      nmx <- extractCoreAt dupsRef reduceAt book (loc + 1)
-      return $ Op2 opr nmx nmy
+      b <- extractCoreAt dupsRef reduceAt book (loc + 0)
+      a <- extractCoreAt dupsRef reduceAt book (loc + 1)
+      return $ Op2 opr a b
 
-    t | t == _REF_ -> do
+    t | t == _SIG_ -> do
       let loc = termLoc term
-      let lab = termLab term
-      let fid = fromIntegral lab
-      let ari = fromIntegral $ funArity book fid
-      let aux = if ari == 0 then [] else [0..ari-1]
-      arg <- mapM (\i -> extractCoreAt dupsRef reduceAt book (loc + i)) aux
-      let name = MS.findWithDefault "?" fid (fidToNam book)
-      return $ Ref name fid arg
+      _A <- extractCoreAt dupsRef reduceAt book (loc + 0)
+      _B <- extractCoreAt dupsRef reduceAt book (loc + 1)
+      return $ Sig _A _B
+
+    t | t == _TUP_ -> do
+      let loc = termLoc term
+      a <- extractCoreAt dupsRef reduceAt book (loc + 0)
+      b <- extractCoreAt dupsRef reduceAt book (loc + 1)
+      return $ Tup a b
+
+    t | t == _GET_ -> do
+      let loc = termLoc term
+      c <- extractCoreAt dupsRef reduceAt book (loc + 0)
+      b <- extractCoreAt dupsRef reduceAt book (loc + 1)
+      return $ Get c [] b
+
+    t | t == _ALL_ -> do
+      let loc = termLoc term
+      _A <- extractCoreAt dupsRef reduceAt book (loc + 0)
+      _B <- extractCoreAt dupsRef reduceAt book (loc + 1)
+      return $ All _A _B
+
+    t | t == _LAM_ -> do
+      let loc = termLoc term
+      x <- return $ "$" ++ show (loc + 0)
+      f <- extractCoreAt dupsRef reduceAt book (loc + 0)
+      return $ Lam x f
+
+    t | t == _APP_ -> do
+      let loc = termLoc term
+      f <- extractCoreAt dupsRef reduceAt book (loc + 0)
+      x <- extractCoreAt dupsRef reduceAt book (loc + 1)
+      return $ App f x
 
     _ -> do
       return Era
@@ -184,75 +194,101 @@ doExtractCoreAt reduceAt book loc = do
 
 liftDups :: Core -> (Core, Core -> Core)
 
-liftDups (Var nam) =
-  (Var nam, id)
+liftDups (Var x) =
+  (Var x, id)
 
-liftDups (Ref nam fid arg) =
-  let (argT, argD) = liftDupsList arg
-  in (Ref nam fid argT, argD)
+liftDups (Ref x i xs) =
+  let (xsT, xsD) = liftDupsList xs
+  in (Ref x i xsT, xsD)
+
+liftDups (Let m x v f) =
+  let (vT, vD) = liftDups v
+      (fT, fD) = liftDups f
+  in (Let m x vT fT, vD . fD)
 
 liftDups Era =
   (Era, id)
 
-liftDups (Lam str bod) =
-  let (bodT, bodD) = liftDups bod
-  in (Lam str bodT, bodD)
+liftDups (Sup l a b) =
+  let (aT, aD) = liftDups a
+      (bT, bD) = liftDups b
+  in (Sup l aT bT, aD . bD)
 
-liftDups (App fun arg) =
-  let (funT, funD) = liftDups fun
-      (argT, argD) = liftDups arg
-  in (App funT argT, funD . argD)
-
-liftDups (Sup lab tm0 tm1) =
-  let (tm0T, tm0D) = liftDups tm0
-      (tm1T, tm1D) = liftDups tm1
-  in (Sup lab tm0T tm1T, tm0D . tm1D)
-
-liftDups (Dup lab dp0 dp1 val bod) =
-  let (valT, valD) = liftDups val
-      (bodT, bodD) = liftDups bod
-  in (bodT, \x -> valD (bodD (Dup lab dp0 dp1 valT x)))
-
-liftDups (Ctr nam fds) =
-  let (fdsT, fdsD) = liftDupsList fds
-  in (Ctr nam fdsT, fdsD)
-
-liftDups (Mat kin val mov css) =
-  let (valT, valD) = liftDups val
-      (movT, movD) = liftDupsMov mov
-      (cssT, cssD) = liftDupsCss css
-  in (Mat kin valT movT cssT, valD . movD . cssD)
-
-liftDups (W32 val) =
-  (W32 val, id)
-
-liftDups (Chr val) =
-  (Chr val, id)
-
-liftDups (Op2 opr nm0 nm1) =
-  let (nm0T, nm0D) = liftDups nm0
-      (nm1T, nm1D) = liftDups nm1
-  in (Op2 opr nm0T nm1T, nm0D . nm1D)
-
-liftDups (Let mod nam val bod) =
-  let (valT, valD) = liftDups val
-      (bodT, bodD) = liftDups bod
-  in (Let mod nam valT bodT, valD . bodD)
+liftDups (Dup l x y v f) =
+  let (vT, vD) = liftDups v
+      (fT, fD) = liftDups f
+  in (fT, \term -> vD (fD (Dup l x y vT term)))
 
 liftDups Set =
   (Set, id)
 
-liftDups (All typ bod) =
-  let (typT, typD) = liftDups typ
-      (bodT, bodD) = liftDups bod
-  in (All typT bodT, typD . bodD)
+liftDups Emp =
+  (Emp, id)
+
+liftDups (Efq c ms) =
+  let (cT, cD) = liftDups c
+      (msT, msD) = liftDupsMov ms
+  in (Efq cT msT, cD . msD)
+
+liftDups Uni =
+  (Uni, id)
+
+liftDups Nil =
+  (Nil, id)
+
+liftDups (Use c ms b) =
+  let (cT, cD) = liftDups c
+      (msT, msD) = liftDupsMov ms
+      (bT, bD) = liftDups b
+  in (Use cT msT bT, cD . msD . bD)
 
 liftDups U32 =
   (U32, id)
 
-liftDups (Adt nam fds) =
-  let (fdsT, fdsD) = liftDupsList fds
-  in (Adt nam fdsT, fdsD)
+liftDups (W32 n) =
+  (W32 n, id)
+
+liftDups (Swi c ms z s) =
+  let (cT, cD) = liftDups c
+      (msT, msD) = liftDupsMov ms
+      (zT, zD) = liftDups z
+      (sT, sD) = liftDups s
+  in (Swi cT msT zT sT, cD . msD . zD . sD)
+
+liftDups (Op2 o a b) =
+  let (aT, aD) = liftDups a
+      (bT, bD) = liftDups b
+  in (Op2 o aT bT, aD . bD)
+
+liftDups (Sig _A _B) =
+  let (aT, aD) = liftDups _A
+      (bT, bD) = liftDups _B
+  in (Sig aT bT, aD . bD)
+
+liftDups (Tup a b) =
+  let (aT, aD) = liftDups a
+      (bT, bD) = liftDups b
+  in (Tup aT bT, aD . bD)
+
+liftDups (Get c ms b) =
+  let (cT, cD) = liftDups c
+      (msT, msD) = liftDupsMov ms
+      (bT, bD) = liftDups b
+  in (Get cT msT bT, cD . msD . bD)
+
+liftDups (All _A _B) =
+  let (aT, aD) = liftDups _A
+      (bT, bD) = liftDups _B
+  in (All aT bT, aD . bD)
+
+liftDups (Lam x f) =
+  let (fT, fD) = liftDups f
+  in (Lam x fT, fD)
+
+liftDups (App f x) =
+  let (fT, fD) = liftDups f
+      (xT, xD) = liftDups x
+  in (App fT xT, fD . xD)
 
 liftDupsList :: [Core] -> ([Core], Core -> Core)
 
@@ -273,16 +309,6 @@ liftDupsMov ((k,v):xs) =
   let (vT, vD)   = liftDups v
       (xsT, xsD) = liftDupsMov xs
   in ((k,vT):xsT, vD . xsD)
-
-liftDupsCss :: [(String, [String], Core)] -> ([(String, [String], Core)], Core -> Core)
-
-liftDupsCss [] = 
-  ([], id)
-
-liftDupsCss ((c,fs,b):xs) =
-  let (bT, bD)   = liftDups b
-      (xsT, xsD) = liftDupsCss xs
-  in ((c,fs,bT):xsT, bD . xsD)
 
 doLiftDups :: Core -> Core
 doLiftDups term =
