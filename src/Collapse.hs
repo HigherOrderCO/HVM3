@@ -355,7 +355,7 @@ data PQ p v
     | Tip !Word64 !p v
     | Nil
 
-pqPush :: Word64 -> p -> v -> PQ p v -> PQ p v
+pqPush :: Ord p => Word64 -> p -> v -> PQ p v -> PQ p v
 pqPush k1 p1 x1 t = case t of
   Nil                                      -> Tip k1 p1 x1
   (Tip k2 p2 x2)
@@ -394,13 +394,13 @@ pqPush k1 p1 x1 t = case t of
           x7 = x6 .|. x6 `shiftR` 32
       in x7 `xor` (x7 `shiftR` 1)
 
-pqPop :: PQ p v -> Maybe (Word64, p, v, PQ p v)
+pqPop :: Ord p => PQ p v -> Maybe (Word64, p, v, PQ p v)
 pqPop t = case t of
   Nil             -> Nothing
   Tip k p x       -> Just (k, p, x, Nil)
   Bin k p x m l r -> Just (k, p, x, pqMerge m l r)
 
-pqMerge :: Word64 -> PQ p v -> PQ p v -> PQ p v
+pqMerge :: Ord p => Word64 -> PQ p v -> PQ p v -> PQ p v
 pqMerge m l r = case (l, r) of
   (Nil, r)                     -> r
   (l, Nil)                     -> l
