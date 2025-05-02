@@ -6,6 +6,7 @@ import Control.Monad (ap, forM, forM_)
 import Control.Monad.IO.Class
 import Data.Char (chr, ord)
 import Data.IORef
+import Data.Bits ((.&.), xor, (.|.), complement, shiftR)
 import Data.Word
 import Debug.Trace
 import GHC.Conc
@@ -343,6 +344,80 @@ sqPop (SQ (x:xs) ys) = Just (x, SQ xs ys)
 sqPut :: a -> SQ a -> SQ a
 sqPut x (SQ xs ys) = SQ xs (x:ys)
 
+-- Priority Queue
+-- --------------
+-- A stable min-heap implemented with a radix tree.
+-- Orders by an Int priority and a unique Word64 key.
+-- Based on IntPSQ from the the psqueues library (https://hackage.haskell.org/package/psqueues-0.2.8.1)
+
+data PQ p v
+    = Bin !Word64 !p v !Word64 !(PQ p v) !(PQ p v)
+    | Tip !Word64 !p v
+    | Nil
+
+pqPush :: Word64 -> p -> v -> PQ p v -> PQ p v
+pqPush k1 p1 x1 t = case t of
+  Nil                                      -> Tip k1 p1 x1
+  (Tip k2 p2 x2)
+    | (p1, k1) < (p2, k2)                  -> link k1 p1 x1 k2 (Tip k2 p2 x2) Nil
+    | otherwise                            -> link k2 p2 x2 k1 (Tip k1 p1 x1) Nil
+  (Bin k2 p2 x2 m l r)
+    | nomatch k1 k2 m, (p1, k1) < (p2, k2) -> link k1 p1 x1 k2 (Bin k2 p2 x2 m l r) Nil
+    | nomatch k1 k2 m                      -> link k2 p2 x2 k1 (Tip k1 p1 x1) (pqMerge m l r)
+    | (p1, k1) < (p2, k2), zero k2 m       -> Bin k1 p1 x1 m (pqPush k2 p2 x2 l) r
+    | (p1, k1) < (p2, k2)                  -> Bin k1 p1 x1 m l (pqPush k2 p2 x2 r)
+    | zero k1 m                            -> Bin k2 p2 x2 m (pqPush k1 p1 x1 l) r
+    | otherwise                            -> Bin k2 p2 x2 m l (pqPush k1 p1 x1 r)
+  where
+    nomatch :: Word64 -> Word64 -> Word64 -> Bool
+    nomatch k1 k2 m =
+      let maskW = complement (m-1) `xor` m
+      in (k1 .&. maskW) /= (k2 .&. maskW)
+
+    zero :: Word64 -> Word64 -> Bool
+    zero i m = i .&. m == 0
+
+    link :: Word64 -> p -> v -> Word64 -> (PQ p v) -> (PQ p v) -> (PQ p v)
+    link k p x k' fst snd =
+      let m = highestBitMask (k `xor` k')
+      in if zero m k'
+         then Bin k p x m fst snd
+         else Bin k p x m snd fst
+
+    highestBitMask :: Word64 -> Word64
+    highestBitMask x1 =
+      let x2 = x1 .|. x1 `shiftR` 1
+          x3 = x2 .|. x2 `shiftR` 2
+          x4 = x3 .|. x3 `shiftR` 4
+          x5 = x4 .|. x4 `shiftR` 8
+          x6 = x5 .|. x5 `shiftR` 16
+          x7 = x6 .|. x6 `shiftR` 32
+      in x7 `xor` (x7 `shiftR` 1)
+
+pqPop :: PQ p v -> Maybe (Word64, p, v, PQ p v)
+pqPop t = case t of
+  Nil             -> Nothing
+  Tip k p x       -> Just (k, p, x, Nil)
+  Bin k p x m l r -> Just (k, p, x, pqMerge m l r)
+
+pqMerge :: Word64 -> PQ p v -> PQ p v -> PQ p v
+pqMerge m l r = case (l, r) of
+  (Nil, r)                     -> r
+  (l, Nil)                     -> l
+  (Tip lk lp lx, Tip rk rp rx)
+    | (lp, lk) < (rp, rk)      -> Bin lk lp lx m Nil r
+    | otherwise                -> Bin rk rp rx m l Nil
+  (Tip lk lp lx, Bin rk rp rx rm rl rr)
+    | (lp, lk) < (rp, rk)      -> Bin lk lp lx m Nil r
+    | otherwise                -> Bin rk rp rx m l (pqMerge rm rl rr)
+  (Bin lk lp lx lm ll lr, Tip rk rp rx)
+    | (lp, lk) < (rp, rk)      -> Bin lk lp lx m (pqMerge lm ll lr) r
+    | otherwise                -> Bin rk rp rx m l Nil
+  (Bin lk lp lx lm ll lr, Bin rk rp rx rm rl rr)
+    | (lp, lk) < (rp, rk)      -> Bin lk lp lx m (pqMerge lm ll lr) r
+    | otherwise                -> Bin rk rp rx m l (pqMerge rm rl rr)
+
+
 -- Flattener
 -- ---------
 
@@ -363,53 +438,27 @@ flattenBFS term = go term (SQ [] [] :: SQ (Collapse a)) where
     Just (v,sq) -> go v sq
     Nothing     -> []
 
--- Priority Queue
--- --------------
-
--- | A stable min-heap that orders first by priority, then by insertion order.
-data PQ a
-  = PQLeaf
-  | PQNode (Int, Int, a) (PQ a) (PQ a)  -- (priority, seq#, payload)
-  deriving Show
-
-pqUnion :: PQ a -> PQ a -> PQ a
-pqUnion PQLeaf h = h
-pqUnion h PQLeaf = h
-pqUnion h1@(PQNode x@(p1,i1,_) l1 r1) h2@(PQNode y@(p2,i2,_) l2 r2)
-  | p1 <  p2  = PQNode x (pqUnion r1 h2) l1
-  | p1 >  p2  = PQNode y (pqUnion h1 r2) l2
-  | i1 <= i2  = PQNode x (pqUnion r1 h2) l1
-  | otherwise = PQNode y (pqUnion h1 r2) l2
-
-pqPut :: (Int, Int, a) -> PQ a -> PQ a
-pqPut x = pqUnion (PQNode x PQLeaf PQLeaf)
-
-pqPop :: PQ a -> Maybe ((Int, Int, a), PQ a)
-pqPop PQLeaf         = Nothing
-pqPop (PQNode x l r) = Just (x, pqUnion l r)
-
 -- Priority-Queue Flattener
 -- ------------------------
 -- * priority starts at 0
 -- * since PQ is a min-queue, we invert the scoers:
 -- * passing through (CInc t) subs 1 ; (CDec t) adds 1
--- * when no Inc/Dec are present every node has priority 0,
+-- * when no Inc/Dec are present every node has priority == depth
 --   hence the order matches plain BFS exactly (stable heap).
 
 flattenPRI :: Collapse a -> [a]
-flattenPRI term = go 1 (pqPut (0, 0, term) PQLeaf) where
-  go :: Int -> PQ (Collapse a) -> [a]
-  go idx pq = case pqPop pq of
+flattenPRI term = go 1 (Tip 0 0 term) where
+  go i pq = case pqPop pq of
     Nothing -> []
-    Just ((pr, _seq, node), pq') -> case node of
-      CEra   -> go idx pq'
-      CVal v -> v : go idx pq'
-      CInc t -> go (idx + 1) (pqPut (pr - 1, idx, t) pq')
-      CDec t -> go (idx + 1) (pqPut (pr + 1, idx, t) pq')
+    Just (_, pri, node, pq') -> case node of
+      CEra   -> go i pq'
+      CVal v -> v : go i pq'
+      CInc t -> go (i + 1) (pqPush i (pri - 1) t pq')
+      CDec t -> go (i + 1) (pqPush i (pri + 1) t pq')
       CSup _ a b ->
-        let pq1 = pqPut (pr, idx    , b) pq'   -- push right first
-            pq2 = pqPut (pr, idx + 1, a) pq1   -- then left (matches BFS order)
-        in  go (idx + 2) pq2
+        let pq1 = (pqPush (i + 0) (pri + 1) a pq')
+            pq2 = (pqPush (i + 1) (pri + 1) b pq1)
+        in go (i + 2) pq2
 
 -- Default Flattener
 -- -----------------
