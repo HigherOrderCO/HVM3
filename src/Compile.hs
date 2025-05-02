@@ -543,12 +543,15 @@ compileFastCore book fid (Let mode var val bod) = do
     LAZY -> do
       emit $ "itrs += 1;"
       bind var valT
+      compileFastCore book fid bod
     STRI -> do
-      valNam <- fresh "val"
-      emit $ "itrs += 1;"
-      emit $ "Term " ++ valNam ++ " = reduce(" ++ valT ++ ");"
-      bind var valNam
-  compileFastCore book fid bod
+      letNam <- fresh "let"
+      compileFastAlloc letNam 2
+      emit $ "set(" ++ letNam ++ " + 0, " ++ valT ++ ");"
+      bind var $ "term_new(VAR, 0, " ++ letNam ++ " + 0)"
+      bodT <- compileFastCore book fid bod
+      emit $ "set(" ++ letNam ++ " + 1, " ++ bodT ++ ");"
+      return $ "term_new(LET, " ++ show (fromEnum STRI) ++ ", " ++ letNam ++ ")"
 
 compileFastCore book fid (Var name) = do
   compileFastVar name
