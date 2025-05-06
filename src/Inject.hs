@@ -82,9 +82,11 @@ injectCore book (Ref nam fid arg) loc = do
   lift $ set loc (termNew _REF_ lab ref)
 
 injectCore book (Ctr nam fds) loc = do
-  let ari = length fds
   let cid = mget (ctrToCid book) nam
+  let ari = mget (cidToAri book) cid
   let lab = fromIntegral cid
+  when (ari /= fromIntegral (length fds)) $ do
+    error $ "Arity mismatch on constructor: " ++ show (Ctr nam fds) ++ ". Expected " ++ show ari ++ ", got " ++ show (length fds) ++ "."
   ctr <- lift $ allocNode (fromIntegral ari)
   sequence_ [injectCore book fd (ctr + ix) | (ix,fd) <- zip [0..] fds]
   lift $ set loc (termNew _CTR_ lab ctr)
