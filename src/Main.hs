@@ -187,6 +187,8 @@ cliServe filePath debug compiled mode showStats hideQuotes = do
         hSetEncoding h utf8
         input <- hGetLine h
         unless (input == "exit" || input == "quit") $ do
+          -- Start measuring time before processing
+          startTime <- getMonotonicTimeNSec
           oldSize <- getLen
           root <- injectMain book [input]
           rxAt <- if compiled then return (reduceCAt debug) else return (reduceAt debug)
@@ -203,14 +205,22 @@ cliServe filePath debug compiled mode showStats hideQuotes = do
                 Normalize -> do
                   let result = head vals
                   if hideQuotes then removeQuotes (show result) else show result
+
           hPutStrLn h output
-          setLen oldSize
+          endTime <- getMonotonicTimeNSec
+          let timeTaken = fromIntegral (endTime - startTime) / 1e9 :: Double
           when showStats $ do
             itrs <- getItr
             size <- getLen
+            -- Calculate MIPS, avoiding division by zero
+            let mips = if timeTaken > 0 then (fromIntegral itrs / 1000000.0) / timeTaken else 0
             hPutStrLn h $ "WORK: " ++ show itrs ++ " interactions"
+            hPutStrLn h $ "TIME: " ++ printf "%.7f" timeTaken ++ " seconds"
             hPutStrLn h $ "SIZE: " ++ show size ++ " nodes"
-            setItr 0
+            hPutStrLn h $ "PERF: " ++ printf "%.3f" mips ++ " MIPS"
+
+        setItr 0
+        setLen oldSize
         hClose h
       case result of
         Left e -> case fromException e of
