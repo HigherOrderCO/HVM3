@@ -219,8 +219,8 @@ cliServe filePath debug compiled mode showStats hideQuotes = do
             hPutStrLn h $ "SIZE: " ++ show size ++ " nodes"
             hPutStrLn h $ "PERF: " ++ printf "%.3f" mips ++ " MIPS"
 
-        setItr 0
-        setLen oldSize
+          setItr 0
+          setLen oldSize
         hClose h
       case result of
         Left e -> case fromException e of
