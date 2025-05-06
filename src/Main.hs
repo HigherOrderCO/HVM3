@@ -105,10 +105,6 @@ printHelp = do
 cliRun :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> [String] -> IO (Either String ())
 cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
   book <- loadBook filePath compiled
-  -- Abort when main isn't present
-  when (not $ MS.member "main" (namToFid book)) $ do
-    putStrLn "Error: 'main' not found."
-    exitWith (ExitFailure 1)
   -- Abort when wrong number of strArgs
   let ((_, mainArgs), _) = mget (fidToFun book) (mget (namToFid book) "main")
   when (length strArgs /= length mainArgs) $ do
@@ -163,10 +159,6 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
 cliServe :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> IO (Either String ())
 cliServe filePath debug compiled mode showStats hideQuotes = do
   book <- loadBook filePath compiled
-  -- Abort when main isn't present
-  when (not $ MS.member "main" (namToFid book)) $ do
-    putStrLn "Error: 'main' not found."
-    exitWith (ExitFailure 1)
   putStrLn "HVM serve mode. Listening on port 8080."
   sock <- socket AF_INET Stream 0
   setSocketOption sock ReuseAddr 1
@@ -237,6 +229,11 @@ loadBook filePath compiled = do
   hvmInit
   code <- readFile' filePath
   book <- doParseBook filePath code
+
+  -- Abort when main isn't present
+  when (not $ MS.member "main" (namToFid book)) $ do
+    putStrLn "Error: 'main' not found."
+    exitWith (ExitFailure 1)
 
   forM_ (MS.toList (cidToAri book)) $ \ (cid, ari) -> do
     hvmSetCari cid (fromIntegral ari)
