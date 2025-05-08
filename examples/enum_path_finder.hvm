@@ -1,0 +1,117 @@
+// Simple path finding with superpositions
+
+// Lists
+data List { #Nil #Cons{head tail} }
+
+// Directions (Left/Right/Up/Down)
+data Dir { #L #R #U #D }
+
+// Collapses an universe when c=0
+@when(!c t) =
+  ~ c {
+    0: *
+    _: t
+  }
+
+// Decrements/increments a number
+@dec(x) = ~ x { 0:*; 1+x:x }
+@inc(x) = (+ x 1)
+
+// Swaps an element in an array
+@swap(xs i v) = ~ i !xs !v {
+  0: ~ xs {
+    #Nil: *
+    #Cons{x xs}:
+      &0{#Cons{v xs} x}
+  }
+  1+i: ~ xs {
+    #Nil: *
+    #Cons{x xs}:
+      ! &0{xs v} = @swap(xs i v)
+      &0{#Cons{x xs} v}
+  }
+}
+
+// Swaps an element in a 2D grid
+@swap2D(xs pos v) =
+  ! &0{i  j } = pos
+  ! & {i0 i1} = i
+  ! & {j0 j1} = j
+  ! &0{xs ys} = @swap(xs j0 *)
+  ! &0{ys k } = @swap(ys i0 *)
+  ! &0{ys _ } = @swap(ys i1 v)
+  ! &0{xs _ } = @swap(xs j1 ys)
+  &0{xs k}
+
+// Moves a position to a direction
+@move(pos dir) =
+  ! &0{x y} = pos
+  ~ dir !x !y {
+    #L: &0{@dec(x) y}
+    #R: &0{@inc(x) y}
+    #U: &0{x @dec(y)}
+    #D: &0{x @inc(y)}
+  }
+
+@diff(&a &b) =
+  ~ (< a b) {
+    0: (- a b)
+    _: (- b a)
+  }
+
+@gdist(pos goal) =
+  ! &0{px py} = pos
+  ! &0{gx gy} = goal
+  ! dx = @diff(px gx)
+  ! dy = @diff(py gy)
+  (+ dx dy)
+
+@closer(prev curr &goal) =
+  ! d_prev = @gdist(prev goal) // distance from prev → goal
+  ! d_curr = @gdist(curr goal) // distance from cur  → goal
+  (< d_curr d_prev)
+
+!@walk(map &pos !path &goal) =
+  ~ path {
+    #Nil:
+      pos
+    #Cons{dir path}:
+      ! &new_pos    = @move(pos dir)
+      ! &0{map got} = @swap2D(map new_pos 0) // <- 0 means we don't replace the prev tile by a wall, making it much harder
+      ~ got {
+        0: ↑@walk(map new_pos path goal) // <- generates a weird path? and ↓ hangs...
+          //~ @closer(pos new_pos goal) !map !path {
+            //0: ↓↓@walk(map new_pos path goal)
+            //_: ↓@walk(map new_pos path goal)
+          //}
+        _: *
+      }
+  }
+
+@map = [
+  [0 1 0 1 0 0 0 0 0]
+  [0 1 0 1 0 1 1 1 0]
+  [0 0 0 1 0 0 0 1 0]
+  [0 1 1 1 0 1 1 0 0]
+  [0 0 0 0 0 1 0 1 0]
+  [0 1 1 1 0 1 0 1 0]
+  [0 1 0 0 0 1 0 1 0]
+  [0 1 0 1 1 1 0 1 0]
+  [0 0 0 0 0 0 0 1 0]
+]
+
+// Superposition of all possible paths
+@dirs(&L) = ~ L {
+  0: #Nil
+  1+&L: &1{#Nil &1{#Cons{#L @dirs(L)} &1{#Cons{#R @dirs(L)} &1{#Cons{#U @dirs(L)} #Cons{#D @dirs(L)}}}}}
+}
+
+// Finds a path from (0,0) to (8,8)
+@main =
+  ! &lim = 32
+  ! &ini = &0{0 0}
+  ! &end = &0{4 0}
+  ! &0{i j} = @walk(@map ini @dirs(lim) end)
+  ! &0{I J} = end
+  @when((& (== i I) (== j J)) @dirs(lim))
+  //@when((& (== i I) (== j J)) 1)

@@ -82,9 +82,11 @@ injectCore book (Ref nam fid arg) loc = do
   lift $ set loc (termNew _REF_ lab ref)
 
 injectCore book (Ctr nam fds) loc = do
-  let ari = length fds
   let cid = mget (ctrToCid book) nam
+  let ari = mget (cidToAri book) cid
   let lab = fromIntegral cid
+  when (ari /= fromIntegral (length fds)) $ do
+    error $ "Arity mismatch on constructor: " ++ show (Ctr nam fds) ++ ". Expected " ++ show ari ++ ", got " ++ show (length fds) ++ "."
   ctr <- lift $ allocNode (fromIntegral ari)
   sequence_ [injectCore book fd (ctr + ix) | (ix,fd) <- zip [0..] fds]
   lift $ set loc (termNew _CTR_ lab ctr)
@@ -117,6 +119,16 @@ injectCore book (Op2 opr nm0 nm1) loc = do
   injectCore book nm0 (opx + 0)
   injectCore book nm1 (opx + 1)
   lift $ set loc (termNew _OPX_ (fromIntegral $ fromEnum opr) opx)
+
+injectCore book (Inc val) loc = do
+  inc <- lift $ allocNode 1
+  injectCore book val (inc + 0)
+  lift $ set loc (termNew _INC_ 0 inc)
+
+injectCore book (Dec val) loc = do
+  dec <- lift $ allocNode 1
+  injectCore book val (dec + 0)
+  lift $ set loc (termNew _DEC_ 0 dec)
 
 doInjectCoreAt :: Book -> Core -> Loc -> [(String,Term)] -> HVM Term
 doInjectCoreAt book core host argList = do

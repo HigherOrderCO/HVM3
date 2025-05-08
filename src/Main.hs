@@ -1,6 +1,3 @@
--- Type.hs:
--- //./Type.hs//
-
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
@@ -111,10 +108,6 @@ printHelp = do
 cliRun :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> Bool -> [String] -> IO (Either String ())
 cliRun filePath debug compiled mode showStats hideQuotes interactions strArgs = do
   book <- loadBook filePath compiled
-  -- Abort when main isn't present
-  when (not $ MS.member "main" (namToFid book)) $ do
-    putStrLn "Error: 'main' not found."
-    exitWith (ExitFailure 1)
   -- Abort when wrong number of strArgs
   let ((_, mainArgs), _) = mget (fidToFun book) (mget (namToFid book) "main")
   when (length strArgs /= length mainArgs) $ do
@@ -171,10 +164,6 @@ cliRun filePath debug compiled mode showStats hideQuotes interactions strArgs = 
 cliServe :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> IO (Either String ())
 cliServe filePath debug compiled mode showStats hideQuotes = do
   book <- loadBook filePath compiled
-  -- Abort when main isn't present
-  when (not $ MS.member "main" (namToFid book)) $ do
-    putStrLn "Error: 'main' not found."
-    exitWith (ExitFailure 1)
   putStrLn "HVM serve mode. Listening on port 8080."
   sock <- socket AF_INET Stream 0
   setSocketOption sock ReuseAddr 1
@@ -195,6 +184,8 @@ cliServe filePath debug compiled mode showStats hideQuotes = do
         hSetEncoding h utf8
         input <- hGetLine h
         unless (input == "exit" || input == "quit") $ do
+          -- Start measuring time before processing
+          startTime <- getMonotonicTimeNSec
           oldSize <- getLen
           root <- injectMain book [input]
           rxAt <- if compiled then return (reduceCAt debug) else return (reduceAt debug)
@@ -211,14 +202,22 @@ cliServe filePath debug compiled mode showStats hideQuotes = do
                 Normalize -> do
                   let result = head vals
                   if hideQuotes then removeQuotes (show result) else show result
+
           hPutStrLn h output
-          setLen oldSize
+          endTime <- getMonotonicTimeNSec
+          let timeTaken = fromIntegral (endTime - startTime) / 1e9 :: Double
           when showStats $ do
             itrs <- getItr
             size <- getLen
+            -- Calculate MIPS, avoiding division by zero
+            let mips = if timeTaken > 0 then (fromIntegral itrs / 1000000.0) / timeTaken else 0
             hPutStrLn h $ "WORK: " ++ show itrs ++ " interactions"
+            hPutStrLn h $ "TIME: " ++ printf "%.7f" timeTaken ++ " seconds"
             hPutStrLn h $ "SIZE: " ++ show size ++ " nodes"
-            setItr 0
+            hPutStrLn h $ "PERF: " ++ printf "%.3f" mips ++ " MIPS"
+
+          setItr 0
+          setLen oldSize
         hClose h
       case result of
         Left e -> case fromException e of
@@ -235,6 +234,11 @@ loadBook filePath compiled = do
   hvmInit
   code <- readFile' filePath
   book <- doParseBook filePath code
+
+  -- Abort when main isn't present
+  when (not $ MS.member "main" (namToFid book)) $ do
+    putStrLn "Error: 'main' not found."
+    exitWith (ExitFailure 1)
 
   forM_ (MS.toList (cidToAri book)) $ \ (cid, ari) -> do
     hvmSetCari cid (fromIntegral ari)

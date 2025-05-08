@@ -1,5 +1,4 @@
 {-./Type.hs-}
-{-./Extract.hs-}
 
 module Collapse where
 
@@ -7,6 +6,7 @@ import Control.Monad (ap, forM, forM_)
 import Control.Monad.IO.Class
 import Data.Char (chr, ord)
 import Data.IORef
+import Data.Bits ((.&.), xor, (.|.), complement, shiftR)
 import Data.Word
 import Debug.Trace
 import GHC.Conc
@@ -29,7 +29,12 @@ data Bin
   deriving Show
 
 -- A Collapse is a tree of superposed values
-data Collapse a = CSup Lab (Collapse a) (Collapse a) | CVal a | CEra
+data Collapse a
+  = CSup Lab (Collapse a) (Collapse a)
+  | CInc (Collapse a)
+  | CDec (Collapse a)
+  | CVal a
+  | CEra
   deriving Show
 
 bind :: Collapse a -> (a -> Collapse b) -> Collapse b
@@ -37,6 +42,8 @@ bind k f = fork k IM.empty where
   -- fork :: Collapse a -> IntMap (Bin -> Bin) -> Collapse b
   fork CEra         paths = CEra
   fork (CVal v)     paths = pass (f v) (IM.map (\x -> x E) paths)
+  fork (CInc x)     paths = CInc (fork x paths)
+  fork (CDec x)     paths = CDec (fork x paths)
   fork (CSup k x y) paths =
     let lft = fork x $ IM.alter (\x -> Just (maybe (putO id) putO x)) (fromIntegral k) paths in
     let rgt = fork y $ IM.alter (\x -> Just (maybe (putI id) putI x)) (fromIntegral k) paths in
@@ -44,6 +51,8 @@ bind k f = fork k IM.empty where
   -- pass :: Collapse b -> IntMap Bin -> Collapse b
   pass CEra         paths = CEra
   pass (CVal v)     paths = CVal v
+  pass (CInc x)     paths = CInc (pass x paths)
+  pass (CDec x)     paths = CDec (pass x paths)
   pass (CSup k x y) paths = case IM.lookup (fromIntegral k) paths of
     Just (O p) -> pass x (IM.insert (fromIntegral k) p paths)
     Just (I p) -> pass y (IM.insert (fromIntegral k) p paths)
@@ -57,6 +66,8 @@ bind k f = fork k IM.empty where
 instance Functor Collapse where
   fmap f (CVal v)     = CVal (f v)
   fmap f (CSup k x y) = CSup k (fmap f x) (fmap f y)
+  fmap f (CInc x)     = CInc (fmap f x)
+  fmap f (CDec x)     = CDec (fmap f x)
   fmap _ CEra         = CEra
 
 instance Applicative Collapse where
@@ -219,6 +230,16 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
       let name = MS.findWithDefault "?" fid (fidToNam book)
       return $ Ref name fid arg0
 
+    t | t == _INC_ -> do
+      let loc = termLoc term
+      val0 <- collapseDupsAt state reduceAt book (loc + 0)
+      return $ Inc val0
+
+    t | t == _DEC_ -> do
+      let loc = termLoc term
+      val0 <- collapseDupsAt state reduceAt book (loc + 0)
+      return $ Dec val0
+
     tag -> do
       return $ Var "?"
       -- exitFailure
@@ -289,6 +310,14 @@ collapseSups book core = case core of
     let tm1' = collapseSups book tm1
     CSup lab tm0' tm1'
 
+  Inc val -> do
+    let val' = collapseSups book val
+    CInc val'
+
+  Dec val -> do
+    let val' = collapseSups book val
+    CDec val'
+
 -- Tree Collapser
 -- --------------
 
@@ -298,28 +327,6 @@ doCollapseAt reduceAt book host = do
   let state = (IM.empty)
   core <- collapseDupsAt state reduceAt book host
   return $ collapseSups book core
-
--- Priority Queue
--- --------------
-
-data PQ a
-  = PQLeaf
-  | PQNode (Word64, a) (PQ a) (PQ a)
-  deriving (Show)
-
-pqUnion :: PQ a -> PQ a -> PQ a
-pqUnion PQLeaf heap = heap
-pqUnion heap PQLeaf = heap
-pqUnion heap1@(PQNode (k1,v1) l1 r1) heap2@(PQNode (k2,v2) l2 r2)
-  | k1 <= k2  = PQNode (k1,v1) (pqUnion heap2 r1) l1
-  | otherwise = PQNode (k2,v2) (pqUnion heap1 r2) l2
-
-pqPop :: PQ a -> Maybe ((Word64, a), PQ a)
-pqPop PQLeaf         = Nothing
-pqPop (PQNode x l r) = Just (x, pqUnion l r)
-
-pqPut :: (Word64,a) -> PQ a -> PQ a
-pqPut (k,v) = pqUnion (PQNode (k,v) PQLeaf PQLeaf)
 
 -- Simple Queue
 -- ------------
@@ -337,32 +344,127 @@ sqPop (SQ (x:xs) ys) = Just (x, SQ xs ys)
 sqPut :: a -> SQ a -> SQ a
 sqPut x (SQ xs ys) = SQ xs (x:ys)
 
+-- Priority Queue
+-- --------------
+-- A stable min-heap implemented with a radix tree.
+-- Orders by an Int priority and a unique Word64 key.
+-- Based on IntPSQ from the the psqueues library (https://hackage.haskell.org/package/psqueues-0.2.8.1)
+
+data PQ p v
+    = Bin !Word64 !p v !Word64 !(PQ p v) !(PQ p v)
+    | Tip !Word64 !p v
+    | Nil
+
+pqPush :: Ord p => Word64 -> p -> v -> PQ p v -> PQ p v
+pqPush k1 p1 x1 t = case t of
+  Nil                                      -> Tip k1 p1 x1
+  (Tip k2 p2 x2)
+    | (p1, k1) < (p2, k2)                  -> link k1 p1 x1 k2 (Tip k2 p2 x2) Nil
+    | otherwise                            -> link k2 p2 x2 k1 (Tip k1 p1 x1) Nil
+  (Bin k2 p2 x2 m l r)
+    | nomatch k1 k2 m, (p1, k1) < (p2, k2) -> link k1 p1 x1 k2 (Bin k2 p2 x2 m l r) Nil
+    | nomatch k1 k2 m                      -> link k2 p2 x2 k1 (Tip k1 p1 x1) (pqMerge m l r)
+    | (p1, k1) < (p2, k2), zero k2 m       -> Bin k1 p1 x1 m (pqPush k2 p2 x2 l) r
+    | (p1, k1) < (p2, k2)                  -> Bin k1 p1 x1 m l (pqPush k2 p2 x2 r)
+    | zero k1 m                            -> Bin k2 p2 x2 m (pqPush k1 p1 x1 l) r
+    | otherwise                            -> Bin k2 p2 x2 m l (pqPush k1 p1 x1 r)
+  where
+    nomatch :: Word64 -> Word64 -> Word64 -> Bool
+    nomatch k1 k2 m =
+      let maskW = complement (m-1) `xor` m
+      in (k1 .&. maskW) /= (k2 .&. maskW)
+
+    zero :: Word64 -> Word64 -> Bool
+    zero i m = i .&. m == 0
+
+    link :: Word64 -> p -> v -> Word64 -> (PQ p v) -> (PQ p v) -> (PQ p v)
+    link k p x k' fst snd =
+      let m = highestBitMask (k `xor` k')
+      in if zero m k'
+         then Bin k p x m fst snd
+         else Bin k p x m snd fst
+
+    highestBitMask :: Word64 -> Word64
+    highestBitMask x1 =
+      let x2 = x1 .|. x1 `shiftR` 1
+          x3 = x2 .|. x2 `shiftR` 2
+          x4 = x3 .|. x3 `shiftR` 4
+          x5 = x4 .|. x4 `shiftR` 8
+          x6 = x5 .|. x5 `shiftR` 16
+          x7 = x6 .|. x6 `shiftR` 32
+      in x7 `xor` (x7 `shiftR` 1)
+
+pqPop :: Ord p => PQ p v -> Maybe (Word64, p, v, PQ p v)
+pqPop t = case t of
+  Nil             -> Nothing
+  Tip k p x       -> Just (k, p, x, Nil)
+  Bin k p x m l r -> Just (k, p, x, pqMerge m l r)
+
+pqMerge :: Ord p => Word64 -> PQ p v -> PQ p v -> PQ p v
+pqMerge m l r = case (l, r) of
+  (Nil, r)                     -> r
+  (l, Nil)                     -> l
+  (Tip lk lp lx, Tip rk rp rx)
+    | (lp, lk) < (rp, rk)      -> Bin lk lp lx m Nil r
+    | otherwise                -> Bin rk rp rx m l Nil
+  (Tip lk lp lx, Bin rk rp rx rm rl rr)
+    | (lp, lk) < (rp, rk)      -> Bin lk lp lx m Nil r
+    | otherwise                -> Bin rk rp rx m l (pqMerge rm rl rr)
+  (Bin lk lp lx lm ll lr, Tip rk rp rx)
+    | (lp, lk) < (rp, rk)      -> Bin lk lp lx m (pqMerge lm ll lr) r
+    | otherwise                -> Bin rk rp rx m l Nil
+  (Bin lk lp lx lm ll lr, Bin rk rp rx rm rl rr)
+    | (lp, lk) < (rp, rk)      -> Bin lk lp lx m (pqMerge lm ll lr) r
+    | otherwise                -> Bin rk rp rx m l (pqMerge rm rl rr)
+
+
 -- Flattener
 -- ---------
 
 flattenDFS :: Collapse a -> [a]
 flattenDFS (CSup k a b) = flatten a ++ flatten b
 flattenDFS (CVal x)     = [x]
+flattenDFS (CInc x)     = flattenDFS x
+flattenDFS (CDec x)     = flattenDFS x
 flattenDFS CEra         = []
 
 flattenBFS :: Collapse a -> [a]
 flattenBFS term = go term (SQ [] [] :: SQ (Collapse a)) where
   go (CSup k a b) sq = go CEra (sqPut b $ sqPut a $ sq)
   go (CVal x)     sq = x : go CEra sq
+  go (CInc x)     sq = go x sq
+  go (CDec x)     sq = go x sq
   go CEra         sq = case sqPop sq of
     Just (v,sq) -> go v sq
     Nothing     -> []
 
-flattenPQ :: Collapse a -> [a]
-flattenPQ term = go term (PQLeaf :: PQ (Collapse a)) where
-  go (CSup k a b) pq = go CEra (pqPut (fromIntegral k,a) $ pqPut (fromIntegral k,b) $ pq)
-  go (CVal x)     pq = x : go CEra pq
-  go CEra         pq = case pqPop pq of
-    Just ((k,v),pq) -> go v pq
-    Nothing         -> []
+-- Priority-Queue Flattener
+-- ------------------------
+-- * priority starts at 0
+-- * since PQ is a min-queue, we invert the scoers:
+-- * passing through (CInc t) subs 1 ; (CDec t) adds 1
+-- * when no Inc/Dec are present every node has priority == depth
+--   hence the order matches plain BFS exactly (stable heap).
+
+flattenPRI :: Collapse a -> [a]
+flattenPRI term = go 1 (Tip 0 0 term) where
+  go i pq = case pqPop pq of
+    Nothing -> []
+    Just (_, pri, node, pq') -> case node of
+      CEra   -> go i pq'
+      CVal v -> v : go i pq'
+      CInc t -> go (i + 1) (pqPush i (pri - 1) t pq')
+      CDec t -> go (i + 1) (pqPush i (pri + 1) t pq')
+      CSup _ a b ->
+        let pq1 = (pqPush (i + 0) (pri + 1) a pq')
+            pq2 = (pqPush (i + 1) (pri + 1) b pq1)
+        in go (i + 2) pq2
+
+-- Default Flattener
+-- -----------------
 
 flatten :: Collapse a -> [a]
-flatten = flattenBFS
+flatten = flattenPRI
 
 -- Flat Collapser
 -- --------------

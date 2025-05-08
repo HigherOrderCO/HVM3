@@ -1,4 +1,7 @@
 {-./Type.hs-}
+{-./Foreign.hs-}
+
+-- NOTE: THIS FILE IS MISSING HTE INC/DEC INTERACTIONS. LET'S FIX IT
 
 module Reduce where
 
@@ -48,6 +51,8 @@ reduceAt debug book host = do
         t | t == _CTR_ -> cont host (reduceAppCtr term fun)
         t | t == _W32_ -> cont host (reduceAppW32 term fun)
         t | t == _CHR_ -> cont host (reduceAppW32 term fun)
+        t | t == _INC_ -> cont host (reduceAppInc term fun)
+        t | t == _DEC_ -> cont host (reduceAppDec term fun)
         _   -> set (loc + 0) fun >> return term
 
     t | t == _MAT_ -> do
@@ -59,6 +64,8 @@ reduceAt debug book host = do
         t | t == _CTR_ -> cont host (reduceMatCtr term val)
         t | t == _W32_ -> cont host (reduceMatW32 term val)
         t | t == _CHR_ -> cont host (reduceMatW32 term val)
+        t | t == _INC_ -> cont host (reduceMatInc term val)
+        t | t == _DEC_ -> cont host (reduceMatDec term val)
         _   -> set (loc + 0) val >> return term
 
     t | t == _IFL_ -> do
@@ -70,6 +77,8 @@ reduceAt debug book host = do
         t | t == _CTR_ -> cont host (reduceMatCtr term val)
         t | t == _W32_ -> cont host (reduceMatW32 term val)
         t | t == _CHR_ -> cont host (reduceMatW32 term val)
+        t | t == _INC_ -> cont host (reduceMatInc term val)
+        t | t == _DEC_ -> cont host (reduceMatDec term val)
         _   -> set (loc + 0) val >> return term
 
     t | t == _SWI_ -> do
@@ -81,6 +90,8 @@ reduceAt debug book host = do
         t | t == _CTR_ -> cont host (reduceMatCtr term val)
         t | t == _W32_ -> cont host (reduceMatW32 term val)
         t | t == _CHR_ -> cont host (reduceMatW32 term val)
+        t | t == _INC_ -> cont host (reduceMatInc term val)
+        t | t == _DEC_ -> cont host (reduceMatDec term val)
         _   -> set (loc + 0) val >> return term
 
     t | t == _OPX_ -> do
@@ -92,6 +103,8 @@ reduceAt debug book host = do
         t | t == _CTR_ -> cont host (reduceOpxCtr term val)
         t | t == _W32_ -> cont host (reduceOpxW32 term val)
         t | t == _CHR_ -> cont host (reduceOpxW32 term val)
+        t | t == _INC_ -> cont host (reduceOpxInc term val)
+        t | t == _DEC_ -> cont host (reduceOpxDec term val)
         _   -> set (loc + 0) val >> return term
 
     t | t == _OPY_ -> do
@@ -103,6 +116,8 @@ reduceAt debug book host = do
         t | t == _CTR_ -> cont host (reduceOpyCtr term val)
         t | t == _W32_ -> cont host (reduceOpyW32 term val)
         t | t == _CHR_ -> cont host (reduceOpyW32 term val)
+        t | t == _INC_ -> cont host (reduceOpyInc term val)
+        t | t == _DEC_ -> cont host (reduceOpyDec term val)
         _   -> set (loc + 0) val >> return term
 
     t | t == _DP0_ -> do
@@ -117,6 +132,8 @@ reduceAt debug book host = do
             t | t == _CTR_ -> cont host (reduceDupCtr term val)
             t | t == _W32_ -> cont host (reduceDupW32 term val)
             t | t == _CHR_ -> cont host (reduceDupW32 term val)
+            t | t == _INC_ -> cont host (reduceDupInc term val)
+            t | t == _DEC_ -> cont host (reduceDupDec term val)
             _   -> set (loc + 0) val >> return term
         else do
           set host (termRemBit sb0)
@@ -134,6 +151,8 @@ reduceAt debug book host = do
             t | t == _CTR_ -> cont host (reduceDupCtr term val)
             t | t == _W32_ -> cont host (reduceDupW32 term val)
             t | t == _CHR_ -> cont host (reduceDupW32 term val)
+            t | t == _INC_ -> cont host (reduceDupInc term val)
+            t | t == _DEC_ -> cont host (reduceDupDec term val)
             _   -> set (loc + 0) val >> return term
         else do
           set host (termRemBit sb1)

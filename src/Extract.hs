@@ -172,6 +172,16 @@ extractCoreAt dupsRef reduceAt book host = unsafeInterleaveIO $ do
     t | t == _FWD_ -> do
       return Era
 
+    t | t == _INC_ -> do
+      let loc = termLoc term
+      val <- extractCoreAt dupsRef reduceAt book (loc + 0)
+      return $ Inc val
+
+    t | t == _DEC_ -> do
+      let loc = termLoc term
+      val <- extractCoreAt dupsRef reduceAt book (loc + 0)
+      return $ Dec val
+
     _ -> do
       return Era
 
@@ -241,6 +251,14 @@ liftDups (Let mod nam val bod) =
   let (valT, valD) = liftDups val
       (bodT, bodD) = liftDups bod
   in (Let mod nam valT bodT, valD . bodD)
+
+liftDups (Inc val) =
+  let (valT, valD) = liftDups val
+  in (Inc valT, valD)
+
+liftDups (Dec val) =
+  let (valT, valD) = liftDups val
+  in (Dec valT, valD)
 
 liftDupsList :: [Core] -> ([Core], Core -> Core)
 
