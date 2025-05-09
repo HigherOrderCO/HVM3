@@ -1,0 +1,6 @@
+// examples/axioms.hvm
+// Axioms defined as HVM terms
+// These would be loaded by the prover
+
+@Axiom1 = #FImp{ante: #FAtom{#P}, cons: #FAtom{#Q}} // P -> Q
+@Axiom2 = #FAtom{#P} // P 

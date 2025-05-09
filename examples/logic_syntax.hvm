@@ -1,0 +1,30 @@
+// examples/logic_syntax.hvm
+
+// Propositional Variables (Atoms)
+// We'll use simple constructors for now.
+// #P, #Q, #R will represent atomic propositions P, Q, R.
+data Prop { 
+  #P 
+  #Q 
+  #R 
+}
+
+// Logical Formulas
+data Formula {
+  #FAtom { prop }        // Atomic formula
+  #FNot  { form }        // Negation: ¬A
+  #FAnd  { left right }  // Conjunction: A ∧ B
+  #FOr   { left right }  // Disjunction: A ∨ B
+  #FImp  { ante cons }   // Implication: A → B
+}
+
+// Helper to create an implication easily
+@Implies(a b) = #FImp { ante a, cons b }
+
+// Example formulas (can be used for testing later)
+@PropP = #FAtom { prop #P }
+@PropQ = #FAtom { prop #Q }
+@P_implies_Q = @Implies(@PropP @PropQ)
+
+// Define main function for HVM3 to run
+@main = @P_implies_Q 

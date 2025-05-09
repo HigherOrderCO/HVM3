@@ -1,0 +1,7 @@
+// examples/target_pimpq.hvm
+// Target theorem to prove: Q
+// We'll set up axioms P and P→Q elsewhere, and the prover should find
+// that Q follows by Modus Ponens
+
+// Define the main function to return our target formula
+@main = @PropQ // From examples/logic_syntax.hvm 

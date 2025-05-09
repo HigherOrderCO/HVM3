@@ -1,0 +1,116 @@
+// examples/prover_rules.hvm
+// Import the syntax
+// (HVM3 doesn't have explicit imports in .hvm files for data, 
+// the `Book` will combine them. Assume `Formula` and `Prop` are known.)
+
+// For standalone testing, include data type definitions
+data Prop { 
+  #P 
+  #Q 
+  #R 
+}
+
+// Logical Formulas
+data Formula {
+  #FAtom { prop }            // Atomic formula
+  #FNot  { form }           // Negation: ¬A
+  #FAnd  { left right }     // Conjunction: A ∧ B
+  #FOr   { left right }     // Disjunction: A ∨ B
+  #FImp  { ante cons }      // Implication: A → B
+}
+
+// @apply_ModusPonens(term_A_implies_B, term_A)
+// If term_A_implies_B is of the form (A' -> B')
+// And term_A is of the form A''
+// And A' is structurally equal to A''
+// Then return B', otherwise return ERA
+@apply_ModusPonens(a_implies_b a) = 
+  ~ a_implies_b {
+    #FImp { ante premise_actual_ante, cons premise_actual_cons }: 
+      @if(@eq_simple(premise_actual_ante a), premise_actual_cons, *)
+    _: * 
+  }
+
+// Simplified if function
+@if(cond then else) = 
+  ~ cond {
+    1: then
+    _: else
+  }
+
+// Extremely simplified equality for atoms for now.
+// This will need to be replaced with a recursive structural equality function.
+@eq_simple(term1 term2) = 
+  ~ term1 !term2 { 
+    #FAtom { prop !p1 }: ~ term2 { 
+      #FAtom { prop !p2 }: @eq_prop(p1 p2)
+      _: 0
+    }
+    #FImp { ante !a1 cons !c1 }: ~ term2 {
+      #FImp { ante !a2 cons !c2 }: 
+        ~ @eq_simple(a1 a2) {
+          1: @eq_simple(c1 c2)
+          _: 0
+        }
+      _: 0
+    }
+    #FAnd { left !l1 right !r1 }: ~ term2 {
+      #FAnd { left !l2 right !r2 }:
+        ~ @eq_simple(l1 l2) {
+          1: @eq_simple(r1 r2)
+          _: 0
+        }
+      _: 0
+    }
+    #FOr { left !l1 right !r1 }: ~ term2 {
+      #FOr { left !l2 right !r2 }:
+        ~ @eq_simple(l1 l2) {
+          1: @eq_simple(r1 r2)
+          _: 0
+        }
+      _: 0
+    }
+    #FNot { form !f1 }: ~ term2 {
+      #FNot { form !f2 }: @eq_simple(f1 f2)
+      _: 0
+    }
+    _: 0
+  }
+
+@eq_prop(prop1 prop2) =
+  ~ prop1 !prop2 {
+    #P: ~ prop2 { #P: 1 _: 0 }
+    #Q: ~ prop2 { #Q: 1 _: 0 }
+    #R: ~ prop2 { #R: 1 _: 0 }
+    _: 0
+  }
+
+// Rule for using an axiom/proven fact directly
+// @use_Axiom(axiom_formula) = axiom_formula
+// (This might not be needed as an HVM3 function; A* can just use existing facts)
+
+// Local definitions for standalone testing
+@Local_P_implies_Q = #FImp { ante #FAtom { prop #P }, cons #FAtom { prop #Q } }
+@Local_PropP = #FAtom { prop #P }
+
+// Add cost tracking
+@count_interactions(term cost) = 
+  ~ term {
+    #FAtom { prop }: cost
+    #FImp { ante !a cons !c }: @count_interactions(c @count_interactions(a @inc(cost)))
+    #FAnd { left !l right !r }: @count_interactions(r @count_interactions(l @inc(cost)))
+    #FOr { left !l right !r }: @count_interactions(r @count_interactions(l @inc(cost)))
+    #FNot { form !f }: @count_interactions(f @inc(cost))
+    _: cost
+  }
+
+@inc(n) = @add(n 1)
+@add(a b) = ~ a { 0: b _: @add(@dec(a) @inc(b)) }
+@dec(n) = ~ n { 0: 0 _: @sub(n 1) }
+@sub(a b) = ~ b { 0: a _: @sub(@dec(a) @dec(b)) }
+
+// Main function for testing this file directly
+@main = 
+  let result = @apply_ModusPonens(@Local_P_implies_Q @Local_PropP)
+  let cost = @count_interactions(result 0)
+  #Cost { result cost } 

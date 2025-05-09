@@ -19,6 +19,7 @@ library
                       hs-highlight ^>= 1.0.3,
                       ansi-terminal == 1.1.1,
                       file-embed,
+                      heap ^>=1.0.4
     exposed-modules:  HVM.Type
                     , HVM.Collapse
                     , HVM.Compile
@@ -27,6 +28,9 @@ library
                     , HVM.Inject
                     , HVM.Parse
                     , HVM.Reduce
+                    , Prover.CoreSyntaxBridge
+                    , Prover.Search
+                    , Prover.Proof
     other-modules:
     hs-source-dirs:   src
     c-sources:        src/HVM/Runtime.c

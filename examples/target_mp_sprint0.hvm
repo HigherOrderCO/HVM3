@@ -1,0 +1,21 @@
+// examples/target_mp_sprint0.hvm
+// Target theorem to prove: Q
+
+// For standalone testing, include data type definitions
+data Prop { 
+  #P 
+  #Q 
+  #R 
+}
+
+// Logical Formulas
+data Formula {
+  #FAtom { prop }            // Atomic formula
+  #FNot  { form }           // Negation: ¬A
+  #FAnd  { left right }     // Conjunction: A ∧ B
+  #FOr   { left right }     // Disjunction: A ∨ B
+  #FImp  { ante cons }      // Implication: A → B
+}
+
+@Target = #FAtom { prop #Q }
+@main = @Target 

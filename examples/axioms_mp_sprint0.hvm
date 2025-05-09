@@ -1,0 +1,23 @@
+// examples/axioms_mp_sprint0.hvm
+// Axioms for Modus Ponens Sprint 0 test
+
+// For standalone testing, include data type definitions
+data Prop { 
+  #P 
+  #Q 
+  #R 
+}
+
+// Logical Formulas
+data Formula {
+  #FAtom { prop }            // Atomic formula
+  #FNot  { form }           // Negation: ¬A
+  #FAnd  { left right }     // Conjunction: A ∧ B
+  #FOr   { left right }     // Disjunction: A ∨ B
+  #FImp  { ante cons }      // Implication: A → B
+}
+
+@Premise1 = #FImp { ante #FAtom { prop #P }, cons #FAtom { prop #Q } } // P -> Q
+@Premise2 = #FAtom { prop #P } // P
+
+@main = @Premise1 // Just to have a main function for direct testing 

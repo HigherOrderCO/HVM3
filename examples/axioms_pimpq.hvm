@@ -1,0 +1,13 @@
+// examples/axioms_pimpq.hvm
+// Axioms for the simple P→Q proof
+// These include: P, and P→Q
+// From which we should be able to prove Q using Modus Ponens
+
+// Reference the atomic formulas from logic_syntax.hvm
+// @PropP = #FAtom{#P}
+// @PropQ = #FAtom{#Q}
+// @P_implies_Q = @Implies(@PropP, @PropQ)
+
+// Declare the axioms
+@axiom1 = @PropP // P
+@axiom2 = @P_implies_Q // P→Q 

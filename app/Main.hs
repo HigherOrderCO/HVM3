@@ -26,6 +26,10 @@ import Text.Printf
 import Data.IORef
 import qualified Data.Map.Strict as MS
 import Text.Read (readMaybe)
+import Prover.Search
+import Prover.CoreSyntaxBridge (HsFormula(..))
+import Prover.Search (ReduceFn)
+import Data.Word (Word64) -- For Word64 type
 
 -- Main
 -- ----
@@ -57,6 +61,18 @@ main = do
       let hideQuotes     = "-Q" `elem` flags
       let mode           = case collapseFlag of { Just n -> Collapse n ; Nothing -> Normalize }
       cliServe file debug compiled mode stats hideQuotes
+    ("prove" : file : rest) -> do
+      let (flags, params) = partition ("-" `isPrefixOf`) rest
+      let targetFile = file -- Simplification: file is the target formula
+      -- For Sprint 0, axioms and rules might be hardcoded or loaded from fixed paths
+      let axiomFiles = ["examples/logic_syntax.hvm"]
+      let ruleFiles  = ["examples/prover_rules.hvm"]
+      let budget = case find ("-b" `isPrefixOf`) flags of
+                     Just ('-':'b':num) -> case readMaybe num of
+                                             Just n  -> n
+                                             Nothing -> 1000000
+                     _                  -> 1000000 -- Default budget
+      cliProve targetFile axiomFiles ruleFiles budget
     ["help"] -> printHelp
     _ -> printHelp
   case result of
@@ -79,6 +95,7 @@ printHelp = do
   putStrLn "  hvm3 help       # Shows this help message"
   putStrLn "  hvm3 run <file> [flags] [args...] # Evals main"
   putStrLn "  hvm3 serve <file> [flags] # Starts socket server on port 8080"
+  putStrLn "  hvm3 prove <file> [flags] [axiomFiles...] [ruleFiles...] [budget] # Runs theorem prover"
   putStrLn "    -c  # Runs with compiled mode (fast)"
   putStrLn "    -C  # Collapse the result to a list of λ-Terms"
   putStrLn "    -CN # Same as above, but show only first N results"
@@ -210,6 +227,41 @@ cliServe filePath debug compiled mode showStats hideQuotes = do
             serverLoop sock book
         Right _ -> serverLoop sock book
 
+-- | Run the theorem prover on a target formula
+cliProve :: FilePath -> [FilePath] -> [FilePath] -> Word64 -> IO (Either String ())
+cliProve targetFile axiomFiles ruleFiles budgetCt = do
+  putStrLn $ "Attempting to prove: " ++ targetFile
+  putStrLn $ "With axioms from: " ++ show axiomFiles
+  putStrLn $ "With rules from: " ++ show ruleFiles
+  putStrLn $ "Budget (interactions): " ++ show budgetCt
+
+  -- For Sprint 0, we'll use hardcoded formulas but still load the syntax
+  let hvmFilesToLoad = ["examples/logic_syntax.hvm", "examples/prover_rules.hvm"]
+  
+  -- Load and merge all necessary HVM files
+  combinedBook <- loadAndMergeBooks hvmFilesToLoad False
+  
+  -- Sprint 0: Define hardcoded formulas
+  let axioms_hs = [ HsImp (HsAtom "P") (HsAtom "Q") -- P -> Q
+                  , HsAtom "P"                       -- P
+                  ]
+  let target_hs = HsAtom "Q"                        -- Q
+  let rules_hvm_names = ["@apply_ModusPonens"]
+
+  -- Run A* search
+  resultNode <- Prover.Search.aStarSearch combinedBook (reduceAt False) axioms_hs target_hs rules_hvm_names budgetCt
+  
+  case resultNode of
+    Just node -> do
+      putStrLn "Proof Found!"
+      putStrLn "Path:"
+      mapM_ putStrLn (reverse $ snPath node)
+      putStrLn $ "Final Formula: " ++ show (snHsFormula node)
+      putStrLn $ "Total Cost (interactions): " ++ show (snGCost node)
+      return $ Right ()
+    Nothing -> do
+      putStrLn "Proof not found within budget or search space exhausted."
+      return $ Left "Proof failed"
 
 -- Load and initialize a book from a file
 loadBook :: FilePath -> Bool -> IO Book
@@ -273,3 +325,27 @@ removeQuotes :: String -> String
 removeQuotes s = case s of
   '"':rest -> init rest  -- Remove first and last quote if present
   _        -> s          -- Otherwise return as-is
+
+-- Add this helper function after the existing imports
+mergeBooks :: Book -> Book -> Book
+mergeBooks b1 b2 = Book {
+    fidToFun = MS.union (fidToFun b1) (fidToFun b2),
+    fidToLab = MS.union (fidToLab b1) (fidToLab b2),
+    fidToNam = MS.union (fidToNam b1) (fidToNam b2),
+    namToFid = MS.union (namToFid b1) (namToFid b2),
+    cidToAri = MS.union (cidToAri b1) (cidToAri b2),
+    cidToLen = MS.union (cidToLen b1) (cidToLen b2),
+    cidToCtr = MS.union (cidToCtr b1) (cidToCtr b2),
+    ctrToCid = MS.union (ctrToCid b1) (ctrToCid b2),
+    cidToADT = MS.union (cidToADT b1) (cidToADT b2),
+    freshLab = max (freshLab b1) (freshLab b2)
+}
+
+-- Add this helper to load multiple books
+loadAndMergeBooks :: [FilePath] -> Bool -> IO Book
+loadAndMergeBooks [] _ = error "No files provided to loadAndMergeBooks"
+loadAndMergeBooks (firstFile:restFiles) compiled = do
+  initialBook <- loadBook firstFile compiled
+  foldM (\accBook filePath -> do
+           nextBook <- loadBook filePath compiled
+           return $ mergeBooks accBook nextBook) initialBook restFiles

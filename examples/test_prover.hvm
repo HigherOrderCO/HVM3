@@ -1,0 +1,14 @@
+// examples/test_prover.hvm
+// A simple test program to initialize the prover with basic axioms
+
+// Load our logical syntax
+// #FAtom{#P}, #FImp{...}, etc.
+
+// Define the main term that will be evaluated by HVM
+@main = @P_implies_Q // The full P→Q axiom
+
+// A list of axioms that the prover should use
+@axioms = [@PropP, @P_implies_Q]
+
+// The target formula to prove
+@target = @PropQ 
