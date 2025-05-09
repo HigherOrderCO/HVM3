@@ -2,17 +2,31 @@
 {-./Type.hs-}
 {-./Inject.hs-}
 
-module Compile where
+{-# LANGUAGE TemplateHaskell #-}
+
+module HVM.Compile where
 
 import Control.Monad (forM_, forM, foldM, when)
 import Control.Monad.State
 import Data.Bits (shiftL, (.|.))
 import Data.List
 import Data.Word
+import Data.FileEmbed
 import Debug.Trace
-import Foreign hiding (fresh)
-import Type
+import HVM.Foreign hiding (fresh)
+import HVM.Type
 import qualified Data.Map.Strict as MS
+
+-- The Runtime.c file content embedded in the binary
+runtime_c :: String
+runtime_c = $(embedStringFile "./src/HVM/Runtime.c")
+
+-- Generates the complete C code for a Book
+compileBook :: Book -> String -> String
+compileBook book runtime_c =
+  let decls = compileHeaders book
+      funcs = map (\ (fid, _) -> compile book fid) (MS.toList (fidToFun book))
+  in unlines $ [runtime_c] ++ [decls] ++ funcs ++ [genMain book]
 
 -- Compilation
 -- -----------
@@ -27,12 +41,6 @@ data CompileState = CompileState
   }
 
 type Compile = State CompileState
-
-compileHeaders :: Book -> String
-compileHeaders book =
-  let funcs = MS.toList (fidToNam book)
-      decls = map (\(_, name) -> "Term " ++ name ++ "_f(Term);") funcs
-  in unlines decls
 
 compile :: Book -> Word16 -> String
 compile book fid =
@@ -767,3 +775,32 @@ checkRefAri book core = do
       when (ari /= fromIntegral len) $ do
         error $ "Arity mismatch on term: " ++ show core ++ ". Expected " ++ show ari ++ ", got " ++ show len ++ "."
     _ -> return ()
+
+-- Generates the forward declarations of the compiled C functions
+compileHeaders :: Book -> String
+compileHeaders book =
+  let funcs = MS.toList (fidToNam book)
+      decls = map (\(_, name) -> "Term " ++ name ++ "_f(Term);") funcs
+  in unlines decls
+
+-- Generates the main function for the compiled C code
+genMain :: Book -> String
+genMain book =
+  let mainFid = mget (namToFid book) "main"
+      registerFuncs = unlines ["  hvm_define(" ++ show fid ++ ", " ++ mget (fidToNam book) fid ++ "_f);" | fid <- MS.keys (fidToFun book)]
+  in unlines
+    [ "int main() {"
+    , "  hvm_init();"
+    , registerFuncs
+    , "  clock_t start = clock();"
+    , "  Term root = term_new(REF, "++show mainFid++", 0);"
+    , "  normal(root);"
+    , "  double time = (double)(clock() - start) / CLOCKS_PER_SEC * 1000;"
+    , "  printf(\"WORK: %\"PRIu64\" interactions\\n\", get_itr());"
+    , "  printf(\"TIME: %.3fs seconds\\n\", time / 1000.0);"
+    , "  printf(\"SIZE: %llu nodes\\n\", get_len());"
+    , "  printf(\"PERF: %.3f MIPS\\n\", (get_itr() / 1000000.0) / (time / 1000.0));"
+    , "  hvm_free();"
+    , "  return 0;"
+    , "}"
+    ]

@@ -1,6 +1,6 @@
 {-./Type.hs-}
 
-module Parse where
+module HVM.Parse where
 
 import Control.Monad (foldM, forM, forM_, when)
 import Control.Monad.State
@@ -19,7 +19,7 @@ import Text.Parsec hiding (State)
 import Text.Parsec.Error
 import Text.Parsec.Pos
 import Text.Parsec.String
-import Type
+import HVM.Type
 import qualified Data.Map.Strict as MS
 
 -- Core Parsers

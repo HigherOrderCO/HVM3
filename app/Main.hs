@@ -1,33 +1,24 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
-
 module Main where
 
 import Network.Socket as Network
 import System.IO (hSetEncoding, utf8, hPutStrLn, stderr)
 import Control.Exception (try, fromException, SomeException, finally, AsyncException(UserInterrupt))
 import Control.Monad (guard, when, foldM, forM_, unless)
-import Data.FileEmbed
 import Data.List (partition, isPrefixOf, take, find)
-import Data.Word
-import Foreign.C.Types
 import Foreign.LibFFI
-import Foreign.LibFFI.Types
 import GHC.Clock
-import GHC.Conc
-import Collapse
-import Compile
-import Extract
-import Foreign
-import Inject
-import Parse
-import Reduce
-import Type
+import HVM.Collapse
+import HVM.Compile
+import HVM.Extract
+import HVM.Foreign
+import HVM.Inject
+import HVM.Parse
+import HVM.Reduce
+import HVM.Type
 import System.Environment (getArgs)
 import System.Exit (exitWith, ExitCode(ExitSuccess, ExitFailure))
 import System.IO
 import System.IO (readFile')
-import System.IO.Unsafe (unsafePerformIO)
 import System.IO.Error (tryIOError)
 import System.Posix.DynamicLinker
 import System.Process (callCommand)
@@ -35,9 +26,6 @@ import Text.Printf
 import Data.IORef
 import qualified Data.Map.Strict as MS
 import Text.Read (readMaybe)
-
-runtime_c :: String
-runtime_c = $(embedStringFile "./src/Runtime.c")
 
 -- Main
 -- ----
@@ -88,9 +76,9 @@ parseCollapseFlag _ = Nothing
 printHelp :: IO (Either String ())
 printHelp = do
   putStrLn "HVM usage:"
-  putStrLn "  hvm help       # Shows this help message"
-  putStrLn "  hvm run <file> [flags] [args...] # Evals main"
-  putStrLn "  hvm serve <file> [flags] # Starts socket server on port 8080"
+  putStrLn "  hvm3 help       # Shows this help message"
+  putStrLn "  hvm3 run <file> [flags] [args...] # Evals main"
+  putStrLn "  hvm3 serve <file> [flags] # Starts socket server on port 8080"
   putStrLn "    -c  # Runs with compiled mode (fast)"
   putStrLn "    -C  # Collapse the result to a list of λ-Terms"
   putStrLn "    -CN # Same as above, but show only first N results"
@@ -245,9 +233,7 @@ loadBook filePath compiled = do
     hvmSetFari fid (fromIntegral $ length args)
 
   when compiled $ do
-    let decls = compileHeaders book
-    let funcs = map (\ (fid, _) -> compile book fid) (MS.toList (fidToFun book))
-    let mainC = unlines $ [runtime_c] ++ [decls] ++ funcs ++ [genMain book]
+    let mainC = compileBook book runtime_c
     -- Try to use a cached .so file
     callCommand "mkdir -p .build"
     let fName = last $ words $ map (\c -> if c == '/' then ' ' else c) filePath
@@ -271,26 +257,6 @@ loadBook filePath compiled = do
     callFFI hvmSetState retVoid [argPtr hvmGotState]
   return book
 
-genMain :: Book -> String
-genMain book =
-  let mainFid = mget (namToFid book) "main"
-      registerFuncs = unlines ["  hvm_define(" ++ show fid ++ ", " ++ mget (fidToNam book) fid ++ "_f);" | fid <- MS.keys (fidToFun book)]
-  in unlines
-    [ "int main() {"
-    , "  hvm_init();"
-    , registerFuncs
-    , "  clock_t start = clock();"
-    , "  Term root = term_new(REF, "++show mainFid++", 0);"
-    , "  normal(root);"
-    , "  double time = (double)(clock() - start) / CLOCKS_PER_SEC * 1000;"
-    , "  printf(\"WORK: %\"PRIu64\" interactions\\n\", get_itr());"
-    , "  printf(\"TIME: %.3fs seconds\\n\", time / 1000.0);"
-    , "  printf(\"SIZE: %llu nodes\\n\", get_len());"
-    , "  printf(\"PERF: %.3f MIPS\\n\", (get_itr() / 1000000.0) / (time / 1000.0));"
-    , "  hvm_free();"
-    , "  return 0;"
-    , "}"
-    ]
 
 -- Parse arguments and create a term with the given function name
 injectMain :: Book -> [String] -> IO Term

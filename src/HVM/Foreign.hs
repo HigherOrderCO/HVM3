@@ -1,10 +1,10 @@
 {-./Runtime.c-}
 
-module Foreign where
+module HVM.Foreign where
 
 import Data.Word
 import Foreign.Ptr
-import Type
+import HVM.Type
 
 foreign import ccall "set_len" 
   setLen :: Word64 -> IO ()

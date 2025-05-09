@@ -1,6 +1,6 @@
 {-./Type.hs-}
 
-module Inject where
+module HVM.Inject where
 
 import Control.Monad (foldM, when, forM_)
 import Control.Monad.State
@@ -9,8 +9,8 @@ import Data.Char (ord)
 import Data.List (foldr, take)
 import Data.Word
 import Debug.Trace
-import Foreign
-import Type
+import HVM.Foreign
+import HVM.Type
 import qualified Data.Map.Strict as MS
 
 type InjectM a = StateT InjectState HVM a
