@@ -1,4 +1,4 @@
-module Type where
+module HVM.Type where
 
 import Data.Word
 import Foreign.Ptr

@@ -1,6 +1,6 @@
 {-./Type.hs-}
 
-module Collapse where
+module HVM.Collapse where
 
 import Control.Monad (ap, forM, forM_)
 import Control.Monad.IO.Class
@@ -10,8 +10,8 @@ import Data.Bits ((.&.), xor, (.|.), complement, shiftR)
 import Data.Word
 import Debug.Trace
 import GHC.Conc
-import Foreign
-import Type
+import HVM.Foreign
+import HVM.Type
 import System.Exit (exitFailure)
 import System.IO.Unsafe (unsafeInterleaveIO)
 import qualified Data.IntMap.Strict as IM

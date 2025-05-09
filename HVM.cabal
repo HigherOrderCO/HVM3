@@ -9,33 +9,39 @@ maintainer:         victor.taelin@gmail.com
 category:           Language
 build-type:         Simple
 
-common warnings
-    ghc-options: -Wall
 
-executable hvm
-    import:           warnings
-    main-is:          Main.hs
-    other-modules:    Type
-                    , Collapse
-                    , Compile
-                    , Extract
-                    , Foreign
-                    , Inject
-                    , Parse
-                    , Reduce
+library
+    default-language: GHC2024
     build-depends:    base ^>=4.21.0.0,
                       mtl ^>=2.3.1,
                       containers ^>=0.7,
                       parsec ^>=3.1.17.0,
                       hs-highlight ^>= 1.0.3,
                       ansi-terminal == 1.1.1,
+                      file-embed,
+    exposed-modules:  HVM.Type
+                    , HVM.Collapse
+                    , HVM.Compile
+                    , HVM.Extract
+                    , HVM.Foreign
+                    , HVM.Inject
+                    , HVM.Parse
+                    , HVM.Reduce
+    other-modules:
+    hs-source-dirs:   src
+    c-sources:        src/HVM/Runtime.c
+    extra-libraries:  c
+    ghc-options:     -Wno-all
+
+executable hvm3
+    default-language: GHC2024
+    build-depends:    base ^>=4.21.0.0,
+                      containers ^>=0.7,
                       process,
                       libffi,
                       unix,
-                      file-embed,
                       network
-    hs-source-dirs:   src
-    default-language: GHC2024
-    c-sources:        src/Runtime.c
-    extra-libraries:  c
+    main-is:          Main.hs
+    build-depends:    HVM
+    hs-source-dirs:   app
     ghc-options:     -Wno-all -threaded

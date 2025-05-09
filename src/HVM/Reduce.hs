@@ -3,15 +3,15 @@
 
 -- NOTE: THIS FILE IS MISSING HTE INC/DEC INTERACTIONS. LET'S FIX IT
 
-module Reduce where
+module HVM.Reduce where
 
 import Control.Monad (when, forM, forM_)
 import Data.Word
-import Collapse
-import Extract
-import Foreign
-import Inject
-import Type
+import HVM.Collapse
+import HVM.Extract
+import HVM.Foreign
+import HVM.Inject
+import HVM.Type
 import System.Exit
 import qualified Data.Map.Strict as MS
 
