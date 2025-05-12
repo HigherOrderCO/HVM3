@@ -4,6 +4,7 @@ import Data.Word
 import Foreign.Ptr
 
 import Control.Applicative ((<|>))
+import Control.DeepSeq
 import Control.Monad (forM)
 import Data.Char (chr, ord)
 import Data.Char (intToDigit)
@@ -145,6 +146,24 @@ funArity book fid
   | otherwise = case MS.lookup fid (fidToFun book) of
       Just ((_, args), _) -> fromIntegral (length args)
       Nothing -> error $ "Function ID not found: " ++ show fid
+
+instance NFData Core where
+  rnf (Var k)           = rnf k
+  rnf (Ref k i xs)      = rnf k `seq` rnf i `seq` rnf xs
+  rnf Era               = ()
+  rnf (Lam x f)         = rnf x `seq` rnf f
+  rnf (App f x)         = rnf f `seq` rnf x
+  rnf (Sup l a b)       = rnf l `seq` rnf a `seq` rnf b
+  rnf (Dup l x y v f)   = rnf l `seq` rnf x `seq` rnf y `seq` rnf v `seq` rnf f
+  rnf (Ctr k xs)        = rnf k `seq` rnf xs
+  rnf (U32 v)           = rnf v
+  rnf (Chr v)           = rnf v
+  rnf (Op2 o a b)       = o `seq` rnf a `seq` rnf b
+  rnf (Let m k v f)     = m `seq` rnf k `seq` rnf v `seq` rnf f
+  rnf (Mat k v m ks)    = k `seq` rnf v `seq` rnf m `seq` rnf ks
+  rnf (Inc x)           = rnf x
+  rnf (Dec x)           = rnf x
+
 
 -- Stringification
 -- ---------------

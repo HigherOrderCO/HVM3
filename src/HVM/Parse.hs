@@ -584,31 +584,39 @@ doParseCore code = do
       showParseError "" code err
       return $ Ref "⊥" 0 []
 
-doParseArgument :: String -> Book -> IO (Book, Core)
-doParseArgument code book = do
-  result <- runParserT p (ParserState 
-    { pCidToAri = cidToAri book
-    , pCidToLen = cidToLen book
-    , pCtrToCid = ctrToCid book
-    , pCidToADT = cidToADT book
-    , imported  = MS.empty
-    , bindDups  = MS.empty
-    , globalVars = MS.empty
-    , pFreshLab = freshLab book
-    }) "" code
-  case result of
-    Right (core, st) -> do
-      let book' = book { freshLab = pFreshLab st }
-      return (book', core)
-    Left err -> do
-      showParseError "" code err
-      return (book, Ref "⊥" 0 [])
+doParseArguments :: Book -> [String] -> IO [Core]
+doParseArguments book [] = return []
+doParseArguments book (arg:args) = do
+  (book', core) <- parseArg book arg
+  rest <- doParseArguments book' args
+  return (core : rest)
   where
-      p = do
-        core <- parseCore
-        st <- getState
-        let core' = lexify (setRefIds (namToFid book) core)
-        return (core', st)
+    parseArg :: Book -> String -> IO (Book, Core)
+    parseArg book arg = do
+      let st = ParserState
+            { pCidToAri = cidToAri book
+            , pCidToLen = cidToLen book
+            , pCtrToCid = ctrToCid book
+            , pCidToADT = cidToADT book
+            , imported  = MS.empty
+            , bindDups  = MS.empty
+            , globalVars = MS.empty
+            , pFreshLab = freshLab book
+            }
+      result <- runParserT p st "" arg
+      case result of
+        Right (core, st) ->
+          let book' = book { freshLab = pFreshLab st }
+          in return (book', core)
+        Left err -> do
+          showParseError "" arg err
+          return (book, Ref "⊥" 0 [])
+
+    p = do
+      core <- parseCore
+      st <- getState
+      let core' = lexify (setRefIds (namToFid book) core)
+      return (core', st)
 
 -- Errors
 -- ------
