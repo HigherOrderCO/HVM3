@@ -25,7 +25,7 @@ data ParserState = ParserState
   , pCtrToCid  :: MS.Map String Word16
   , pCidToADT  :: MS.Map Word16 Word16
   , imported   :: MS.Map String ()
-  , bindDups   :: MS.Map String (Int, (Core -> Core))
+  , varUsages  :: MS.Map String [String]
   , globalVars :: MS.Map String ()
   , pFreshLab  :: Lab
   }
@@ -381,7 +381,7 @@ parseLst = do
 parseDef :: ParserM (String, ((Bool, [(Bool, String)]), Core))
 parseDef = do
   -- Reset global binds
-  modifyState $ \st -> st { globalVars = MS.empty, bindDups = MS.empty }
+  modifyState $ \st -> st { globalVars = MS.empty, varUsages = MS.empty }
   copy <- option False $ do
     string "!"
     skip
@@ -592,7 +592,7 @@ doParseArguments book (arg:args) = do
             , pCtrToCid = ctrToCid book
             , pCidToADT = cidToADT book
             , imported  = MS.empty
-            , bindDups  = MS.empty
+            , varUsages = MS.empty
             , globalVars = MS.empty
             , pFreshLab = freshLab book
             }
@@ -709,7 +709,7 @@ stripName var = if not (null var) && head var == '&' then tail var else var
 bindVars :: [String] -> ParserM Core -> ParserM Core
 bindVars vars parse = do
   st <- getState
-  let prev = bindDups st
+  let prev = varUsages st
   -- Split into scopeless vars (starting with $) and regular vars
   let (svars, rvars) = partition (\v -> head v == '$') vars
 
@@ -717,22 +717,22 @@ bindVars vars parse = do
   boundScopeless <- foldM bindScopelessVar prev svars
 
   -- Create temporary bindings for regular vars
-  let tempBound = MS.fromList [(stripName var, (0, (\x -> x))) | var <- rvars]
+  let tempBound = MS.fromList [(stripName var, []) | var <- rvars]
 
   -- Update parser state with all bindings
-  putState st {bindDups = MS.union tempBound boundScopeless}
+  putState st {varUsages = MS.union tempBound boundScopeless}
 
   -- Run the parser with the new bindings
   body <- parse
 
   st' <- getState
-  let curr = bindDups st'
+  let curr = varUsages st'
 
   -- Add the duplications to the body and check linear variables - error if used more than once
   result <- foldM (applyDups curr) body (reverse rvars)
 
   -- Restore the original state for regular vars
-  putState st' {bindDups = MS.union (MS.difference curr tempBound) prev}
+  modifyState (\s -> s {varUsages = MS.union (MS.difference curr tempBound) prev})
 
   return result
 
@@ -748,31 +748,30 @@ bindVars vars parse = do
 
     -- Helper to apply the duplications to the body
     applyDups usages body var = do
-      let (uses, dups) = mget usages (stripName var)
-      if (head var /= '&') && (uses > 1) then
-        fail $ "Linear variable " ++ show var ++ " used " ++ show uses ++ " times"
-      else
-        return (dups body)
+      let uses = mget usages (stripName var)
+      if (head var /= '&') && (length uses > 1) then
+        fail $ "Linear variable " ++ show var ++ " used " ++ show (length uses) ++ " times"
+      else case (reverse uses) of
+        [] -> return body
+        -- Create a chain of Dup nodes
+        (name:dups) -> do
+          foldM (\acc currName -> do
+            label <- genFreshLabel
+            return $ Dup label name currName (Var name) acc) body dups
 
 makeVar :: String -> ParserM Core
 makeVar name = do
   st <- getState
-  case (head name, MS.lookup name (bindDups st)) of
+  case (head name, MS.lookup name (varUsages st)) of
     ('$', Nothing) -> do -- $-vars can be used before definition
-      putState st {bindDups = MS.insert name (1, (\x -> x)) (bindDups st)}
+      putState st {varUsages = MS.insert name [name] (varUsages st)}
       return $ Var name
     (_, Nothing) -> do
       fail $ "Unbound variable " ++ show name
-    (_, Just (uses, dups)) -> do
-      -- Automatically add duplications if the variable is used more than once
-      label <- genFreshLabel
-      let dupName = if uses == 0
-                    then name
-                    else name ++ "_dup" ++ show uses
-      let dups' = if uses == 0
-                  then dups
-                  else \x -> Dup label name dupName (Var name) (dups x)
-      modifyState (\s -> s {bindDups = MS.insert name (uses + 1, dups') (bindDups s)})
+    (_, Just names) -> do
+      -- Add duplications if the variable is used more than once
+      let dupName = if (null names) then name else (name ++ "_dup" ++ show (length names))
+      putState st {varUsages = MS.insert name (dupName : names) (varUsages st)}
       return $ Var dupName
 
 -- Utils
