@@ -13,7 +13,7 @@ import Data.List
 import Data.Word
 import Numeric (showIntAtBase)
 import System.IO.Unsafe (unsafePerformIO)
-import qualified Data.Map.Strict as MS hiding (map)
+import qualified Data.Map.Strict as MS
 
 -- Core Types
 -- ----------
@@ -131,7 +131,6 @@ primitives =
 -- -----
 
 -- Getter function for maps
--- TODO: add the type annotation for mget
 mget :: (Ord k, Show k) => MS.Map k a -> k -> a
 mget map key =
   case MS.lookup key map of
@@ -282,7 +281,7 @@ showCore core = maybe (format core) id (sugar core) where
   format (Mat k v m ks) =
     let v'  = showCore v in
     let m'  = concatMap (\(k,v) -> concat [" !", k, "=", showCore v]) m in
-    let ks' = unwords [concat [c, ":", showCore b] | (c, _, b) <- ks] in
+    let ks' = unwords [concat [c, "{", unwords vs, "}:", showCore b] | (c, vs, b) <- ks] in
     concat ["(~", v', m', " {", ks', "})"]
   format (U32 v) =
     show v
@@ -346,8 +345,11 @@ renamer names core = case core of
     return $ Ctr k xs'
   Mat k v m ks -> do
     v'  <- renamer names v
-    m'  <- forM m $ \ (k,v) -> do v' <- renamer names v; return (k,v')
-    ks' <- forM ks $ \ (c,vs,t) -> do t' <- renamer names t; return (c,vs,t')
+    m'  <- forM m $ \(k,v) -> do v' <- renamer names v; return (k,v')
+    ks' <- forM ks $ \(c,vs,t) -> do
+      vs' <- mapM (genName names) vs
+      t'  <- renamer names t
+      return (c,vs',t')
     return $ Mat k v' m' ks'
   Op2 o a b -> do
     a' <- renamer names a

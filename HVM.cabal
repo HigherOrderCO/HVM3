@@ -30,6 +30,7 @@ library
                     , HVM.Foreign
                     , HVM.Inject
                     , HVM.Parse
+                    , HVM.Adjust
                     , HVM.Reduce
                     , HVM.API
     other-modules:

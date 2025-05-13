@@ -5,6 +5,7 @@ import Control.Monad (when, forM_, foldM)
 import Data.Word (Word64)
 import Foreign.LibFFI
 import GHC.Clock
+import HVM.Adjust
 import HVM.Collapse
 import HVM.Compile
 import HVM.Extract
@@ -37,7 +38,8 @@ runHVM :: FilePath -> [Core] -> RunMode -> IO ([Core], RunStats)
 runHVM filePath args mode = do
   hvmInit
   book <- loadBook filePath True
-  (vals, stats) <- runBook book args mode True False
+  -- Need to adjust args since they were constructed without the book
+  (vals, stats) <- runBook book (map (adjust book) args) mode True False
   hvmFree
   return (vals, stats)
 
@@ -110,6 +112,6 @@ injectArgs book args = do
               ++ " arguments, found " ++ show (length args)
     exitWith (ExitFailure 1)
   let fid = mget (namToFid book) "main"
-  let main = Ref "main" fid (reverse args)
+  let main = Ref "main" fid args
   root <- doInjectCoreAt book main 0 []
   return root

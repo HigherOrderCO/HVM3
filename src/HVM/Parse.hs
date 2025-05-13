@@ -2,23 +2,17 @@
 
 module HVM.Parse where
 
-import Control.Monad (foldM, forM, forM_, when)
+import Control.Monad (foldM, forM, when)
 import Control.Monad.State
-import Data.Either (isLeft)
 import Data.IORef
 import Data.List
-import Data.Maybe
-import Data.Maybe (fromMaybe)
 import Data.Word
 import Debug.Trace
 import Highlight (highlightError)
 import System.Console.ANSI
-import System.Exit (exitFailure)
-import System.IO.Unsafe (unsafePerformIO)
 import Text.Parsec hiding (State)
 import Text.Parsec.Error
-import Text.Parsec.Pos
-import Text.Parsec.String
+import HVM.Adjust
 import HVM.Type
 import qualified Data.Map.Strict as MS
 
@@ -188,8 +182,7 @@ parseMat = do
   cs0 <- parseCase False (map fst mov)
   css <- many $ parseCase (let (n,_,_)=cs0 in n=="0") (map fst mov)
   consume "}"
-  css <- sortCases (cs0:css)
-  buildMatchExpr val mov css
+  buildMatchExpr val mov (cs0:css)
 
 -- Mov: `!m0 = v0` (used inside Mat)
 parseMove :: ParserM (String, Core)
@@ -615,8 +608,7 @@ doParseArguments book (arg:args) = do
     p = do
       core <- parseCore
       st <- getState
-      let core' = lexify (setRefIds (namToFid book) core)
-      return (core', st)
+      return (adjust book core, st)
 
 -- Errors
 -- ------
@@ -689,10 +681,10 @@ createBook defs ctrToCid cidToAri cidToLen cidToADT freshLab =
       nameList  = zip (map fst defs) [0..] :: [(String, Word16)]
       namToFid' = withPrims (MS.fromList nameList)
       fidToNam' = MS.fromList (map (\(k,v) -> (v,k)) (MS.toList namToFid'))
-      fidToFun' = MS.fromList (map (\(fn, ((cp,ars), cr)) -> (mget namToFid' fn, ((cp, ars), lexify (setRefIds namToFid' cr)))) defs)
+      fidToFun' = MS.fromList (map (\(fn, ((cp,ars), cr)) -> (mget namToFid' fn, ((cp, ars), cr))) defs)
       fidToLab' = MS.fromList (map (\(fn, ((_, _), cr)) -> (mget namToFid' fn, collectLabels cr)) defs)
-      cidToCtr' = MS.fromList (map (\(ctr, cid) -> (cid, ctr)) (MS.toList ctrToCid))
-  in Book
+      cidToCtr' = MS.fromList (map (\(ctr, cid) -> (cid, ctr)) (MS.toList ctrToCid)) in
+  let book = Book
        { fidToFun = fidToFun'
        , fidToNam = fidToNam'
        , fidToLab = fidToLab'
@@ -703,7 +695,8 @@ createBook defs ctrToCid cidToAri cidToLen cidToADT freshLab =
        , cidToLen = cidToLen
        , cidToADT = cidToADT
        , freshLab = freshLab
-       }
+       } in
+  adjustBook book
 
 -- Binding
 -- -------
@@ -782,7 +775,7 @@ makeVar name = do
       modifyState (\s -> s {bindDups = MS.insert name (uses + 1, dups') (bindDups s)})
       return $ Var dupName
 
--- Adjusters and Utils
+-- Utils
 -- -------------------
 
 genFreshLabel :: ParserM Lab
@@ -793,29 +786,6 @@ genFreshLabel = do
   when (lbl > 0x7FFFFF) $ do
     error "Label overflow: generated label would be too large"
   return $ lbl + 0x800000
-
--- Adds the function id to Ref constructors
-setRefIds :: MS.Map String Word16 -> Core -> Core
-setRefIds fids term = case term of
-  Var nam         -> Var nam
-  Let m x v b     -> Let m x (setRefIds fids v) (setRefIds fids b)
-  Lam x bod       -> Lam x (setRefIds fids bod)
-  App f x         -> App (setRefIds fids f) (setRefIds fids x)
-  Sup l x y       -> Sup l (setRefIds fids x) (setRefIds fids y)
-  Dup l x y v b   -> Dup l x y (setRefIds fids v) (setRefIds fids b)
-  Ctr nam fds     -> Ctr nam (map (setRefIds fids) fds)
-  Mat k x mov css -> Mat k (setRefIds fids x) (map (\ (k,v) -> (k, setRefIds fids v)) mov) (map (\ (ctr,fds,cs) -> (ctr, fds, setRefIds fids cs)) css)
-  Op2 op x y      -> Op2 op (setRefIds fids x) (setRefIds fids y)
-  U32 n           -> U32 n
-  Chr c           -> Chr c
-  Era             -> Era
-  Inc x           -> Inc (setRefIds fids x)
-  Dec x           -> Dec (setRefIds fids x)
-  Ref nam _ arg   -> case MS.lookup nam fids of
-    Just fid -> Ref nam fid (map (setRefIds fids) arg)
-    Nothing  -> unsafePerformIO $ do
-      putStrLn $ "error:unbound-ref @" ++ nam
-      exitFailure
 
 -- Collects all labels used
 collectLabels :: Core -> MS.Map Lab ()
@@ -836,118 +806,26 @@ collectLabels term = case term of
   Inc x               -> collectLabels x
   Dec x               -> collectLabels x
 
--- Gives unique names to lexically scoped vars, unless they start with '$'.
--- Example: `λx λt (t λx(x) x)` will read as `λx0 λt1 (t1 λx2(x2) x0)`.
-lexify :: Core -> Core
-lexify term = evalState (go term MS.empty) 0 where
-  fresh :: String -> State Int String
-  fresh nam@('$':_) = return $ nam
-  fresh nam         = do i <- get; put (i+1); return $ nam++"$"++show i
-
-  extend :: String -> String -> MS.Map String String -> State Int (MS.Map String String)
-  extend old@('$':_) new ctx = return $ ctx
-  extend old         new ctx = return $ MS.insert old new ctx
-
-  go :: Core -> MS.Map String String -> State Int Core
-  go term ctx = case term of
-    Var nam -> 
-      return $ Var (MS.findWithDefault nam nam ctx)
-    Ref nam fid arg -> do
-      arg <- mapM (\x -> go x ctx) arg
-      return $ Ref nam fid arg
-    Let mod nam val bod -> do
-      val  <- go val ctx
-      nam' <- fresh nam
-      ctx  <- extend nam nam' ctx
-      bod  <- go bod ctx
-      return $ Let mod nam' val bod
-    Lam nam bod -> do
-      nam' <- fresh nam
-      ctx  <- extend nam nam' ctx
-      bod  <- go bod ctx
-      return $ Lam nam' bod
-    App fun arg -> do
-      fun <- go fun ctx
-      arg <- go arg ctx
-      return $ App fun arg
-    Sup lab tm0 tm1 -> do
-      tm0 <- go tm0 ctx
-      tm1 <- go tm1 ctx
-      return $ Sup lab tm0 tm1
-    Dup lab dp0 dp1 val bod -> do
-      val  <- go val ctx
-      dp0' <- fresh dp0
-      dp1' <- fresh dp1
-      ctx  <- extend dp0 dp0' ctx
-      ctx  <- extend dp1 dp1' ctx
-      bod  <- go bod ctx
-      return $ Dup lab dp0' dp1' val bod
-    Ctr nam fds -> do
-      fds <- mapM (\x -> go x ctx) fds
-      return $ Ctr nam fds
-    Mat kin val mov css -> do
-      val' <- go val ctx
-      mov' <- forM mov $ \ (k,v) -> do
-        k' <- fresh k
-        v  <- go v ctx
-        return $ (k', v)
-      css' <- forM css $ \ (ctr,fds,bod) -> do
-        fds' <- mapM fresh fds
-        ctx  <- foldM (\ ctx (fd,fd') -> extend fd fd' ctx) ctx (zip fds fds')
-        ctx  <- foldM (\ ctx ((k,_),(k',_)) -> extend k k' ctx) ctx (zip mov mov')
-        bod <- go bod ctx
-        return (ctr, fds', bod)
-      return $ Mat kin val' mov' css'
-    Op2 op nm0 nm1 -> do
-      nm0 <- go nm0 ctx
-      nm1 <- go nm1 ctx
-      return $ Op2 op nm0 nm1
-    U32 n -> 
-      return $ U32 n
-    Chr c ->
-      return $ Chr c
-    Era -> 
-      return Era
-    Inc x -> do
-      x <- go x ctx
-      return $ Inc x
-    Dec x -> do
-      x <- go x ctx
-      return $ Dec x
-
--- Sorts cases by constructor ID or numeric value
-sortCases :: [(String, [String], Core)] -> ParserM [(String, [String], Core)]
-sortCases cases = do
-  st <- getState
-  sorted <- forM cases $ \c@(name, fds, _) -> do
-    key <- case name of
-      ('#':_) -> case MS.lookup name (pCtrToCid st) of
-        Nothing -> fail $ "Constructor not defined: " ++ name
-        Just id -> return id  -- Sort constructor cases by ID
-      _ -> return $ case reads name of
-        [(num :: Word16, "")] -> num      -- Sort numeric cases by value
-        _                     -> maxBound -- Default case goes last
-    return (key, c)
-  return $ map snd $ sortOn fst sorted
-
 -- Build match expression based on case types
 buildMatchExpr :: Core -> [(String, Core)] -> [(String, [String], Core)] -> ParserM Core
 buildMatchExpr val mov cases
   | null cases = 
       fail "Match needs at least one case"
   | isSwitch (head cases) = 
-      return $ Mat SWI val (stripMov mov  ) cases  -- Switch case
+      return $ Mat SWI val (stripMov mov) cases  -- Switch case
   | onlyDefault cases =
       fail "Match with only a default case is not allowed"  -- Invalid case
   | hasDefault (last cases) = do  -- Has default: use If-Let chain
       st  <- getState
-      adt <- return $ mget (pCtrToCid st) (getName $ head cases)
+      cid <- return $ mget (pCtrToCid st) (getName $ head cases)
+      adt <- return $ mget (pCidToADT st) cid
       var <- return $ getVar (last cases)
       ifl <- intoIfLetChain (Var var) (stripMov mov) (init cases) var (last cases)
       return $ Let LAZY var val ifl
   | otherwise = do  -- All ADT cases covered
       st <- getState
-      let adt = mget (pCtrToCid st) (getName $ head cases)
+      let cid = mget (pCtrToCid st) (getName $ head cases)
+      let adt = mget (pCidToADT st) cid
       let len = mget (pCidToLen st) adt
       if fromIntegral (length cases) /= len
         then fail "Incorrect number of cases"
