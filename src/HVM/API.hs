@@ -1,7 +1,7 @@
 module HVM.API where
 
 import Control.DeepSeq (deepseq)
-import Control.Monad (when, forM_, foldM)
+import Control.Monad (when, forM_)
 import Data.Word (Word64)
 import Foreign.LibFFI
 import GHC.Clock
@@ -14,7 +14,7 @@ import HVM.Inject
 import HVM.Parse
 import HVM.Reduce
 import HVM.Type
-import System.Exit (exitWith, ExitCode(ExitSuccess, ExitFailure))
+import System.Exit (exitWith, ExitCode(ExitFailure))
 import System.IO (readFile')
 import System.IO.Error (tryIOError)
 import System.Posix.DynamicLinker
@@ -44,28 +44,22 @@ runHVM filePath args mode = do
   return (vals, stats)
 
 runBook :: Book -> [Core] -> RunMode -> Bool -> Bool -> IO ([Core], RunStats)
-runBook book args mode compiled debug = do
-  init <- getMonotonicTimeNSec
-  root <- injectArgs book args
-  rxAt <- if compiled
-    then return (reduceCAt debug)
-    else return (reduceAt debug)
-  vals <- case mode of
-    Collapse limit -> do
-      core <- doCollapseFlatAt rxAt book 0
-      let vals = maybe id Prelude.take limit core
-      vals `deepseq` return vals
-    Normalize -> do
-      core <- doExtractCoreAt rxAt book 0
-      let vals = [doLiftDups core]
-      vals `deepseq` return vals
-  end <- getMonotonicTimeNSec
-  itrs <- getItr
-  size <- getLen
-  let time = fromIntegral (end - init) / (10^9) :: Double
-  let mips = (fromIntegral itrs / 1000000.0) / time
-  let stats = RunStats { rsItrs = itrs, rsSize = size , rsTime = time, rsPerf = mips }
-  return (vals, stats)
+runBook book args mode compiled debug =
+  withRunStats $ do
+    injectMain book args
+    rxAt <- if compiled
+      then return (reduceCAt debug)
+      else return (reduceAt debug)
+    vals <- case mode of
+      Collapse limit -> do
+        core <- doCollapseFlatAt rxAt book 0
+        let vals = maybe id Prelude.take limit core
+        vals `deepseq` return vals
+      Normalize -> do
+        core <- doExtractCoreAt rxAt book 0
+        let vals = [doLiftDups core]
+        vals `deepseq` return vals
+    return vals
 
 -- Load and initialize the runtime with a book from a file
 loadBook :: FilePath -> Bool -> IO Book
@@ -102,9 +96,9 @@ loadBook filePath compiled = do
     callFFI hvmSetState retVoid [argPtr hvmGotState]
   return book
 
--- Parse arguments and create a term with the given function name
-injectArgs :: Book -> [Core] -> IO Term
-injectArgs book args = do
+-- Injects a call to the main function at the root of the term
+injectMain :: Book -> [Core] -> IO ()
+injectMain book args = do
   -- Abort when wrong number of args
   let ((_, mainArgs), _) = mget (fidToFun book) (mget (namToFid book) "main")
   when (length args /= length mainArgs) $ do
@@ -113,5 +107,17 @@ injectArgs book args = do
     exitWith (ExitFailure 1)
   let fid = mget (namToFid book) "main"
   let main = Ref "main" fid args
-  root <- doInjectCoreAt book main 0 []
-  return root
+  _ <- doInjectCoreAt book main 0 []
+  return ()
+
+withRunStats :: IO a -> IO (a, RunStats)
+withRunStats action = do
+  init <- getMonotonicTimeNSec
+  res  <- action
+  end  <- getMonotonicTimeNSec
+  itrs <- getItr
+  size <- getLen
+  let time = fromIntegral (end - init) / (10^9) :: Double
+  let mips = (fromIntegral itrs / 1000000.0) / time
+  let stats = RunStats { rsItrs = itrs, rsSize = size , rsTime = time, rsPerf = mips }
+  return (res, stats)

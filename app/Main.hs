@@ -6,8 +6,11 @@ import Control.Exception (try, fromException, SomeException, finally, AsyncExcep
 import Control.Monad (when, forM_, unless)
 import Data.List (partition, isPrefixOf, find)
 import HVM.API
+import HVM.Collapse
+import HVM.Extract
 import HVM.Foreign
 import HVM.Parse
+import HVM.Reduce
 import HVM.Type
 import System.Environment (getArgs)
 import System.Exit (exitWith, ExitCode(ExitSuccess, ExitFailure))
@@ -78,17 +81,30 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
   hvmInit
   book <- loadBook filePath compiled
   args <- doParseArguments book strArgs
-  (vals, stats) <- runBook book args mode compiled debug
+  (_, stats) <- withRunStats $ do
+    injectMain book args
+    rxAt <- if compiled
+      then return (reduceCAt debug)
+      else return (reduceAt debug)
+    case mode of
+      Collapse limit -> do
+        core <- doCollapseFlatAt rxAt book 0
+        let vals = maybe id Prelude.take limit core
+        -- Collapse and print the result line by line
+        forM_ vals $ \term -> do
+          let out = if hideQuotes then removeQuotes (show term) else show term
+          printf "%s\n" out
+      Normalize -> do
+        core <- doExtractCoreAt rxAt book 0
+        let val = doLiftDups core
+        let out = if hideQuotes then removeQuotes (show val) else show val
+        printf "%s\n" out
   hvmFree
-  forM_ vals $ \term -> do
-    let output = if hideQuotes then removeQuotes (show term) else show term
-    printf "%s\n" output
   when showStats $ do
     printf "WORK: %llu interactions\n" (rsItrs stats)
     printf "TIME: %.7f seconds\n" (rsTime stats)
     printf "SIZE: %llu nodes\n" (rsSize stats)
     printf "PERF: %.3f MIPS\n" (rsPerf stats)
-    return ()
   return $ Right ()
 
 cliServe :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> IO (Either String ())
