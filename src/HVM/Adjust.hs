@@ -6,109 +6,118 @@ import Data.List (sortOn)
 import Data.Word
 import HVM.Type
 import qualified Data.Map as MS
+import Debug.Trace (trace)
+
+-- External API
+----------------
 
 adjustBook :: Book -> Book
-adjustBook book =
-  let fns = map (\(fid, ((cp, ars), cr)) -> (fid, ((cp, ars), adjust book cr))) (MS.toList (fidToFun book))
-  in book { fidToFun = MS.fromList fns }
+adjustBook book = foldr adjustFunc book (MS.toList (fidToFun book))
 
-adjust :: Book -> Core -> Core
-adjust book term =
-  let termA = setRefIds (namToFid book) term  in
-  let termB = setCtrIds (ctrToCid book) (cidToADT book) termA in
-  let termC = sortCases (ctrToCid book) termB in
-  let termD = lexify termC in
-  termD
+adjustFunc :: (Word16, Func) -> Book -> Book
+adjustFunc (fid, ((cp, ars), cr)) book =
+  let (b', cr') = adjust book cr (map snd ars) in
+  let ars'      = map (\(s, n) -> (s, stripName n)) ars in
+  b' { fidToFun = MS.insert fid ((cp, ars'), cr') (fidToFun b') }
+
+adjustArgs :: Book -> [Core] -> (Book, [Core])
+adjustArgs book args = foldr go (book, []) args
+  where
+    go arg (book, acc) =
+      let (book', arg') = adjust book arg []
+      in (book', arg':acc)
+
+adjust :: Book -> Core -> [String] -> (Book, Core)
+adjust book term args =
+  let termA       = setRefIds (namToFid book) term
+      termB       = setCtrIds (ctrToCid book) (cidToADT book) termA
+      termC       = sortCases (ctrToCid book) termB
+      (fr, termD) = insertDups (freshLab book) args termC
+      termE       = lexify termD
+  in (book { freshLab = fr }, termE)
 
 
 -- Adjusters
-----------------------
+-------------
 
 -- Adds the function id to Ref constructors
 setRefIds :: MS.Map String Word16 -> Core -> Core
 setRefIds fids term = go term
   where
     go :: Core -> Core
-    go term = case term of
-      Var nam         -> Var nam
-      Let m x v b     -> Let m x (go v) (go b)
-      Lam x bod       -> Lam x (go bod)
-      App f x         -> App (go f) (go x)
-      Sup l x y       -> Sup l (go x) (go y)
-      Dup l x y v b   -> Dup l x y (go v) (go b)
-      Ctr nam fds     -> Ctr nam (map go fds)
-      Mat k x mov css -> Mat k (go x) (map (\ (k,v) -> (k, go v)) mov) (map (\ (ctr,fds,cs) -> (ctr, fds, go cs)) css)
-      Op2 op x y      -> Op2 op (go x) (go y)
-      U32 n           -> U32 n
-      Chr c           -> Chr c
-      Era             -> Era
-      Inc x           -> Inc (go x)
-      Dec x           -> Dec (go x)
-      Ref nam _ arg   -> Ref nam (mget fids nam) (map go arg)
+    go (Var nam)         = Var nam
+    go (Let m x v b)     = Let m x (go v) (go b)
+    go (Lam x bod)       = Lam x (go bod)
+    go (App f x)         = App (go f) (go x)
+    go (Sup l x y)       = Sup l (go x) (go y)
+    go (Dup l x y v b)   = Dup l x y (go v) (go b)
+    go (Ctr nam fds)     = Ctr nam (map go fds)
+    go (Mat k x mov css) = Mat k (go x) (map (\ (k,v) -> (k, go v)) mov) (map (\ (ctr,fds,cs) -> (ctr, fds, go cs)) css)
+    go (Op2 op x y)      = Op2 op (go x) (go y)
+    go (U32 n)           = U32 n
+    go (Chr c)           = Chr c
+    go Era               = Era
+    go (Inc x)           = Inc (go x)
+    go (Dec x)           = Dec (go x)
+    go (Ref nam _ arg)   = Ref nam (mget fids nam) (map go arg)
+
 
 -- Adds the constructor id to Mat and IFL terms
 setCtrIds :: MS.Map String Word16 -> MS.Map Word16 Word16 -> Core -> Core
 setCtrIds cids adts term = go term
   where
     go :: Core -> Core
-    go term = case term of
-      Var nam         -> Var nam
-      Let m x v b     -> Let m x (go v) (go b)
-      Lam x bod       -> Lam x (go bod)
-      App f x         -> App (go f) (go x)
-      Sup l x y       -> Sup l (go x) (go y)
-      Dup l x y v b   -> Dup l x y (go v) (go b)
-      Ctr nam fds     -> Ctr nam (map go fds)
-      Mat k x mov css -> 
-        let k' = case k of
-                  SWI   ->
-                    SWI
-                  MAT _ ->
-                    let (ctr, _, _) = head css in
-                    let cid = mget cids ctr in
-                    let adt = mget adts cid in
-                    MAT adt
-                  IFL _ ->
-                    let (ctr, _, _) = head css in
-                    let cid = mget cids ctr in
-                    IFL cid
-                  _ -> k in
-        let mov' = map (\(k,v) -> (k, go v)) mov in
-        let css' = map (\(ctr,fds,cs) -> (ctr, fds, go cs)) css in
-        Mat k' (go x) mov' css'
-      Op2 op x y      -> Op2 op (go x) (go y)
-      U32 n           -> U32 n
-      Chr c           -> Chr c
-      Era             -> Era
-      Inc x           -> Inc (go x)
-      Dec x           -> Dec (go x)
-      Ref nam fid arg -> Ref nam fid (map go arg)
+    go (Var nam)         = Var nam
+    go (Let m x v b)     = Let m x (go v) (go b)
+    go (Lam x bod)       = Lam x (go bod)
+    go (App f x)         = App (go f) (go x)
+    go (Sup l x y)       = Sup l (go x) (go y)
+    go (Dup l x y v b)   = Dup l x y (go v) (go b)
+    go (Ctr nam fds)     = Ctr nam (map go fds)
+    go (Mat k x mov css) =
+      let k' = case k of
+                SWI -> SWI
+                MAT _ -> MAT (mget adts (mget cids (getCtr (head css))))
+                IFL _ -> IFL (mget cids (getCtr (head css)))
+                _ -> k in
+      let mov' = map (\(k,v) -> (k, go v)) mov in
+      let css' = map (\(ctr,fds,cs) -> (ctr, fds, go cs)) css in
+      Mat k' (go x) mov' css'
+      where
+        getCtr (ctr, _, _) = ctr
+    go (Op2 op x y)      = Op2 op (go x) (go y)
+    go (U32 n)           = U32 n
+    go (Chr c)           = Chr c
+    go Era               = Era
+    go (Inc x)           = Inc (go x)
+    go (Dec x)           = Dec (go x)
+    go (Ref nam fid arg) = Ref nam fid (map go arg)
+
 
 -- Sorts match cases by constructor ID or numeric value
 sortCases :: MS.Map String Word16 -> Core -> Core
 sortCases cids term = go term
   where
     go :: Core -> Core
-    go term = case term of
-      Var nam         -> Var nam
-      Let m x v b     -> Let m x (go v) (go b)
-      Lam x bod       -> Lam x (go bod)
-      App f x         -> App (go f) (go x)
-      Sup l x y       -> Sup l (go x) (go y)
-      Dup l x y v b   -> Dup l x y (go v) (go b)
-      Ctr nam fds     -> Ctr nam (map go fds)
-      Mat k x mov css ->
-        let sort = sortOn sortKey css in
-        let css' = map (\(ctr, fds, bod) -> (ctr, fds, go bod)) sort in
-        let mov' = map (\(k,v) -> (k, go v)) mov in
-        Mat k (go x) mov' css'
-      Op2 op x y      -> Op2 op (go x) (go y)
-      U32 n           -> U32 n
-      Chr c           -> Chr c
-      Era             -> Era
-      Inc x           -> Inc (go x)
-      Dec x           -> Dec (go x)
-      Ref nam fid arg -> Ref nam fid (map go arg)
+    go (Var nam)         = Var nam
+    go (Let m x v b)     = Let m x (go v) (go b)
+    go (Lam x bod)       = Lam x (go bod)
+    go (App f x)         = App (go f) (go x)
+    go (Sup l x y)       = Sup l (go x) (go y)
+    go (Dup l x y v b)   = Dup l x y (go v) (go b)
+    go (Ctr nam fds)     = Ctr nam (map go fds)
+    go (Mat k x mov css) =
+      let sort = sortOn sortKey css in
+      let css' = map (\(ctr,fds,bod) -> (ctr, fds, go bod)) sort in
+      let mov' = map (\(k,v) -> (k, go v)) mov in
+      Mat k (go x) mov' css'
+    go (Op2 op x y)      = Op2 op (go x) (go y)
+    go (U32 n)           = U32 n
+    go (Chr c)           = Chr c
+    go Era               = Era
+    go (Inc x)           = Inc (go x)
+    go (Dec x)           = Dec (go x)
+    go (Ref nam fid arg) = Ref nam fid (map go arg)
 
     sortKey :: (String, [String], Core) -> Word16
     sortKey (name, _, _) =
@@ -119,6 +128,125 @@ sortCases cids term = go term
         _ -> case reads name of
           [(num :: Word16, "")] -> num
           _                     -> maxBound
+
+
+-- Inserts Dup nodes for vars that have been used more than once.
+-- Renames vars according to the new Dup bindings.
+-- Gives fresh labels to the new Dup nodes.
+insertDups :: Lab -> [String] -> Core -> (Lab, Core)
+insertDups fresh args term =
+  let (term', (fresh', _)) = runState (withBinds args term) (fresh, MS.empty)
+  in (fresh', term')
+  where
+    go :: Core -> State (Lab, MS.Map String [String]) Core
+    go (Var nam)         = do
+      nam <- useVar nam
+      return $ (Var nam)
+    go (Let m x v b)     = do
+      v <- go v
+      b <- withBinds [x] b
+      return $ Let m (stripName x) v b
+    go (Lam x bod)       = do
+      bod <- withBinds [x] bod
+      return $ Lam (stripName x) bod
+    go (App fun arg)     = do
+      fun <- go fun
+      arg <- go arg
+      return $ App fun arg
+    go (Sup lab tm0 tm1) = do
+      tm0 <- go tm0
+      tm1 <- go tm1
+      return $ Sup lab tm0 tm1
+    go (Dup lab x y v b) = do
+      v <- go v
+      b <- withBinds [stripName x, stripName y] b
+      return $ Dup lab x y v b
+    go (Ctr nam fds)     = do
+      fds <- mapM go fds
+      return $ Ctr nam fds
+    go (Mat k x mov css) = do
+      x   <- go x
+      mov <- forM mov (\(k,v) -> do
+        v <- go v
+        return (k, v))
+      css <- forM css (\(ctr,fds,bod) -> do
+        bod <- withBinds ((map fst mov) ++ fds) bod
+        return (ctr, map stripName fds, bod))
+      let mov' = map (\(k,v) -> (stripName k, v)) mov
+      return $ Mat k x mov' css
+    go (Op2 op x y)      = do
+      x <- go x
+      y <- go y
+      return $ Op2 op x y
+    go (U32 n)           = do
+      return $ U32 n
+    go (Chr c)           = do
+      return $ Chr c
+    go Era               = do
+      return Era
+    go (Inc x)           = do
+      x <- go x
+      return $ Inc x
+    go (Dec x)           = do
+      x <- go x
+      return $ Dec x
+    go (Ref nam fid arg) = do
+      arg <- mapM go arg
+      return $ Ref nam fid arg
+
+    -- Recurses on the body of a term that binds variables.
+    -- Adds Dups if the new vars are used more than once.
+    withBinds :: [String] -> Core -> State (Lab, MS.Map String [String]) Core
+    withBinds vars term = do
+      (_, prev) <- get
+      -- Add the new binds
+      let tmp = MS.fromList [(stripName var, []) | var <- vars]
+      modify (\(lab, uses) -> (lab, MS.union tmp uses))
+      term <- go term
+      term <- foldM applyDups term (reverse vars)
+      -- Remove the new binds
+      modify (\(lab, uses) -> (lab, MS.union (MS.difference uses tmp) prev))
+      return term
+
+    applyDups :: Core -> String -> State (Lab, MS.Map String [String]) Core
+    applyDups body var = do
+      (_, uses) <- get
+      let vUse = mget uses (stripName var)
+      when ((head var /= '&') && (length vUse > 1)) $
+        error $ "Linear variable " ++ show var ++ " used " ++ show (length vUse) ++ " times"
+      case (reverse vUse) of
+        [] -> do
+          return body
+        (name:dups) -> do
+          foldM (\acc currName -> do
+            label <- genFresh
+            return $ Dup label name currName (Var name) acc) body dups
+
+    genFresh :: State (Lab, MS.Map String [String]) Lab
+    genFresh = do
+      (lab, _) <- get
+      modify (\(lab, uses) -> (lab + 1, uses))
+      return lab
+
+    useVar :: String -> State (Lab, MS.Map String [String]) String
+    useVar nam@('$':_) = do
+      return nam
+    useVar nam = do
+      (_, uses) <- get
+      case mget uses nam of
+        [] -> do
+          modify (\(lab, uses) -> (lab, MS.insert nam [nam] uses))
+          return nam
+        vUse -> do
+          let dupNam = nam ++ "_dup" ++ show (length vUse)
+          modify (\(lab, uses) -> (lab, MS.insert nam (dupNam : vUse) uses))
+          return dupNam
+
+-- Strip the & prefix from a non-linear variable name
+-- e.g., "&x" -> "x", "x" -> "x"
+stripName :: String -> String
+stripName var = if not (null var) && head var == '&' then tail var else var
+
 
 -- Gives unique names to lexically scoped vars, unless they start with '$'.
 -- Example: `λx λt (t λx(x) x)` will read as `λx0 λt1 (t1 λx2(x2) x0)`.

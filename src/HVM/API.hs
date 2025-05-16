@@ -39,7 +39,8 @@ runHVM filePath args mode = do
   hvmInit
   book <- loadBook filePath True
   -- Need to adjust args since they were constructed without the book
-  (vals, stats) <- runBook book (map (adjust book) args) mode True False
+  (book, args) <- return $ adjustArgs book args
+  (vals, stats) <- runBook book args mode True False
   hvmFree
   return (vals, stats)
 

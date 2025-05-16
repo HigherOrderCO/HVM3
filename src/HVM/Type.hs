@@ -11,6 +11,7 @@ import Data.Char (intToDigit)
 import Data.IORef
 import Data.List
 import Data.Word
+import GHC.Stack (HasCallStack)
 import Numeric (showIntAtBase)
 import System.IO.Unsafe (unsafePerformIO)
 import qualified Data.Map.Strict as MS
@@ -131,7 +132,7 @@ primitives =
 -- -----
 
 -- Getter function for maps
-mget :: (Ord k, Show k) => MS.Map k a -> k -> a
+mget :: (Ord k, Show k, HasCallStack) => MS.Map k a -> k -> a
 mget map key =
   case MS.lookup key map of
     Just val -> val
