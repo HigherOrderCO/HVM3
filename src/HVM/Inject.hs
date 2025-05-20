@@ -33,8 +33,7 @@ injectCore _ (Var nam) loc = do
   case MS.lookup nam argsMap of
     Just term -> do
       lift $ set loc term
-      when (head nam /= '&') $ do
-        modify $ \s -> s { args = MS.delete nam (args s) }
+      modify $ \s -> s { args = MS.delete nam (args s) }
     Nothing -> do
       modify $ \s -> s { vars = (nam, loc) : vars s }
 
