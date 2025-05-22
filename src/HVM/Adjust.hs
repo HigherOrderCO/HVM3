@@ -106,11 +106,18 @@ sortCases cids term = go term
     go (Sup l x y)       = Sup l (go x) (go y)
     go (Dup l x y v b)   = Dup l x y (go v) (go b)
     go (Ctr nam fds)     = Ctr nam (map go fds)
-    go (Mat k x mov css) =
-      let sort = sortOn sortKey css in
-      let css' = map (\(ctr,fds,bod) -> (ctr, fds, go bod)) sort in
-      let mov' = map (\(k,v) -> (k, go v)) mov in
-      Mat k (go x) mov' css'
+    go (Mat k x mov css) = Mat k (go x) mov' css' where
+      mov' = map (\(k,v) -> (k, go v)) mov
+      css' = map (\(ctr,fds,bod) -> (ctr, fds, go bod)) sort
+      sort = sortOn sortKey css
+      sortKey (name, _, _) =
+        case name of
+          ('#':_) -> case MS.lookup name cids of
+            Nothing -> maxBound
+            Just id -> id
+          _ -> case reads name of
+            [(num :: Word16, "")] -> num
+            _                     -> maxBound
     go (Op2 op x y)      = Op2 op (go x) (go y)
     go (U32 n)           = U32 n
     go (Chr c)           = Chr c
@@ -119,15 +126,7 @@ sortCases cids term = go term
     go (Dec x)           = Dec (go x)
     go (Ref nam fid arg) = Ref nam fid (map go arg)
 
-    sortKey :: (String, [String], Core) -> Word16
-    sortKey (name, _, _) =
-      case name of
-        ('#':_) -> case MS.lookup name cids of
-          Nothing -> maxBound
-          Just id -> id
-        _ -> case reads name of
-          [(num :: Word16, "")] -> num
-          _                     -> maxBound
+
 
 
 -- Inserts Dup nodes for vars that have been used more than once.
@@ -226,7 +225,7 @@ insertDups fresh args term =
     genFresh = do
       (lab, _) <- get
       modify (\(lab, uses) -> (lab + 1, uses))
-      return lab
+      return $ 0x800000 + lab
 
     useVar :: String -> State (Lab, MS.Map String [String]) String
     useVar nam@('$':_) = do
