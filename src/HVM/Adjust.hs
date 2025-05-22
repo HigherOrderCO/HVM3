@@ -216,6 +216,8 @@ insertDups fresh args term =
       case (reverse vUse) of
         [] -> do
           return body
+        [_] -> do
+          return body
         (name:dups) -> do
           foldM (\acc currName -> do
             label <- genFresh
