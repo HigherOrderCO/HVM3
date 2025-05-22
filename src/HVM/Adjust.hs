@@ -159,8 +159,8 @@ insertDups fresh args term =
       return $ Sup lab tm0 tm1
     go (Dup lab x y v b) = do
       v <- go v
-      b <- withBinds [stripName x, stripName y] b
-      return $ Dup lab x y v b
+      b <- withBinds [x, y] b
+      return $ Dup lab (stripName x) (stripName y) v b
     go (Ctr nam fds)     = do
       fds <- mapM go fds
       return $ Ctr nam fds
