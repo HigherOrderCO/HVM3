@@ -138,7 +138,7 @@ doInjectCoreAt book core host argList = do
         set loc term
         return $ MS.delete name m
       Nothing -> do
-        error $ "Unbound variable: \n\x1b[2m" ++ name ++ "\n\x1b[0mIn term:\n\x1b[2m" ++ Data.List.take 1024 (show core) ++ "...\x1b[0m")
+        error $ "Unbound variable: \n\x1b[2m" ++ name ++ "\n\x1b[0mIn term:\n\x1b[2m" ++ Data.List.take 1024 (showCore core) ++ "...\x1b[0m")
     (args state)
     (vars state)
   got host
