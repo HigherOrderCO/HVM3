@@ -58,7 +58,7 @@ runBook book args mode compiled debug =
         vals `deepseq` return vals
       Normalize -> do
         core <- doExtractCoreAt rxAt book 0
-        let vals = [doLiftDups core]
+        let vals = [core]
         vals `deepseq` return vals
     return vals
 
