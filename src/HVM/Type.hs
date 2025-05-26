@@ -282,7 +282,7 @@ showCore core = maybe (format core) id (sugar core) where
   format (Mat k v m ks) =
     let v'  = showCore v in
     let m'  = concatMap (\(k,v) -> concat [" !", k, "=", showCore v]) m in
-    let ks' = unwords [concat [c, "{", unwords vs, "}:", showCore b] | (c, vs, b) <- ks] in
+    let ks' = unwords [concat [c, ":", showCore b] | (c, vs, b) <- ks] in
     concat ["(~", v', m', " {", ks', "})"]
   format (U32 v) =
     show v
