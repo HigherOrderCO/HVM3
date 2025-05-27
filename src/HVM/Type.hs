@@ -371,12 +371,13 @@ renamer names core = case core of
 genName :: IORef (MS.Map String String) -> String -> IO String
 genName names name =
   atomicModifyIORef' names $ \map ->
-    case MS.lookup name map of
+    case MS.lookup (strip name) map of
       Just val -> (map, val)
       Nothing  ->
         let new  = showName (MS.size map)
-            map' = MS.insert name new map
+            map' = MS.insert (strip name) new map
         in (map', new)
+  where strip name = if "&" `isPrefixOf` name then tail name else name
 
 instance Show Core where
   show = showCore . rename
