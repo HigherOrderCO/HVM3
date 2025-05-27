@@ -19,6 +19,7 @@ import System.IO (readFile')
 import System.IO.Error (tryIOError)
 import System.Posix.DynamicLinker
 import System.Process (callCommand)
+import Text.Printf
 
 import qualified Data.Map.Strict as MS
 
@@ -122,3 +123,9 @@ withRunStats action = do
   let mips = (fromIntegral itrs / 1000000.0) / time
   let stats = RunStats { rsItrs = itrs, rsSize = size , rsTime = time, rsPerf = mips }
   return (res, stats)
+
+instance Show RunStats where
+  show stats = printf "WORK: %llu interactions\n" (rsItrs stats) ++
+               printf "TIME: %.7f seconds\n" (rsTime stats) ++
+               printf "SIZE: %llu nodes\n" (rsSize stats) ++
+               printf "PERF: %.3f MIPS\n" (rsPerf stats)

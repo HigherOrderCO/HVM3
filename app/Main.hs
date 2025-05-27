@@ -101,10 +101,7 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
         printf "%s\n" out
   hvmFree
   when showStats $ do
-    printf "WORK: %llu interactions\n" (rsItrs stats)
-    printf "TIME: %.7f seconds\n" (rsTime stats)
-    printf "SIZE: %llu nodes\n" (rsSize stats)
-    printf "PERF: %.3f MIPS\n" (rsPerf stats)
+    print stats
   return $ Right ()
 
 cliServe :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> IO (Either String ())
@@ -137,10 +134,7 @@ cliServe filePath debug compiled mode showStats hideQuotes = do
           let output = unlines $ map (\t -> if hideQuotes then removeQuotes (show t) else show t) vals
           hPutStrLn h output
           when showStats $ do
-            hPutStrLn h $ "WORK: " ++ show (rsItrs stats) ++ " interactions"
-            hPutStrLn h $ "TIME: " ++ printf "%.7f" (rsTime stats) ++ " seconds"
-            hPutStrLn h $ "SIZE: " ++ show (rsSize stats) ++ " nodes"
-            hPutStrLn h $ "PERF: " ++ printf "%.3f" (rsPerf stats) ++ " MIPS"
+            hPutStrLn h (show stats)
           setItr 0
           setLen oldSize
         hClose h
