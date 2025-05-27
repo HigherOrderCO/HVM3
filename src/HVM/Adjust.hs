@@ -20,19 +20,12 @@ adjustFunc (fid, ((cp, ars), cr)) book =
   let ars'      = map (\(s, n) -> (s, stripName n)) ars in
   b' { fidToFun = MS.insert fid ((cp, ars'), cr') (fidToFun b') }
 
-adjustArgs :: Book -> [Core] -> (Book, [Core])
-adjustArgs book args = foldr go (book, []) args
-  where
-    go arg (book, acc) =
-      let (book', arg') = adjust book arg []
-      in (book', arg':acc)
-
 adjust :: Book -> Core -> [String] -> (Book, Core)
-adjust book term args =
+adjust book term binds =
   let termA       = setRefIds (namToFid book) term
       termB       = setCtrIds (ctrToCid book) (cidToADT book) termA
       termC       = sortCases (ctrToCid book) termB
-      (fr, termD) = insertDups (freshLab book) args termC
+      (fr, termD) = insertDups (freshLab book) binds termC
       termE       = lexify termD
   in (book { freshLab = fr }, termE)
 
@@ -127,14 +120,12 @@ sortCases cids term = go term
     go (Ref nam fid arg) = Ref nam fid (map go arg)
 
 
-
-
 -- Inserts Dup nodes for vars that have been used more than once.
 -- Renames vars according to the new Dup bindings.
 -- Gives fresh labels to the new Dup nodes.
 insertDups :: Lab -> [String] -> Core -> (Lab, Core)
-insertDups fresh args term =
-  let (term', (fresh', _)) = runState (withBinds args term) (fresh, MS.empty)
+insertDups fresh binds term =
+  let (term', (fresh', _)) = runState (withBinds binds term) (fresh, MS.empty)
   in (fresh', term')
   where
     go :: Core -> State (Lab, MS.Map String [String]) Core

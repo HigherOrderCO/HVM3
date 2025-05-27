@@ -785,22 +785,24 @@ compileHeaders book =
 
 -- Generates the main function for the compiled C code
 genMain :: Book -> String
-genMain book =
-  let mainFid = mget (namToFid book) "main"
-      registerFuncs = unlines ["  hvm_define(" ++ show fid ++ ", " ++ mget (fidToNam book) fid ++ "_f);" | fid <- MS.keys (fidToFun book)]
-  in unlines
-    [ "int main() {"
-    , "  hvm_init();"
-    , registerFuncs
-    , "  clock_t start = clock();"
-    , "  Term root = term_new(REF, "++show mainFid++", 0);"
-    , "  normal(root);"
-    , "  double time = (double)(clock() - start) / CLOCKS_PER_SEC * 1000;"
-    , "  printf(\"WORK: %\"PRIu64\" interactions\\n\", get_itr());"
-    , "  printf(\"TIME: %.3fs seconds\\n\", time / 1000.0);"
-    , "  printf(\"SIZE: %llu nodes\\n\", get_len());"
-    , "  printf(\"PERF: %.3f MIPS\\n\", (get_itr() / 1000000.0) / (time / 1000.0));"
-    , "  hvm_free();"
-    , "  return 0;"
-    , "}"
-    ]
+genMain book = case MS.lookup "main" (namToFid book) of
+  Just mainFid ->
+    unlines
+      [ "int main() {"
+      , "  hvm_init();"
+      , registerFuncs
+      , "  clock_t start = clock();"
+      , "  Term root = term_new(REF, "++show mainFid++", 0);"
+      , "  normal(root);"
+      , "  double time = (double)(clock() - start) / CLOCKS_PER_SEC * 1000;"
+      , "  printf(\"WORK: %\"PRIu64\" interactions\\n\", get_itr());"
+      , "  printf(\"TIME: %.3fs seconds\\n\", time / 1000.0);"
+      , "  printf(\"SIZE: %llu nodes\\n\", get_len());"
+      , "  printf(\"PERF: %.3f MIPS\\n\", (get_itr() / 1000000.0) / (time / 1000.0));"
+      , "  hvm_free();"
+      , "  return 0;"
+      , "}"
+      ]
+  Nothing -> ""
+  where 
+    registerFuncs = unlines ["  hvm_define(" ++ show fid ++ ", " ++ name ++ "_f);" | (fid, name) <- MS.toList (fidToNam book)]

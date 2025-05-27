@@ -35,20 +35,18 @@ data RunStats = RunStats {
   rsPerf :: Double
 }
 
-runHVM :: FilePath -> [Core] -> RunMode -> IO ([Core], RunStats)
-runHVM filePath args mode = do
+runHVM :: FilePath -> Core -> RunMode -> IO ([Core], RunStats)
+runHVM filePath root mode = do
   hvmInit
   book <- loadBook filePath True
-  -- Need to adjust args since they were constructed without the book
-  (book, args) <- return $ adjustArgs book args
-  (vals, stats) <- runBook book args mode True False
+  (vals, stats) <- runBook book root mode True False
   hvmFree
   return (vals, stats)
 
-runBook :: Book -> [Core] -> RunMode -> Bool -> Bool -> IO ([Core], RunStats)
-runBook book args mode compiled debug =
+runBook :: Book -> Core -> RunMode -> Bool -> Bool -> IO ([Core], RunStats)
+runBook book root mode compiled debug =
   withRunStats $ do
-    injectMain book args
+    injectRoot book root
     rxAt <- if compiled
       then return (reduceCAt debug)
       else return (reduceAt debug)
@@ -68,10 +66,6 @@ loadBook :: FilePath -> Bool -> IO Book
 loadBook filePath compiled = do
   code <- readFile' filePath
   book <- doParseBook filePath code
-  -- Abort when main isn't present
-  when (not $ MS.member "main" (namToFid book)) $ do
-    putStrLn "Error: 'main' not found."
-    exitWith (ExitFailure 1)
 
   forM_ (MS.toList (cidToAri book)) $ \(cid, ari) -> hvmSetCari cid (fromIntegral ari)
   forM_ (MS.toList (cidToLen book)) $ \(cid, len) -> hvmSetClen cid (fromIntegral len)
@@ -85,11 +79,13 @@ loadBook filePath compiled = do
     let cPath = ".build/" ++ fName ++ ".c"
     let oPath = ".build/" ++ fName ++ ".so"
     oldCFile <- tryIOError (readFile' cPath)
-    bookLib <- if oldCFile == Right mainC then dlopen oPath [RTLD_NOW]
-              else do
-                writeFile cPath mainC
-                callCommand $ "gcc -O2 -fPIC -shared " ++ cPath ++ " -o " ++ oPath
-                dlopen oPath [RTLD_NOW]
+    bookLib <- case oldCFile of
+      Right oldC | oldC == mainC -> do
+        dlopen oPath [RTLD_NOW]
+      _ -> do
+        writeFile cPath mainC
+        callCommand $ "gcc -O2 -fPIC -shared " ++ cPath ++ " -o " ++ oPath
+        dlopen oPath [RTLD_NOW]
     forM_ (MS.keys (fidToFun book)) $ \fid -> do
       funPtr <- dlsym bookLib (mget (fidToNam book) fid ++ "_f")
       hvmDefine fid funPtr
@@ -98,18 +94,10 @@ loadBook filePath compiled = do
     callFFI hvmSetState retVoid [argPtr hvmGotState]
   return book
 
--- Injects a call to the main function at the root of the term
-injectMain :: Book -> [Core] -> IO ()
-injectMain book args = do
-  -- Abort when wrong number of args
-  let ((_, mainArgs), _) = mget (fidToFun book) (mget (namToFid book) "main")
-  when (length args /= length mainArgs) $ do
-    putStrLn $ "Error: 'main' expects " ++ show (length mainArgs)
-              ++ " arguments, found " ++ show (length args)
-    exitWith (ExitFailure 1)
-  let fid = mget (namToFid book) "main"
-  let main = Ref "main" fid args
-  _ <- doInjectCoreAt book main 0 []
+injectRoot :: Book -> Core -> IO ()
+injectRoot book root = do
+  let (book', root') = adjust book root []
+  doInjectCoreAt book' root' 0 []
   return ()
 
 withRunStats :: IO a -> IO (a, RunStats)
@@ -119,8 +107,8 @@ withRunStats action = do
   end  <- getMonotonicTimeNSec
   itrs <- getItr
   size <- getLen
-  let time = fromIntegral (end - init) / (10^9) :: Double
-  let mips = (fromIntegral itrs / 1000000.0) / time
+  let time  = fromIntegral (end - init) / (10^9) :: Double
+  let mips  = (fromIntegral itrs / 1000000.0) / time
   let stats = RunStats { rsItrs = itrs, rsSize = size , rsTime = time, rsPerf = mips }
   return (res, stats)
 

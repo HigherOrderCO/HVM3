@@ -17,6 +17,7 @@ import System.Exit (exitWith, ExitCode(ExitSuccess, ExitFailure))
 import System.IO
 import Text.Printf
 import Text.Read (readMaybe)
+import qualified Data.Map.Strict as MS
 
 -- Main
 -- ----
@@ -80,9 +81,11 @@ cliRun :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> [String] -> IO 
 cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
   hvmInit
   book <- loadBook filePath compiled
+  checkHasMain book
   args <- doParseArguments book strArgs
+  checkMainArgs book args
   (_, stats) <- withRunStats $ do
-    injectMain book args
+    injectRoot book (Ref "main" maxBound args)
     rxAt <- if compiled
       then return (reduceCAt debug)
       else return (reduceAt debug)
@@ -90,9 +93,8 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
       Collapse limit -> do
         core <- doCollapseFlatAt rxAt book 0
         let vals = maybe id Prelude.take limit core
-        -- Collapse and print the result line by line
-        forM_ vals $ \term -> do
-          let out = if hideQuotes then removeQuotes (show term) else show term
+        forM_ vals $ \val -> do -- Collapse and print the result line by line lazily
+          let out = if hideQuotes then removeQuotes (show val) else show val
           printf "%s\n" out
       Normalize -> do
         core <- doExtractCoreAt rxAt book 0
@@ -108,6 +110,7 @@ cliServe :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> IO (Either St
 cliServe filePath debug compiled mode showStats hideQuotes = do
   hvmInit
   book <- loadBook filePath compiled
+  checkHasMain book
   putStrLn "HVM serve mode. Listening on port 8080."
   sock <- socket AF_INET Stream 0
   setSocketOption sock ReuseAddr 1
@@ -130,9 +133,11 @@ cliServe filePath debug compiled mode showStats hideQuotes = do
         unless (input == "exit" || input == "quit") $ do
           oldSize <- getLen
           args <- doParseArguments book [input]
-          (vals, stats) <- runBook book args mode compiled debug
-          let output = unlines $ map (\t -> if hideQuotes then removeQuotes (show t) else show t) vals
-          hPutStrLn h output
+          checkMainArgs book args
+          let root = Ref "main" maxBound args
+          (vals, stats) <- runBook book root mode compiled debug
+          let out = unlines $ map (\t -> if hideQuotes then removeQuotes (show t) else show t) vals
+          hPutStrLn h out
           when showStats $ do
             hPutStrLn h (show stats)
           setItr 0
@@ -150,3 +155,16 @@ removeQuotes :: String -> String
 removeQuotes s = case s of
   '"':rest -> init rest  -- Remove first and last quote if present
   _        -> s          -- Otherwise return as-is
+
+checkHasMain :: Book -> IO ()
+checkHasMain book = do
+  when (not $ MS.member "main" (namToFid book)) $ do
+    putStrLn "Error: 'main' not found."
+    exitWith (ExitFailure 1)
+
+checkMainArgs :: Book -> [Core] -> IO ()
+checkMainArgs book args = do
+  let ((_, mainArgs), _) = mget (fidToFun book) (mget (namToFid book) "main")
+  when (length args /= length mainArgs) $ do
+    putStrLn $ "Error: 'main' expects " ++ show (length mainArgs) ++ " arguments, found " ++ show (length args)
+    exitWith (ExitFailure 1)
