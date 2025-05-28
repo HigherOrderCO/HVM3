@@ -188,15 +188,24 @@ insertDups fresh binds term =
     -- Adds Dups if the new vars are used more than once.
     withBinds :: [String] -> Core -> State (Lab, MS.Map String [String]) Core
     withBinds vars term = do
-      (_, prev) <- get
+      (lab, prev) <- get
       -- Add the new binds
-      let tmp = MS.fromList [(stripName var, []) | var <- vars]
-      modify (\(lab, uses) -> (lab, MS.union tmp uses))
+      let bfor = foldr addVar prev vars
+      put (lab, bfor)
       term <- go term
-      term <- foldM applyDups term (reverse vars)
+      term <- foldM applyDups term vars
       -- Remove the new binds
-      modify (\(lab, uses) -> (lab, MS.union (MS.difference uses tmp) prev))
+      (lab, aftr) <- get
+      let next = foldr (restoreVar prev) (foldr remVar aftr vars) vars
+      put (lab, next)
       return term
+      where
+        addVar var uses = MS.insert (stripName var) [] uses
+        remVar var uses = MS.delete (stripName var) uses
+        restoreVar old var new = 
+          case MS.lookup (stripName var) old of
+            Just val -> MS.insert (stripName var) val new
+            Nothing  -> new
 
     applyDups :: Core -> String -> State (Lab, MS.Map String [String]) Core
     applyDups body var = do
@@ -230,14 +239,15 @@ insertDups fresh binds term =
           modify (\(lab, uses) -> (lab, MS.insert nam [nam] uses))
           return nam
         vUse -> do
-          let dupNam = nam ++ "_dup" ++ show (length vUse)
+          let dupNam = nam ++ "$dup" ++ show (length vUse)
           modify (\(lab, uses) -> (lab, MS.insert nam (dupNam : vUse) uses))
           return dupNam
 
 -- Strip the & prefix from a non-linear variable name
 -- e.g., "&x" -> "x", "x" -> "x"
 stripName :: String -> String
-stripName var = if not (null var) && head var == '&' then tail var else var
+stripName ('&':nam) = nam
+stripName nam       = nam
 
 
 -- Gives unique names to lexically scoped vars, unless they start with '$'.
