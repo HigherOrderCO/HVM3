@@ -560,6 +560,7 @@ escaped
 -- ------------
 
 -- Parse Book and Core
+doParseBook :: String -> String -> IO Book
 doParseBook filePath code = do
   result <- runParserT p (ParserState MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty 0) "" code
   case result of
