@@ -43,6 +43,14 @@ runHVM filePath root mode = do
   hvmFree
   return (vals, stats)
 
+runHVMStatic :: String -> Core -> RunMode -> IO ([Core], RunStats)
+runHVMStatic code root mode = do
+  hvmInit
+  book <- loadBookCode code True
+  (vals, stats) <- runBook book root mode True False
+  hvmFree
+  return (vals, stats)
+
 runBook :: Book -> Core -> RunMode -> Bool -> Bool -> IO ([Core], RunStats)
 runBook book root mode compiled debug =
   withRunStats $ do
@@ -67,6 +75,38 @@ loadBook filePath compiled = do
   code <- readFile' filePath
   book <- doParseBook filePath code
 
+  forM_ (MS.toList (cidToAri book)) $ \(cid, ari) -> hvmSetCari cid (fromIntegral ari)
+  forM_ (MS.toList (cidToLen book)) $ \(cid, len) -> hvmSetClen cid (fromIntegral len)
+  forM_ (MS.toList (cidToADT book)) $ \(cid, adt) -> hvmSetCadt cid (fromIntegral adt)
+  forM_ (MS.toList (fidToFun book)) $ \(fid, ((_, args), _)) -> hvmSetFari fid (fromIntegral $ length args)
+
+  when compiled $ do
+    let mainC = compileBook book runtime_c
+    callCommand "mkdir -p .build"
+    let fName = last $ words $ map (\c -> if c == '/' then ' ' else c) filePath
+    let cPath = ".build/" ++ fName ++ ".c"
+    let oPath = ".build/" ++ fName ++ ".so"
+    oldCFile <- tryIOError (readFile' cPath)
+    bookLib <- case oldCFile of
+      Right oldC | oldC == mainC -> do
+        dlopen oPath [RTLD_NOW]
+      _ -> do
+        writeFile cPath mainC
+        callCommand $ "gcc -O2 -fPIC -shared " ++ cPath ++ " -o " ++ oPath
+        dlopen oPath [RTLD_NOW]
+    forM_ (MS.keys (fidToFun book)) $ \fid -> do
+      funPtr <- dlsym bookLib (mget (fidToNam book) fid ++ "_f")
+      hvmDefine fid funPtr
+    hvmGotState <- hvmGetState
+    hvmSetState <- dlsym bookLib "hvm_set_state"
+    callFFI hvmSetState retVoid [argPtr hvmGotState]
+  return book
+
+
+loadBookCode :: String -> Bool -> IO Book
+loadBookCode code compiled = do
+  let filePath = "."
+  book <- doParseBook filePath code
   forM_ (MS.toList (cidToAri book)) $ \(cid, ari) -> hvmSetCari cid (fromIntegral ari)
   forM_ (MS.toList (cidToLen book)) $ \(cid, len) -> hvmSetClen cid (fromIntegral len)
   forM_ (MS.toList (cidToADT book)) $ \(cid, adt) -> hvmSetCadt cid (fromIntegral adt)
