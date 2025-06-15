@@ -46,7 +46,7 @@ runHVM filePath root mode = do
 runHVMStatic :: String -> Core -> RunMode -> IO ([Core], RunStats)
 runHVMStatic code root mode = do
   hvmInit
-  book <- loadBookCode code True
+  book <- loadBookStatic code True
   (vals, stats) <- runBook book root mode True False
   hvmFree
   return (vals, stats)
@@ -103,8 +103,8 @@ loadBook filePath compiled = do
   return book
 
 
-loadBookCode :: String -> Bool -> IO Book
-loadBookCode code compiled = do
+loadBookStatic :: String -> Bool -> IO Book
+loadBookStatic code compiled = do
   let filePath = "."
   book <- doParseBook filePath code
   forM_ (MS.toList (cidToAri book)) $ \(cid, ari) -> hvmSetCari cid (fromIntegral ari)
