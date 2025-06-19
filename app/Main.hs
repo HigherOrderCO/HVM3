@@ -3,7 +3,7 @@ module Main where
 import Network.Socket as Network
 import System.IO (hSetEncoding, utf8, hPutStrLn, stderr)
 import Control.Exception (try, fromException, SomeException, finally, AsyncException(UserInterrupt))
-import Control.Monad (when, forM_, unless)
+import Control.Monad (when, forM_, unless, foldM)
 import Data.List (partition, isPrefixOf, find)
 import HVM.API
 import HVM.Collapse
@@ -80,8 +80,8 @@ printHelp = do
 -- CLI Commands
 -- ------------
 
-cliRun :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> [String] -> IO (Either String ())
-cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
+cliRun :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> Bool -> [String] -> IO (Either String ())
+cliRun filePath debug compiled mode showStats hideQuotes interactions strArgs = do
   hvmInit
   book <- loadBook filePath compiled
   checkHasMain book
@@ -104,11 +104,11 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
         let val = doLiftDups core
         let out = if hideQuotes then removeQuotes (show val) else show val
         printf "%s\n" out
-  hvmFree
   when showStats $ do
     print stats
   when interactions $ do
     printInteractions book
+  hvmFree
   return $ Right ()
 
 cliServe :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> IO (Either String ())
@@ -232,6 +232,7 @@ printInteractions book = do
         (formatLargeNumber refSup)
         (formatLargeNumber refEra)
         (formatLargeNumber refSlow))
+  return ()
 
 -- Helper to format large numbers
 formatLargeNumber :: Word64 -> String
