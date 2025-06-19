@@ -33,8 +33,7 @@ injectCore _ (Var nam) loc = do
   case MS.lookup nam argsMap of
     Just term -> do
       lift $ set loc term
-      when (head nam /= '&') $ do
-        modify $ \s -> s { args = MS.delete nam (args s) }
+      modify $ \s -> s { args = MS.delete nam (args s) }
     Nothing -> do
       modify $ \s -> s { vars = (nam, loc) : vars s }
 
@@ -139,7 +138,7 @@ doInjectCoreAt book core host argList = do
         set loc term
         return $ MS.delete name m
       Nothing -> do
-        error $ "Unbound variable: \n\x1b[2m" ++ name ++ "\n\x1b[0mIn term:\n\x1b[2m" ++ Data.List.take 1024 (show core) ++ "...\x1b[0m")
+        error $ "Unbound variable: \n\x1b[2m" ++ name ++ "\n\x1b[0mIn term:\n\x1b[2m" ++ Data.List.take 1024 (showCore core) ++ "...\x1b[0m")
     (args state)
     (vars state)
   got host

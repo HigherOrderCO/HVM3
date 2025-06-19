@@ -19,6 +19,10 @@ library
                       hs-highlight ^>= 1.0.3,
                       ansi-terminal == 1.1.1,
                       file-embed,
+                      process,
+                      libffi,
+                      unix,
+                      deepseq
     exposed-modules:  HVM.Type
                     , HVM.Collapse
                     , HVM.Compile
@@ -26,20 +30,19 @@ library
                     , HVM.Foreign
                     , HVM.Inject
                     , HVM.Parse
+                    , HVM.Adjust
                     , HVM.Reduce
+                    , HVM.API
     other-modules:
     hs-source-dirs:   src
     c-sources:        src/HVM/Runtime.c
     extra-libraries:  c
     ghc-options:     -Wno-all
 
-executable hvm3
+executable hvm
     default-language: GHC2024
     build-depends:    base ^>=4.21.0.0,
                       containers ^>=0.7,
-                      process,
-                      libffi,
-                      unix,
                       network
     main-is:          Main.hs
     build-depends:    HVM

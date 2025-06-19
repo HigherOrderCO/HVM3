@@ -1,4 +1,5 @@
 {-./Type.hs-}
+{-# LANGUAGE BangPatterns #-}
 
 module HVM.Collapse where
 
@@ -30,10 +31,10 @@ data Bin
 
 -- A Collapse is a tree of superposed values
 data Collapse a
-  = CSup Lab (Collapse a) (Collapse a)
+  = CSup !Lab (Collapse a) (Collapse a)
   | CInc (Collapse a)
   | CDec (Collapse a)
-  | CVal a
+  | CVal !a
   | CEra
   deriving Show
 
@@ -336,6 +337,9 @@ doCollapseAt reduceAt book host = do
 
 data SQ a = SQ [a] [a]
 
+sqNew :: SQ a
+sqNew = SQ [] []
+
 sqPop :: SQ a -> Maybe (a, SQ a)
 sqPop (SQ [] [])     = Nothing
 sqPop (SQ [] ys)     = sqPop (SQ (reverse ys) [])
@@ -429,7 +433,7 @@ flattenDFS (CDec x)     = flattenDFS x
 flattenDFS CEra         = []
 
 flattenBFS :: Collapse a -> [a]
-flattenBFS term = go term (SQ [] [] :: SQ (Collapse a)) where
+flattenBFS term = go term (sqNew :: SQ (Collapse a)) where
   go (CSup k a b) sq = go CEra (sqPut b $ sqPut a $ sq)
   go (CVal x)     sq = x : go CEra sq
   go (CInc x)     sq = go x sq

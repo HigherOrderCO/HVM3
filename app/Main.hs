@@ -3,38 +3,25 @@ module Main where
 import Network.Socket as Network
 import System.IO (hSetEncoding, utf8, hPutStrLn, stderr)
 import Control.Exception (try, fromException, SomeException, finally, AsyncException(UserInterrupt))
-import Control.Monad (guard, when, foldM, forM_, unless)
-import Data.List (partition, isPrefixOf, take, find)
-import Foreign.LibFFI
-import GHC.Clock
+import Control.Monad (when, forM_, unless)
+import Data.List (partition, isPrefixOf, find)
+import HVM.API
 import HVM.Collapse
-import HVM.Compile
 import HVM.Extract
 import HVM.Foreign
-import HVM.Inject
 import HVM.Parse
 import HVM.Reduce
 import HVM.Type
 import System.Environment (getArgs)
 import System.Exit (exitWith, ExitCode(ExitSuccess, ExitFailure))
 import System.IO
-import System.IO (readFile')
-import System.IO.Error (tryIOError)
-import System.Posix.DynamicLinker
-import System.Process (callCommand)
 import Text.Printf
-import Data.IORef
-import qualified Data.Map.Strict as MS
 import Text.Read (readMaybe)
 import Data.Word
+import qualified Data.Map.Strict as MS
 
 -- Main
 -- ----
-
-data RunMode
-  = Normalize
-  | Collapse (Maybe Int)
-  deriving Eq
 
 main :: IO ()
 main = do
@@ -93,66 +80,42 @@ printHelp = do
 -- CLI Commands
 -- ------------
 
-
-cliRun :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> Bool -> [String] -> IO (Either String ())
-cliRun filePath debug compiled mode showStats hideQuotes interactions strArgs = do
+cliRun :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> [String] -> IO (Either String ())
+cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
+  hvmInit
   book <- loadBook filePath compiled
-  -- Abort when wrong number of strArgs
-  let ((_, mainArgs), _) = mget (fidToFun book) (mget (namToFid book) "main")
-  when (length strArgs /= length mainArgs) $ do
-    putStrLn $ "Error: 'main' expects " ++ show (length mainArgs)
-              ++ " arguments, found " ++ show (length strArgs)
-    exitWith (ExitFailure 1)
-  -- Normalize main
-  init <- getMonotonicTimeNSec
-  root <- injectMain book strArgs
-  rxAt <- if compiled
-    then return (reduceCAt debug)
-    else return (reduceAt debug)
-  vals <- case mode of
-    Collapse _ -> doCollapseFlatAt rxAt book 0
-    Normalize -> do
-      core <- doExtractCoreAt rxAt book 0
-      return [(doLiftDups core)]
-  -- Print results
-  case mode of
-    Collapse limit -> do
-      lastItrs <- newIORef 0
-      let limitedVals = maybe id Data.List.take limit vals
-      forM_ limitedVals $ \ term -> do
-        currItrs <- getItr
-        prevItrs <- readIORef lastItrs
-        let output = if hideQuotes then removeQuotes (show term) else show term
-        printf "%s\n" output
-        writeIORef lastItrs currItrs
-      putStrLn ""
-    Normalize -> do
-      let output = if hideQuotes
-                   then removeQuotes (show (head vals))
-                   else show (head vals)
-      putStrLn output
-  -- Prints total time
-  end <- getMonotonicTimeNSec
-  -- Show stats
+  checkHasMain book
+  args <- doParseArguments book strArgs
+  checkMainArgs book args
+  (_, stats) <- withRunStats $ do
+    injectRoot book (Ref "main" maxBound args)
+    rxAt <- if compiled
+      then return (reduceCAt debug)
+      else return (reduceAt debug)
+    case mode of
+      Collapse limit -> do
+        core <- doCollapseFlatAt rxAt book 0
+        let vals = maybe id Prelude.take limit core
+        forM_ vals $ \val -> do -- Collapse and print the result line by line lazily
+          let out = if hideQuotes then removeQuotes (show val) else show val
+          printf "%s\n" out
+      Normalize -> do
+        core <- doExtractCoreAt rxAt book 0
+        let val = doLiftDups core
+        let out = if hideQuotes then removeQuotes (show val) else show val
+        printf "%s\n" out
+  hvmFree
   when showStats $ do
-    itrs <- getItr
-    size <- getLen
-    let time = fromIntegral (end - init) / (10^9) :: Double
-    let mips = (fromIntegral itrs / 1000000.0) / time
-    printf "WORK: %llu interactions\n" itrs
-    printf "TIME: %.7f seconds\n" time
-    printf "SIZE: %llu nodes\n" size
-    printf "PERF: %.3f MIPS\n" mips
-    return ()
+    print stats
   when interactions $ do
     printInteractions book
-  -- Finalize
-  hvmFree
   return $ Right ()
 
 cliServe :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> IO (Either String ())
 cliServe filePath debug compiled mode showStats hideQuotes = do
+  hvmInit
   book <- loadBook filePath compiled
+  checkHasMain book
   putStrLn "HVM serve mode. Listening on port 8080."
   sock <- socket AF_INET Stream 0
   setSocketOption sock ReuseAddr 1
@@ -173,38 +136,15 @@ cliServe filePath debug compiled mode showStats hideQuotes = do
         hSetEncoding h utf8
         input <- hGetLine h
         unless (input == "exit" || input == "quit") $ do
-          -- Start measuring time before processing
-          startTime <- getMonotonicTimeNSec
           oldSize <- getLen
-          root <- injectMain book [input]
-          rxAt <- if compiled then return (reduceCAt debug) else return (reduceAt debug)
-          vals <- case mode of
-            Collapse _ -> doCollapseFlatAt rxAt book 0
-            Normalize -> do
-              core <- doExtractCoreAt rxAt book 0
-              return [doLiftDups core]
-          let output = case mode of
-                Collapse limit -> do
-                  let limitedVals = maybe id Data.List.take limit vals
-                  let outputs = map (\term -> if hideQuotes then removeQuotes (show term) else show term) limitedVals
-                  unlines outputs
-                Normalize -> do
-                  let result = head vals
-                  if hideQuotes then removeQuotes (show result) else show result
-
-          hPutStrLn h output
-          endTime <- getMonotonicTimeNSec
-          let timeTaken = fromIntegral (endTime - startTime) / 1e9 :: Double
+          args <- doParseArguments book [input]
+          checkMainArgs book args
+          let root = Ref "main" maxBound args
+          (vals, stats) <- runBook book root mode compiled debug
+          let out = unlines $ map (\t -> if hideQuotes then removeQuotes (show t) else show t) vals
+          hPutStrLn h out
           when showStats $ do
-            itrs <- getItr
-            size <- getLen
-            -- Calculate MIPS, avoiding division by zero
-            let mips = if timeTaken > 0 then (fromIntegral itrs / 1000000.0) / timeTaken else 0
-            hPutStrLn h $ "WORK: " ++ show itrs ++ " interactions"
-            hPutStrLn h $ "TIME: " ++ printf "%.7f" timeTaken ++ " seconds"
-            hPutStrLn h $ "SIZE: " ++ show size ++ " nodes"
-            hPutStrLn h $ "PERF: " ++ printf "%.3f" mips ++ " MIPS"
-
+            hPutStrLn h (show stats)
           setItr 0
           setLen oldSize
         hClose h
@@ -216,52 +156,16 @@ cliServe filePath debug compiled mode showStats hideQuotes = do
             serverLoop sock book
         Right _ -> serverLoop sock book
 
+removeQuotes :: String -> String
+removeQuotes s = case s of
+  '"':rest -> init rest  -- Remove first and last quote if present
+  _        -> s          -- Otherwise return as-is
 
--- Load and initialize a book from a file
-loadBook :: FilePath -> Bool -> IO Book
-loadBook filePath compiled = do
-  hvmInit
-  code <- readFile' filePath
-  book <- doParseBook filePath code
-
-  -- Abort when main isn't present
+checkHasMain :: Book -> IO ()
+checkHasMain book = do
   when (not $ MS.member "main" (namToFid book)) $ do
     putStrLn "Error: 'main' not found."
     exitWith (ExitFailure 1)
-
-  forM_ (MS.toList (cidToAri book)) $ \ (cid, ari) -> do
-    hvmSetCari cid (fromIntegral ari)
-  forM_ (MS.toList (cidToLen book)) $ \ (cid, len) -> do
-    hvmSetClen cid (fromIntegral len)
-  forM_ (MS.toList (cidToADT book)) $ \ (cid, adt) -> do
-    hvmSetCadt cid (fromIntegral adt)
-  forM_ (MS.toList (fidToFun book)) $ \ (fid, ((_, args), _)) -> do
-    hvmSetFari fid (fromIntegral $ length args)
-
-  when compiled $ do
-    let mainC = compileBook book runtime_c
-    -- Try to use a cached .so file
-    callCommand "mkdir -p .build"
-    let fName = last $ words $ map (\c -> if c == '/' then ' ' else c) filePath
-    let cPath = ".build/" ++ fName ++ ".c"
-    let oPath = ".build/" ++ fName ++ ".so"
-
-    oldCFile <- tryIOError (readFile' cPath)
-    bookLib <- if oldCFile == Right mainC then do
-      dlopen oPath [RTLD_NOW]
-    else do
-      writeFile cPath mainC
-      callCommand $ "gcc -O2 -fPIC -shared " ++ cPath ++ " -o " ++ oPath
-      dlopen oPath [RTLD_NOW]
-
-    forM_ (MS.keys (fidToFun book)) $ \ fid -> do
-      funPtr <- dlsym bookLib (mget (fidToNam book) fid ++ "_f")
-      hvmDefine fid funPtr
-    -- Link compiled state
-    hvmGotState <- hvmGetState
-    hvmSetState <- dlsym bookLib "hvm_set_state"
-    callFFI hvmSetState retVoid [argPtr hvmGotState]
-  return book
 
 -- | Prints interaction statistics with function names from the Book
 printInteractions :: Book -> IO ()
@@ -335,18 +239,9 @@ formatLargeNumber n
   | n < 1000000 = show n
   | otherwise     = printf "%.3f M" (fromIntegral n / 1000000.0 :: Double)
 
--- Parse arguments and create a term with the given function name
-injectMain :: Book -> [String] -> IO Term
-injectMain book args = do
-  (book, parsedArgs) <- foldM (\(b, as) str -> do
-                               (b', a) <- doParseArgument str b
-                               return (b', a:as)) (book, []) args
-  let fid = mget (namToFid book) "main"
-  let main = Ref "main" fid (reverse parsedArgs)
-  root <- doInjectCoreAt book main 0 []
-  return root
-
-removeQuotes :: String -> String
-removeQuotes s = case s of
-  '"':rest -> init rest  -- Remove first and last quote if present
-  _        -> s          -- Otherwise return as-is
+checkMainArgs :: Book -> [Core] -> IO ()
+checkMainArgs book args = do
+  let ((_, mainArgs), _) = mget (fidToFun book) (mget (namToFid book) "main")
+  when (length args /= length mainArgs) $ do
+    putStrLn $ "Error: 'main' expects " ++ show (length mainArgs) ++ " arguments, found " ++ show (length args)
+    exitWith (ExitFailure 1)

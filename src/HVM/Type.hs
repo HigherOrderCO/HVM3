@@ -4,15 +4,17 @@ import Data.Word
 import Foreign.Ptr
 
 import Control.Applicative ((<|>))
+import Control.DeepSeq
 import Control.Monad (forM)
 import Data.Char (chr, ord)
 import Data.Char (intToDigit)
 import Data.IORef
 import Data.List
 import Data.Word
+import GHC.Stack (HasCallStack)
 import Numeric (showIntAtBase)
 import System.IO.Unsafe (unsafePerformIO)
-import qualified Data.Map.Strict as MS hiding (map)
+import qualified Data.Map.Strict as MS
 
 -- Core Types
 -- ----------
@@ -130,8 +132,7 @@ primitives =
 -- -----
 
 -- Getter function for maps
--- TODO: add the type annotation for mget
-mget :: (Ord k, Show k) => MS.Map k a -> k -> a
+mget :: (Ord k, Show k, HasCallStack) => MS.Map k a -> k -> a
 mget map key =
   case MS.lookup key map of
     Just val -> val
@@ -145,6 +146,24 @@ funArity book fid
   | otherwise = case MS.lookup fid (fidToFun book) of
       Just ((_, args), _) -> fromIntegral (length args)
       Nothing -> error $ "Function ID not found: " ++ show fid
+
+instance NFData Core where
+  rnf (Var k)           = rnf k
+  rnf (Ref k i xs)      = rnf k `seq` rnf i `seq` rnf xs
+  rnf Era               = ()
+  rnf (Lam x f)         = rnf x `seq` rnf f
+  rnf (App f x)         = rnf f `seq` rnf x
+  rnf (Sup l a b)       = rnf l `seq` rnf a `seq` rnf b
+  rnf (Dup l x y v f)   = rnf l `seq` rnf x `seq` rnf y `seq` rnf v `seq` rnf f
+  rnf (Ctr k xs)        = rnf k `seq` rnf xs
+  rnf (U32 v)           = rnf v
+  rnf (Chr v)           = rnf v
+  rnf (Op2 o a b)       = o `seq` rnf a `seq` rnf b
+  rnf (Let m k v f)     = m `seq` rnf k `seq` rnf v `seq` rnf f
+  rnf (Mat k v m ks)    = k `seq` rnf v `seq` rnf m `seq` rnf ks
+  rnf (Inc x)           = rnf x
+  rnf (Dec x)           = rnf x
+
 
 -- Stringification
 -- ---------------
@@ -263,7 +282,7 @@ showCore core = maybe (format core) id (sugar core) where
   format (Mat k v m ks) =
     let v'  = showCore v in
     let m'  = concatMap (\(k,v) -> concat [" !", k, "=", showCore v]) m in
-    let ks' = unwords [concat [c, ":", showCore b] | (c, _, b) <- ks] in
+    let ks' = unwords [concat [c, ":", showCore b] | (c, vs, b) <- ks] in
     concat ["(~", v', m', " {", ks', "})"]
   format (U32 v) =
     show v
@@ -327,8 +346,11 @@ renamer names core = case core of
     return $ Ctr k xs'
   Mat k v m ks -> do
     v'  <- renamer names v
-    m'  <- forM m $ \ (k,v) -> do v' <- renamer names v; return (k,v')
-    ks' <- forM ks $ \ (c,vs,t) -> do t' <- renamer names t; return (c,vs,t')
+    m'  <- forM m $ \(k,v) -> do v' <- renamer names v; return (k,v')
+    ks' <- forM ks $ \(c,vs,t) -> do
+      vs' <- mapM (genName names) vs
+      t'  <- renamer names t
+      return (c,vs',t')
     return $ Mat k v' m' ks'
   Op2 o a b -> do
     a' <- renamer names a
@@ -349,12 +371,13 @@ renamer names core = case core of
 genName :: IORef (MS.Map String String) -> String -> IO String
 genName names name =
   atomicModifyIORef' names $ \map ->
-    case MS.lookup name map of
+    case MS.lookup (strip name) map of
       Just val -> (map, val)
       Nothing  ->
         let new  = showName (MS.size map)
-            map' = MS.insert name new map
+            map' = MS.insert (strip name) new map
         in (map', new)
+  where strip name = if "&" `isPrefixOf` name then tail name else name
 
 instance Show Core where
   show = showCore . rename
