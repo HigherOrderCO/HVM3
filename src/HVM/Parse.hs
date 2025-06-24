@@ -216,6 +216,7 @@ parseCtrCase :: [String] -> ParserM (String, [String], Core)
 parseCtrCase mov = do
   consume "#"
   name <- parseName1
+  skip
   vars <- option [] $ do
     consume "{"
     vars <- many $ do
