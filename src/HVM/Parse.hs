@@ -487,7 +487,9 @@ parseTopImp = do
     st       <- getState
     result   <- liftIO $ runParserT parseBookWithState st path contents
     case result of
-      Left err -> handleParseError path contents err
+      Left err -> do
+        liftIO $ showParseError path contents err
+        fail $ "Error importing file " ++ show path ++ ": parse failed"
       Right (importedDefs, importedState) -> do
         putState importedState
         skip
@@ -622,11 +624,6 @@ doParseArguments book (arg:args) = do
 -- Errors
 -- ------
 
-handleParseError :: String -> String -> ParseError -> ParserM a
-handleParseError path contents err = do
-  liftIO $ showParseError path contents err
-  fail $ "Error importing file " ++ show path ++ ": parse failed"
-
 extractExpectedTokens :: ParseError -> String
 extractExpectedTokens err =
     let msgs = errorMessages err
@@ -646,7 +643,7 @@ showParseError filename input err = do
   let errorMsg = extractExpectedTokens err
   putStr $ setSGRCode [SetConsoleIntensity BoldIntensity] ++ "\nPARSE_ERROR" ++ setSGRCode [Reset]
   putStr " ("
-  putStr $ setSGRCode [SetUnderlining SingleUnderline] ++ filename ++ setSGRCode [Reset]
+  putStr $ setSGRCode [SetUnderlining SingleUnderline] ++ filename ++ ":" ++ show lin ++ ":" ++ show col ++ setSGRCode [Reset]
   putStrLn ")"
   if any isMessage (errorMessages err)
     then putStrLn $ "- " ++ errorMsg
