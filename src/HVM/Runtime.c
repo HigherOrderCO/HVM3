@@ -425,7 +425,7 @@ Term reduce_app_sup(Term app, Term sup) {
 // ⊥
 Term reduce_app_ctr(Term app, Term ctr) {
   //printf("reduce_app_ctr "); print_term(app); printf("\n");
-  printf("invalid:app-ctr");
+  printf("invalid:app-ctr(%lu)", (unsigned long)term_lab(ctr));
   exit(0);
 }
 
@@ -434,7 +434,7 @@ Term reduce_app_ctr(Term app, Term ctr) {
 // ⊥
 Term reduce_app_w32(Term app, Term w32) {
   //printf("reduce_app_w32 "); print_term(app); printf("\n");
-  printf("invalid:app-w32");
+  printf("invalid:app-w32(%llu)", (unsigned long long)term_loc(w32));
   exit(0);
 }
 
