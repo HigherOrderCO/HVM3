@@ -768,14 +768,14 @@ compileFastVar var = do
       return $ "<ERR>"
 
 checkRefAri :: Book -> Word16 -> Core -> Compile ()
-checkRefAri book fid core = do
+checkRefAri book orig core = do
   case core of
     Ref nam lab arg -> do
       let fid = fromIntegral lab
       let ari = funArity book fid
       let len = length arg
       when (ari /= fromIntegral len) $ do
-        let nam = mget (fidToNam book) fid
+        let nam = mget (fidToNam book) orig
         error $ "On function @" ++ nam ++ ": Arity mismatch on term: " ++ show core ++ ". Expected " ++ show ari ++ ", got " ++ show len ++ "."
     _ -> return ()
 
