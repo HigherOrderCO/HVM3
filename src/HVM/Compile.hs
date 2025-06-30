@@ -293,6 +293,7 @@ compileFastArgs book fid body ctx = do
 -- Compiles a fast function body (pattern-matching)
 compileFastBody :: Book -> Word16 -> Core -> [String] -> Bool -> Int -> Compile ()
 compileFastBody book fid term@(Mat kin val mov css) ctx stop@False itr = do
+  checkUniqueCases book fid css
   valT   <- compileFastCore book fid val
   valNam <- fresh "val"
   emit $ "Term " ++ valNam ++ " = (" ++ valT ++ ");"
@@ -349,6 +350,7 @@ compileFastBody book fid term@(Mat kin val mov css) ctx stop@False itr = do
   else if (case kin of { (IFL _) -> True ; _ -> False }) then do
     let (Var defNam) = val
     let css          = undoIfLetChain defNam term
+    checkUniqueCases book fid (map snd css)
     let (_, dflt)    = last css
     let othCss       = init css
     emit $ "if (term_tag(" ++ valNam ++ ") == CTR) {"
@@ -444,6 +446,14 @@ compileFastBody book fid term@(Mat kin val mov css) ctx stop@False itr = do
         then (mov, (ctr, fds, bod)) : undoIfLetChain nxtNam rest
         else [([], ("_", [expNam], term))]
     undoIfLetChain expNam term = [([], ("_", [expNam], term))]
+
+    checkUniqueCases :: Book -> Word16 -> [(String, [String], Core)] -> Compile ()
+    checkUniqueCases book orig css = do
+      let ctrs   = map (\(ctr, _, _) -> ctr) css
+      let repeat = filter (\x -> length (filter (== x) ctrs) > 1) ctrs
+      case repeat of
+        []      -> return ()
+        (ctr:_) -> error $ "In function @" ++ mget (fidToNam book) orig ++ ": Duplicate constructor " ++ ctr ++ "."
 
 compileFastBody book fid term@(Dup lab dp0 dp1 val bod) ctx stop itr = do
   valT <- compileFastCore book fid val
