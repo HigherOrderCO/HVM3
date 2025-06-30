@@ -211,7 +211,7 @@ compileFullCore book fid (Op2 opr nu0 nu1) host = do
   return $ "term_new(OPX, " ++ show (fromEnum opr) ++ ", " ++ opxNam ++ ")"
 
 compileFullCore book fid t@(Ref rNam rFid rArg) host = do
-  checkRefAri book t
+  checkRefAri book fid t
   refNam <- fresh "ref"
   let arity = length rArg
   emit $ "Loc " ++ refNam ++ " = alloc_node(" ++ show arity ++ ");"
@@ -480,7 +480,7 @@ compileFastBody book fid term@(Let mode var val bod) ctx stop itr = do
     STRI -> do
       case val of
         t@(Ref _ rFid _) -> do
-          checkRefAri book t
+          checkRefAri book fid t
           valNam <- fresh "val"
           emit $ "Term " ++ valNam ++ " = reduce(" ++ mget (fidToNam book) rFid ++ "_f(" ++ valT ++ "));"
           bind var valNam
@@ -493,7 +493,7 @@ compileFastBody book fid term@(Let mode var val bod) ctx stop itr = do
 compileFastBody book fid term@(Ref fNam fFid fArg) ctx stop itr
   -- Tail-call optimization
   | fFid == fid = do
-    checkRefAri book term
+    checkRefAri book fid term
     forM_ (zip fArg ctx) $ \ (arg, ctxVar) -> do
       argT <- compileFastCore book fid arg
       emit $ "" ++ ctxVar ++ " = " ++ argT ++ ";"
@@ -735,7 +735,7 @@ compileFastCore book fid (Op2 opr nu0 nu1) = do
   return $ retNam
 
 compileFastCore book fid t@(Ref rNam rFid rArg) = do
-  checkRefAri book t
+  checkRefAri book fid t
   refNam <- fresh "ref"
   let arity = length rArg
   compileFastAlloc refNam arity
@@ -767,15 +767,16 @@ compileFastVar var = do
     Nothing -> do
       return $ "<ERR>"
 
-checkRefAri :: Book -> Core -> Compile ()
-checkRefAri book core = do
+checkRefAri :: Book -> Word16 -> Core -> Compile ()
+checkRefAri book fid core = do
   case core of
     Ref nam lab arg -> do
       let fid = fromIntegral lab
       let ari = funArity book fid
       let len = length arg
       when (ari /= fromIntegral len) $ do
-        error $ "Arity mismatch on term: " ++ show core ++ ". Expected " ++ show ari ++ ", got " ++ show len ++ "."
+        let nam = mget (fidToNam book) fid
+        error $ "On function @" ++ nam ++ ": Arity mismatch on term: " ++ show core ++ ". Expected " ++ show ari ++ ", got " ++ show len ++ "."
     _ -> return ()
 
 -- Generates the forward declarations of the compiled C functions
