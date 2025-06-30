@@ -169,7 +169,7 @@ compileFullCore book fid (Dup lab dp0 dp1 val bod) host = do
 compileFullCore book fid (Ctr nam fds) host = do
   ctrNam <- fresh "ctr"
   let arity = length fds
-  let cid = mget (ctrToCid book) nam
+  let cid = mgetCtrToCid book fid nam
   emit $ "Loc " ++ ctrNam ++ " = alloc_node(" ++ show arity ++ ");"
   fdsT <- mapM (\ (i,fd) -> compileFullCore book fid fd (ctrNam ++ " + " ++ show i)) (zip [0..] fds)
   sequence_ [emit $ "set(" ++ ctrNam ++ " + " ++ show i ++ ", " ++ fdT ++ ");" | (i,fdT) <- zip [0..] fdsT]
@@ -357,7 +357,7 @@ compileFastBody book fid term@(Mat kin val mov css) ctx stop@False itr = do
     tabInc
     reuse' <- gets reus
     itrA <- foldM (\itr (mov, (ctr, fds, bod)) -> do
-      emit $ "case " ++ show (mget (ctrToCid book) ctr) ++ ": {"
+      emit $ "case " ++ show (mgetCtrToCid book fid ctr) ++ ": {"
       tabInc
       reuse (length fds) ("term_loc(" ++ valNam ++ ")")
       forM_ (zip [0..] fds) $ \(k, fd) -> do
@@ -482,7 +482,7 @@ compileFastBody book fid term@(Let mode var val bod) ctx stop itr = do
         t@(Ref _ rFid _) -> do
           checkRefAri book fid t
           valNam <- fresh "val"
-          emit $ "Term " ++ valNam ++ " = reduce(" ++ mget (fidToNam book) rFid ++ "_f(" ++ valT ++ "));"
+          emit $ "Term " ++ valNam ++ " = reduce(" ++ mgetFidToNam book fid rFid ++ "_f(" ++ valT ++ "));"
           bind var valNam
         _ -> do
           valNam <- fresh "val" 
@@ -661,9 +661,7 @@ compileFastCore book fid (Dup lab dp0 dp1 val bod) = do
 compileFastCore book fid (Ctr nam fds) = do
   ctrNam <- fresh "ctr"
   let ari = length fds
-  let cid = case MS.lookup nam (ctrToCid book) of
-              Just cid -> cid
-              Nothing  -> error $ "In function @" ++ mget (fidToNam book) fid ++ ": Unknown constructor " ++ nam ++ "."
+  let cid = mgetCtrToCid book fid nam
   compileFastAlloc ctrNam ari
   fdsT <- mapM (\ (i,fd) -> compileFastCore book fid fd) (zip [0..] fds)
   sequence_ [emit $ "set(" ++ ctrNam ++ " + " ++ show i ++ ", " ++ fdT ++ ");" | (i,fdT) <- zip [0..] fdsT]
@@ -811,3 +809,18 @@ genMain book = case MS.lookup "main" (namToFid book) of
   Nothing -> ""
   where 
     registerFuncs = unlines ["  hvm_define(" ++ show fid ++ ", " ++ name ++ "_f);" | (fid, name) <- MS.toList (fidToNam book)]
+
+-- Utilities for injecting prettier error messages
+-- ===============================================
+
+mgetCtrToCid :: Book -> Word16 -> String -> Word16
+mgetCtrToCid book orig nam =
+  case MS.lookup nam (ctrToCid book) of
+    Just cid -> cid
+    Nothing  -> error $ "In function @" ++ mget (fidToNam book) orig ++ ": Unknown constructor " ++ nam ++ "."
+
+mgetFidToNam :: Book -> Word16 -> Word16 -> String
+mgetFidToNam book orig fid =
+  case MS.lookup fid (fidToNam book) of
+    Just nam -> nam
+    Nothing  -> error $ "In function @" ++ mget (fidToNam book) orig ++ ": Unknown function " ++ show fid ++ "."
