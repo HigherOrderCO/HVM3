@@ -660,9 +660,11 @@ compileFastCore book fid (Dup lab dp0 dp1 val bod) = do
 
 compileFastCore book fid (Ctr nam fds) = do
   ctrNam <- fresh "ctr"
-  let arity = length fds
-  let cid = mget (ctrToCid book) nam
-  compileFastAlloc ctrNam arity
+  let ari = length fds
+  let cid = case MS.lookup nam (ctrToCid book) of
+              Just cid -> cid
+              Nothing  -> error $ "In function @" ++ mget (fidToNam book) fid ++ ": Unknown constructor " ++ nam ++ "."
+  compileFastAlloc ctrNam ari
   fdsT <- mapM (\ (i,fd) -> compileFastCore book fid fd) (zip [0..] fds)
   sequence_ [emit $ "set(" ++ ctrNam ++ " + " ++ show i ++ ", " ++ fdT ++ ");" | (i,fdT) <- zip [0..] fdsT]
   return $ "term_new(CTR, " ++ show cid ++ ", " ++ ctrNam ++ ")"
