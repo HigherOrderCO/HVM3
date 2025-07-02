@@ -35,21 +35,33 @@ data RunStats = RunStats {
   rsPerf :: Double
 }
 
+-- Main external API for running HVM
 runHVM :: FilePath -> Core -> RunMode -> IO ([Core], RunStats)
 runHVM filePath root mode = do
+  code   <- readFile' filePath
+  book   <- doParseBook filePath code
   hvmInit
-  book <- loadBook filePath True
+  initBook filePath book True
   (vals, stats) <- runBook book root mode True False
   hvmFree
   return (vals, stats)
 
-runHVMStatic :: String -> Core -> RunMode -> IO ([Core], RunStats)
-runHVMStatic code root mode = do
-  hvmInit
-  book <- loadBookStatic code True
-  (vals, stats) <- runBook book root mode True False
-  hvmFree
-  return (vals, stats)
+-- Initializes the runtime with the definitions from a book
+initBook :: FilePath -> Book -> Bool -> IO ()
+initBook filePath book compiled = do
+  forM_ (MS.toList (cidToAri book)) $ \(cid, ari) -> hvmSetCari cid (fromIntegral ari)
+  forM_ (MS.toList (cidToLen book)) $ \(cid, len) -> hvmSetClen cid (fromIntegral len)
+  forM_ (MS.toList (cidToADT book)) $ \(cid, adt) -> hvmSetCadt cid (fromIntegral adt)
+  forM_ (MS.toList (fidToFun book)) $ \(fid, ((_, args), _)) -> hvmSetFari fid (fromIntegral $ length args)
+  when compiled $ do
+    oPath <- compileBookToBin filePath book
+    dylib <- dlopen oPath [RTLD_NOW]
+    forM_ (MS.keys (fidToFun book)) $ \fid -> do
+      funPtr <- dlsym dylib (mget (fidToNam book) fid ++ "_f")
+      hvmDefine fid funPtr
+    hvmGotState <- hvmGetState
+    hvmSetState <- dlsym dylib "hvm_set_state"
+    callFFI hvmSetState retVoid [argPtr hvmGotState]
 
 runBook :: Book -> Core -> RunMode -> Bool -> Bool -> IO ([Core], RunStats)
 runBook book root mode compiled debug =
@@ -69,70 +81,18 @@ runBook book root mode compiled debug =
         vals `deepseq` return vals
     return vals
 
--- Load and initialize the runtime with a book from a file
-loadBook :: FilePath -> Bool -> IO Book
-loadBook filePath compiled = do
-  code <- readFile' filePath
-  book <- doParseBook filePath code
-
-  forM_ (MS.toList (cidToAri book)) $ \(cid, ari) -> hvmSetCari cid (fromIntegral ari)
-  forM_ (MS.toList (cidToLen book)) $ \(cid, len) -> hvmSetClen cid (fromIntegral len)
-  forM_ (MS.toList (cidToADT book)) $ \(cid, adt) -> hvmSetCadt cid (fromIntegral adt)
-  forM_ (MS.toList (fidToFun book)) $ \(fid, ((_, args), _)) -> hvmSetFari fid (fromIntegral $ length args)
-
-  when compiled $ do
-    let mainC = compileBook book runtime_c
-    callCommand "mkdir -p .build"
-    let fName = last $ words $ map (\c -> if c == '/' then ' ' else c) filePath
-    let cPath = ".build/" ++ fName ++ ".c"
-    let oPath = ".build/" ++ fName ++ ".so"
-    oldCFile <- tryIOError (readFile' cPath)
-    bookLib <- case oldCFile of
-      Right oldC | oldC == mainC -> do
-        dlopen oPath [RTLD_NOW]
-      _ -> do
-        writeFile cPath mainC
-        callCommand $ "gcc -O2 -fPIC -shared " ++ cPath ++ " -o " ++ oPath
-        dlopen oPath [RTLD_NOW]
-    forM_ (MS.keys (fidToFun book)) $ \fid -> do
-      funPtr <- dlsym bookLib (mget (fidToNam book) fid ++ "_f")
-      hvmDefine fid funPtr
-    hvmGotState <- hvmGetState
-    hvmSetState <- dlsym bookLib "hvm_set_state"
-    callFFI hvmSetState retVoid [argPtr hvmGotState]
-  return book
-
-
-loadBookStatic :: String -> Bool -> IO Book
-loadBookStatic code compiled = do
-  let filePath = "."
-  book <- doParseBook filePath code
-  forM_ (MS.toList (cidToAri book)) $ \(cid, ari) -> hvmSetCari cid (fromIntegral ari)
-  forM_ (MS.toList (cidToLen book)) $ \(cid, len) -> hvmSetClen cid (fromIntegral len)
-  forM_ (MS.toList (cidToADT book)) $ \(cid, adt) -> hvmSetCadt cid (fromIntegral adt)
-  forM_ (MS.toList (fidToFun book)) $ \(fid, ((_, args), _)) -> hvmSetFari fid (fromIntegral $ length args)
-
-  when compiled $ do
-    let mainC = compileBook book runtime_c
-    callCommand "mkdir -p .build"
-    let fName = last $ words $ map (\c -> if c == '/' then ' ' else c) filePath
-    let cPath = ".build/" ++ fName ++ ".c"
-    let oPath = ".build/" ++ fName ++ ".so"
-    oldCFile <- tryIOError (readFile' cPath)
-    bookLib <- case oldCFile of
-      Right oldC | oldC == mainC -> do
-        dlopen oPath [RTLD_NOW]
-      _ -> do
-        writeFile cPath mainC
-        callCommand $ "gcc -O2 -fPIC -shared " ++ cPath ++ " -o " ++ oPath
-        dlopen oPath [RTLD_NOW]
-    forM_ (MS.keys (fidToFun book)) $ \fid -> do
-      funPtr <- dlsym bookLib (mget (fidToNam book) fid ++ "_f")
-      hvmDefine fid funPtr
-    hvmGotState <- hvmGetState
-    hvmSetState <- dlsym bookLib "hvm_set_state"
-    callFFI hvmSetState retVoid [argPtr hvmGotState]
-  return book
+compileBookToBin :: FilePath -> Book -> IO FilePath
+compileBookToBin filePath book = do
+  let mainC = compileBook book runtime_c
+  callCommand "mkdir -p .build"
+  let fName = last $ words $ map (\c -> if c == '/' then ' ' else c) filePath
+  let cPath = ".build/" ++ fName ++ ".c"
+  let oPath = ".build/" ++ fName ++ ".so"
+  oldCFile <- tryIOError (readFile' cPath)
+  when (oldCFile /= Right mainC) $ do
+    writeFile cPath mainC
+    callCommand $ "gcc -O2 -fPIC -shared " ++ cPath ++ " -o " ++ oPath
+  return oPath
 
 injectRoot :: Book -> Core -> IO ()
 injectRoot book root = do

@@ -79,8 +79,10 @@ printHelp = do
 
 cliRun :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> [String] -> IO (Either String ())
 cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
+  code <- readFile' filePath
+  book <- doParseBook filePath code
   hvmInit
-  book <- loadBook filePath compiled
+  initBook filePath book compiled
   checkHasMain book
   args <- doParseArguments book strArgs
   checkMainArgs book args
@@ -108,8 +110,10 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
 
 cliServe :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> IO (Either String ())
 cliServe filePath debug compiled mode showStats hideQuotes = do
+  code <- readFile' filePath
+  book <- doParseBook filePath code
   hvmInit
-  book <- loadBook filePath compiled
+  initBook filePath book compiled
   checkHasMain book
   putStrLn "HVM serve mode. Listening on port 8080."
   sock <- socket AF_INET Stream 0
