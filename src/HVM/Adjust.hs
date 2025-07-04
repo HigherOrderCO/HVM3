@@ -347,11 +347,11 @@ validate orig book term = go term where
         error $ header ++ "Unknown constructor: " ++ show nam
       Just cid ->
         if length fds /= fromIntegral (mget (cidToAri book) cid) then
-          error $ header ++ "Arity mismatch on Ctr: " ++ show term ++ ". " ++ "Expected " ++ show (mget (cidToAri book) cid) ++ " arguments, got " ++ show (length fds)
+          error $ header ++ "Arity mismatch on Ctr: " ++ show (Ctr nam fds) ++ ". " ++ "Expected " ++ show (mget (cidToAri book) cid) ++ " arguments, got " ++ show (length fds)
         else
           Ctr nam (map go fds)
   go (Mat k x mov css) =
-    if not uniqueCss then error $ header ++ "Duplicate match case: " ++ show term ++ "."
+    if not uniqueCss then error $ header ++ "Duplicate match case: " ++ show (Mat k x mov css) ++ "."
     else Mat k (go x) mov' css'
     where
       mov' = map (\(k,v) -> (k, go v)) mov
@@ -366,7 +366,7 @@ validate orig book term = go term where
   go (Dec x)           = Dec (go x)
   go (Ref nam fid arg) =
     if not ariOk then
-      error $ header ++ "Arity mismatch on Ref: " ++ show term ++ ". " ++ "Expected " ++ show (funArity book fid) ++ " arguments, got " ++ show (length arg)
+      error $ header ++ "Arity mismatch on Ref: " ++ show (Ref nam fid arg) ++ ". " ++ "Expected " ++ show (funArity book fid) ++ " arguments, got " ++ show (length arg)
     else
       Ref nam fid (map go arg)
     where
