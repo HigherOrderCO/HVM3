@@ -798,7 +798,7 @@ buildMatchExpr val mov cases
       cid <- return $ mget (pCtrToCid st) (getName $ head cases)
       adt <- return $ mget (pCidToADT st) cid
       var <- return $ getVar (last cases)
-      ifl <- intoIfLetChain (Var var) mov (init cases) var (last cases)
+      ifl <- intoIfLetChain (Var (stripName var)) mov (init cases) var (last cases)
       return $ Let LAZY var val ifl
   | otherwise = do  -- All ADT cases covered
       st <- getState
