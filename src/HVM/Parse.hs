@@ -618,7 +618,7 @@ doParseArguments book (arg:args) = do
     p = do
       core <- parseCore
       st   <- getState
-      let (book', core') = adjust (book { freshLab = pFreshLab st }) core []
+      let (book', core') = adjust "" (book { freshLab = pFreshLab st }) core []
       return (book', core')
 
 -- Errors

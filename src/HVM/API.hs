@@ -96,7 +96,7 @@ compileBookToBin filePath book = do
 
 injectRoot :: Book -> Core -> IO ()
 injectRoot book root = do
-  let (book', root') = adjust book root []
+  let (book', root') = adjust "" book root []
   doInjectCoreAt book' root' 0 []
   return ()
 

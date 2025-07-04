@@ -16,18 +16,20 @@ adjustBook book = foldr adjustFunc book (MS.toList (fidToFun book))
 
 adjustFunc :: (Word16, Func) -> Book -> Book
 adjustFunc (fid, ((cp, ars), cr)) book =
-  let (b', cr') = adjust book cr (map snd ars) in
+  let nam       = mget (fidToNam book) fid in
+  let (b', cr') = adjust nam book cr (map snd ars) in
   let ars'      = map (\(s, n) -> (s, stripName n)) ars in
   b' { fidToFun = MS.insert fid ((cp, ars'), cr') (fidToFun b') }
 
-adjust :: Book -> Core -> [String] -> (Book, Core)
-adjust book term binds =
+adjust :: Name -> Book -> Core -> [String] -> (Book, Core)
+adjust orig book term binds =
   let termA       = setRefIds (namToFid book) term
       termB       = setCtrIds (ctrToCid book) (cidToADT book) termA
       termC       = sortCases (ctrToCid book) termB
       (fr, termD) = insertDups (freshLab book) binds termC
       termE       = lexify termD
-  in (book { freshLab = fr }, termE)
+      termF       = validate orig book termE
+  in (book { freshLab = fr }, termF)
 
 
 -- Adjusters
@@ -52,7 +54,10 @@ setRefIds fids term = go term
     go Era               = Era
     go (Inc x)           = Inc (go x)
     go (Dec x)           = Dec (go x)
-    go (Ref nam _ arg)   = Ref nam (mget fids nam) (map go arg)
+    go (Ref nam fid arg) =
+      case MS.lookup nam fids of
+        Just fid -> Ref nam fid (map go arg)
+        Nothing  -> error $ "Unknown function: " ++ show nam
 
 
 -- Adds the constructor id to Mat and IFL terms
@@ -67,17 +72,15 @@ setCtrIds cids adts term = go term
     go (Sup l x y)       = Sup l (go x) (go y)
     go (Dup l x y v b)   = Dup l x y (go v) (go b)
     go (Ctr nam fds)     = Ctr nam (map go fds)
-    go (Mat k x mov css) =
-      let k' = case k of
-                SWI -> SWI
-                MAT _ -> MAT (mget adts (mget cids (getCtr (head css))))
-                IFL _ -> IFL (mget cids (getCtr (head css)))
-                _ -> k in
-      let mov' = map (\(k,v) -> (k, go v)) mov in
-      let css' = map (\(ctr,fds,cs) -> (ctr, fds, go cs)) css in
-      Mat k' (go x) mov' css'
-      where
-        getCtr (ctr, _, _) = ctr
+    go (Mat k x mov css) = Mat k' (go x) mov' css' where
+      getCtr (ctr, _, _) = ctr
+      mov' = map (\(k,v) -> (k, go v)) mov
+      css' = map (\(ctr,fds,cs) -> (ctr, fds, go cs)) css
+      k'   = case k of
+        SWI   -> SWI
+        MAT _ -> MAT (mget adts (mget cids (getCtr (head css))))
+        IFL _ -> IFL (mget cids (getCtr (head css)))
+        _     -> k
     go (Op2 op x y)      = Op2 op (go x) (go y)
     go (U32 n)           = U32 n
     go (Chr c)           = Chr c
@@ -328,3 +331,45 @@ lexify term = evalState (go term MS.empty) 0 where
     Dec x -> do
       x <- go x ctx
       return $ Dec x
+
+validate :: Name -> Book -> Core -> Core
+validate orig book term = go term where
+  go :: Core -> Core
+  go (Var nam)         = Var nam
+  go (Let m x v b)     = Let m x (go v) (go b)
+  go (Lam x bod)       = Lam x (go bod)
+  go (App f x)         = App (go f) (go x)
+  go (Sup l x y)       = Sup l (go x) (go y)
+  go (Dup l x y v b)   = Dup l x y (go v) (go b)
+  go (Ctr nam fds)     =
+    case MS.lookup nam (ctrToCid book) of
+      Nothing ->
+        error $ header ++ "Unknown constructor: " ++ show nam
+      Just cid ->
+        if length fds /= fromIntegral (mget (cidToAri book) cid) then
+          error $ header ++ "Arity mismatch on Ctr: " ++ show term ++ ". " ++ "Expected " ++ show (mget (cidToAri book) cid) ++ " arguments, got " ++ show (length fds)
+        else
+          Ctr nam (map go fds)
+  go (Mat k x mov css) =
+    if not uniqueCss then error $ header ++ "Duplicate match case: " ++ show term ++ "."
+    else Mat k (go x) mov' css'
+    where
+      mov' = map (\(k,v) -> (k, go v)) mov
+      css' = map (\(ctr,fds,bod) -> (ctr, fds, go bod)) css
+      ctrs = map (\(ctr, _, _) -> ctr) css
+      uniqueCss = null (filter (\ctr -> length (filter (== ctr) ctrs) > 1) ctrs)
+  go (Op2 op x y)      = Op2 op (go x) (go y)
+  go (U32 n)           = U32 n
+  go (Chr c)           = Chr c
+  go Era               = Era
+  go (Inc x)           = Inc (go x)
+  go (Dec x)           = Dec (go x)
+  go (Ref nam fid arg) =
+    if not ariOk then
+      error $ header ++ "Arity mismatch on Ref: " ++ show term ++ ". " ++ "Expected " ++ show (funArity book fid) ++ " arguments, got " ++ show (length arg)
+    else
+      Ref nam fid (map go arg)
+    where
+      ariOk = length arg == fromIntegral (funArity book fid)
+
+  header = if null orig then "" else "In function @" ++ orig ++ ": "
