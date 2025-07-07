@@ -230,7 +230,7 @@ instance Show Oper where
 
 instance Show LetT where
   show LAZY = ""
-  show STRI = "."
+  show STRI = "!"
 
 showCore :: Core -> String
 showCore core = maybe (format core) id (sugar core) where

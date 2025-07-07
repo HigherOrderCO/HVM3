@@ -794,9 +794,6 @@ buildMatchExpr val mov cases
   | onlyDefault cases =
       fail "Match with only a default case is not allowed"  -- Invalid case
   | hasDefault (last cases) = do  -- Has default: use If-Let chain
-      st  <- getState
-      cid <- return $ mget (pCtrToCid st) (getName $ head cases)
-      adt <- return $ mget (pCidToADT st) cid
       var <- return $ getVar (last cases)
       ifl <- intoIfLetChain (Var (stripName var)) mov (init cases) var (last cases)
       return $ Let LAZY var val ifl
