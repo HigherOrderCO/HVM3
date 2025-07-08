@@ -276,8 +276,8 @@ reduceRefAt_LogF book host loc ari = do
   when (ari /= 1) $ do
     putStrLn $ "RUNTIME_ERROR: arity mismatch on call to '@LOG'."
     exitFailure
-  msg <- doExtractCoreAt gotT book (loc + 0)
-  putStrLn $ showCore (doLiftDups msg)
+  msg <- doExtractCoreAt (reduceAt False) book (loc + 0)
+  putStrLn $ showCore msg
   -- msgs <- doCollapseFlatAt gotT book (loc + 0)
   -- forM_ msgs $ \msg -> do
     -- putStrLn $ showCore msg

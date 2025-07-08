@@ -348,12 +348,24 @@ parseLazyLet = do
 parseLit :: ParserM Core
 parseLit = do
   name <- parseName1
-  case reads (filter (/= '_') name) of
-    [(num, "")] -> do
-      return $ U32 (fromIntegral (num :: Integer))
-    _           -> do
-      useVar name
-      return $ Var name
+  case name of
+    "log" -> parseLogExpr
+    _ -> case reads (filter (/= '_') name) of
+      [(num, "")] -> do
+        return $ U32 (fromIntegral (num :: Integer))
+      _           -> do
+        useVar name
+        return $ Var name
+
+-- Log: `log x f` -> `!! @LOG(x) f`
+parseLogExpr :: ParserM Core
+parseLogExpr = do
+  skip
+  expr <- parseCore
+  skip
+  cont <- parseCore
+  let logCall = Ref "LOG" (fromIntegral _LOG_F_) [expr]
+  return $ Let STRI "_" logCall cont
 
 -- Chr: 'x'
 parseChr :: ParserM Core
