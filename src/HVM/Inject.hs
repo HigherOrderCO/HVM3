@@ -74,8 +74,6 @@ injectCore book (Dup lab dp0 dp1 val bod) loc = do
 injectCore book (Ref nam fid arg) loc = do
   let ari = funArity book fid
   let lab = fromIntegral fid
-  when (ari /= fromIntegral (length arg)) $ do
-    error $ "Arity mismatch on term: " ++ show (Ref nam fid arg) ++ ". Expected " ++ show ari ++ ", got " ++ show (length arg) ++ "."
   ref <- lift $ allocNode (fromIntegral ari)
   sequence_ [injectCore book x (ref + i) | (i,x) <- zip [0..] arg]
   lift $ set loc (termNew _REF_ lab ref)
@@ -84,8 +82,6 @@ injectCore book (Ctr nam fds) loc = do
   let cid = mget (ctrToCid book) nam
   let ari = mget (cidToAri book) cid
   let lab = fromIntegral cid
-  when (ari /= fromIntegral (length fds)) $ do
-    error $ "Arity mismatch on constructor: " ++ show (Ctr nam fds) ++ ". Expected " ++ show ari ++ ", got " ++ show (length fds) ++ "."
   ctr <- lift $ allocNode (fromIntegral ari)
   sequence_ [injectCore book fd (ctr + ix) | (ix,fd) <- zip [0..] fds]
   lift $ set loc (termNew _CTR_ lab ctr)

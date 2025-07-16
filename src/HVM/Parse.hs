@@ -23,6 +23,7 @@ data ParserState = ParserState
   { pCidToAri  :: MS.Map Word16 Word16
   , pCidToLen  :: MS.Map Word16 Word16
   , pCtrToCid  :: MS.Map String Word16
+  , pCidToCtr  :: MS.Map Word16 String
   , pCidToADT  :: MS.Map Word16 Word16
   , imported   :: MS.Map String ()
   , varUsages  :: MS.Map String Int
@@ -216,6 +217,7 @@ parseCtrCase :: [String] -> ParserM (String, [String], Core)
 parseCtrCase mov = do
   consume "#"
   name <- parseName1
+  skip
   vars <- option [] $ do
     consume "{"
     vars <- many $ do
@@ -346,12 +348,24 @@ parseLazyLet = do
 parseLit :: ParserM Core
 parseLit = do
   name <- parseName1
-  case reads (filter (/= '_') name) of
-    [(num, "")] -> do
-      return $ U32 (fromIntegral (num :: Integer))
-    _           -> do
-      useVar name
-      return $ Var name
+  case name of
+    "log" -> parseLogExpr
+    _ -> case reads (filter (/= '_') name) of
+      [(num, "")] -> do
+        return $ U32 (fromIntegral (num :: Integer))
+      _           -> do
+        useVar name
+        return $ Var name
+
+-- Log: `log x f` -> `!! @LOG(x) f`
+parseLogExpr :: ParserM Core
+parseLogExpr = do
+  skip
+  expr <- parseCore
+  skip
+  cont <- parseCore
+  let logCall = Ref "LOG" (fromIntegral _LOG_F_) [expr]
+  return $ Let STRI "_" logCall cont
 
 -- Chr: 'x'
 parseChr :: ParserM Core
@@ -485,7 +499,9 @@ parseTopImp = do
     st       <- getState
     result   <- liftIO $ runParserT parseBookWithState st path contents
     case result of
-      Left err -> handleParseError path contents err
+      Left err -> do
+        liftIO $ showParseError path contents err
+        fail $ "Error importing file " ++ show path ++ ": parse failed"
       Right (importedDefs, importedState) -> do
         putState importedState
         skip
@@ -562,10 +578,10 @@ escaped
 -- Parse Book and Core
 doParseBook :: String -> String -> IO Book
 doParseBook filePath code = do
-  result <- runParserT p (ParserState MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty 0) "" code
+  result <- runParserT p (ParserState MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty 0) "" code
   case result of
     Right (defs, st) -> do
-      return $ createBook defs (pCtrToCid st) (pCidToAri st) (pCidToLen st) (pCidToADT st) (pFreshLab st)
+      return $ createBook defs (pCtrToCid st) (pCidToCtr st) (pCidToAri st) (pCidToLen st) (pCidToADT st) (pFreshLab st)
     Left err -> do
       showParseError filePath code err
       return $ Book MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty 0
@@ -577,7 +593,7 @@ doParseBook filePath code = do
 
 doParseCore :: String -> IO Core
 doParseCore code = do
-  result <- runParserT parseCore (ParserState MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty 0) "" code
+  result <- runParserT parseCore (ParserState MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty MS.empty 0) "" code
   case result of
     Right core -> return core
     Left err -> do
@@ -597,6 +613,7 @@ doParseArguments book (arg:args) = do
             { pCidToAri = cidToAri book
             , pCidToLen = cidToLen book
             , pCtrToCid = ctrToCid book
+            , pCidToCtr = cidToCtr book
             , pCidToADT = cidToADT book
             , imported  = MS.empty
             , varUsages = MS.empty
@@ -613,16 +630,11 @@ doParseArguments book (arg:args) = do
     p = do
       core <- parseCore
       st   <- getState
-      let (book', core') = adjust (book { freshLab = pFreshLab st }) core []
+      let (book', core') = adjust "" (book { freshLab = pFreshLab st }) core []
       return (book', core')
 
 -- Errors
 -- ------
-
-handleParseError :: String -> String -> ParseError -> ParserM a
-handleParseError path contents err = do
-  liftIO $ showParseError path contents err
-  fail $ "Error importing file " ++ show path ++ ": parse failed"
 
 extractExpectedTokens :: ParseError -> String
 extractExpectedTokens err =
@@ -643,7 +655,7 @@ showParseError filename input err = do
   let errorMsg = extractExpectedTokens err
   putStr $ setSGRCode [SetConsoleIntensity BoldIntensity] ++ "\nPARSE_ERROR" ++ setSGRCode [Reset]
   putStr " ("
-  putStr $ setSGRCode [SetUnderlining SingleUnderline] ++ filename ++ setSGRCode [Reset]
+  putStr $ setSGRCode [SetUnderlining SingleUnderline] ++ filename ++ ":" ++ show lin ++ ":" ++ show col ++ setSGRCode [Reset]
   putStrLn ")"
   if any isMessage (errorMessages err)
     then putStrLn $ "- " ++ errorMsg
@@ -671,32 +683,33 @@ registerADT name constructors = do
   st <- getState
   let baseCid  = fromIntegral $ MS.size (pCtrToCid st)
   let ctrToCid = zip (map fst constructors) [baseCid..]
+  let cidToCtr = map (\ (ctr,cid) -> (cid, ctr)) ctrToCid
   let cidToAri = map (\ (ctr,cid) -> (cid, fromIntegral . length . snd $ head $ filter ((== ctr) . fst) constructors)) ctrToCid
   let cidToLen = (baseCid, fromIntegral $ length constructors)
   let cidToADT = map (\ (_,cid) -> (cid, baseCid)) ctrToCid
   modifyState (\s -> s {
     pCtrToCid = MS.union (MS.fromList ctrToCid) (pCtrToCid s),
+    pCidToCtr = MS.union (MS.fromList cidToCtr) (pCidToCtr s),
     pCidToAri = MS.union (MS.fromList cidToAri) (pCidToAri s),
     pCidToLen = MS.insert (fst cidToLen) (snd cidToLen) (pCidToLen s),
     pCidToADT = MS.union (MS.fromList cidToADT) (pCidToADT s) })
 
 -- Book creation and setup functions
-createBook :: [(String, ((Bool,[(Bool,String)]), Core))] -> MS.Map String Word16 -> MS.Map Word16 Word16 -> MS.Map Word16 Word16 -> MS.Map Word16 Word16 -> Lab -> Book
-createBook defs ctrToCid cidToAri cidToLen cidToADT freshLab =
+createBook :: [(String, ((Bool,[(Bool,String)]), Core))] -> MS.Map String Word16 -> MS.Map Word16 String -> MS.Map Word16 Word16 -> MS.Map Word16 Word16 -> MS.Map Word16 Word16 -> Lab -> Book
+createBook defs ctrToCid cidToCtr cidToAri cidToLen cidToADT freshLab =
   let withPrims = \n2i -> MS.union n2i (MS.fromList primitives)
       nameList  = zip (map fst defs) [0..] :: [(String, Word16)]
       namToFid' = withPrims (MS.fromList nameList)
       fidToNam' = MS.fromList (map (\(k,v) -> (v,k)) (MS.toList namToFid'))
       fidToFun' = MS.fromList (map (\(nam, func) -> (mget namToFid' nam, func)) defs)
-      fidToLab' = MS.fromList (map (\(nam, ((_, _), cr)) -> (mget namToFid' nam, collectLabels cr)) defs)
-      cidToCtr' = MS.fromList (map (\(ctr, cid) -> (cid, ctr)) (MS.toList ctrToCid)) in
+      fidToLab' = MS.fromList (map (\(nam, ((_, _), cr)) -> (mget namToFid' nam, collectLabels cr)) defs) in
   let book = Book
        { fidToFun = fidToFun'
        , fidToNam = fidToNam'
        , fidToLab = fidToLab'
        , namToFid = namToFid'
        , cidToAri = cidToAri
-       , cidToCtr = cidToCtr'
+       , cidToCtr = cidToCtr
        , ctrToCid = ctrToCid
        , cidToLen = cidToLen
        , cidToADT = cidToADT
@@ -793,20 +806,19 @@ buildMatchExpr val mov cases
   | onlyDefault cases =
       fail "Match with only a default case is not allowed"  -- Invalid case
   | hasDefault (last cases) = do  -- Has default: use If-Let chain
-      st  <- getState
-      cid <- return $ mget (pCtrToCid st) (getName $ head cases)
-      adt <- return $ mget (pCidToADT st) cid
       var <- return $ getVar (last cases)
-      ifl <- intoIfLetChain (Var var) mov (init cases) var (last cases)
+      ifl <- intoIfLetChain (Var (stripName var)) mov (init cases) var (last cases)
       return $ Let LAZY var val ifl
   | otherwise = do  -- All ADT cases covered
       st <- getState
-      let cid = mget (pCtrToCid st) (getName $ head cases)
-      let adt = mget (pCidToADT st) cid
-      let len = mget (pCidToLen st) adt
-      if fromIntegral (length cases) /= len
-        then fail "Incorrect number of cases"
-        else return $ Mat (MAT adt) val mov cases
+      let ctrs = map getName cases
+      let cids = map (mget (pCtrToCid st)) ctrs
+      let adt  = mget (pCidToADT st) (head cids)
+      let len  = mget (pCidToLen st) adt
+      let miss = filter (\c -> not (c `elem` cids)) [adt..adt+len-1]
+      case miss of
+        [] -> return $ Mat (MAT adt) val mov cases
+        _  -> fail $ "Missing match cases: " ++ show (map (mget (pCidToCtr st)) miss)
   where
     isSwitch (name, _, _) = name == "0"
     hasDefault (name, _, _) = name == "_"

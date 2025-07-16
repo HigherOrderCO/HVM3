@@ -212,7 +212,7 @@ compileFullCore book fid (Op2 opr nu0 nu1) host = do
   return $ "term_new(OPX, " ++ show (fromEnum opr) ++ ", " ++ opxNam ++ ")"
 
 compileFullCore book fid t@(Ref rNam rFid rArg) host = do
-  checkRefAri book t
+  checkRefAri book fid t
   refNam <- fresh "ref"
   let arity = length rArg
   emit $ "Loc " ++ refNam ++ " = alloc_node(" ++ show arity ++ ");"
@@ -487,7 +487,7 @@ compileFastBody book fid term@(Let mode var val bod) ctx stop itr = do
     STRI -> do
       case val of
         t@(Ref _ rFid _) -> do
-          checkRefAri book t
+          checkRefAri book fid t
           valNam <- fresh "val"
           emit $ "Term " ++ valNam ++ " = reduce(" ++ mget (fidToNam book) rFid ++ "_f(" ++ valT ++ "));"
           bind var valNam
@@ -497,14 +497,55 @@ compileFastBody book fid term@(Let mode var val bod) ctx stop itr = do
           bind var valNam
   compileFastBody book fid bod ctx stop itr
 
-compileFastBody book fid term@(Ref fNam fFid fArg) ctx stop itr | fFid == fid = do
-  checkRefAri book term
-  forM_ (zip fArg ctx) $ \ (arg, ctxVar) -> do
-    argT <- compileFastCore book fid arg
-    emit $ "" ++ ctxVar ++ " = " ++ argT ++ ";"
-  emit $ "itrs += " ++ show (itr + 1) ++ ";"
-  emit $ "fst_iter = false;"
-  emit $ "continue;"
+compileFastBody book fid term@(Ref fNam fFid fArg) ctx stop itr
+  -- Tail-call optimization
+  | fFid == fid = do
+    checkRefAri book fid term
+    forM_ (zip fArg ctx) $ \ (arg, ctxVar) -> do
+      argT <- compileFastCore book fid arg
+      emit $ "" ++ ctxVar ++ " = " ++ argT ++ ";"
+    emit $ "itrs += " ++ show (itr + 1) ++ ";"
+    emit $ "fst_iter = false;"
+    emit $ "continue;"
+
+  -- Inline Dynamic DUP
+  -- The label must be a number at this point (not SUP, ERA, etc).
+  | fNam == "DUP" && (case fArg of [_, _, Lam _ (Lam _ _)] -> True ; _ -> False) = do
+    let [lab, val, Lam dp0 (Lam dp1 bod)] = fArg
+    labNam <- fresh "lab"
+    labTm  <- compileFastCore book fid lab
+    emit $ "Term " ++ labNam ++ " = reduce(" ++ labTm ++ ");"
+    emit $ "if (term_tag(" ++ labNam ++ ") != W32) {"
+    emit $ "  printf(\"ERROR:non-numeric-sup-label\\n\");"
+    emit $ "}"
+    emit $ "itrs += 3;"
+    -- Regular dup compilation (need to reimplement here since we don't know the label during compilation)
+    valT <- compileFastCore book fid val
+    valNam <- fresh "val"
+    dp0Nam <- fresh "dpA"
+    dp1Nam <- fresh "dpB"
+    emit $ "Term " ++ valNam ++ " = (" ++ valT ++ ");"
+    emit $ "Term " ++ dp0Nam ++ ";"
+    emit $ "Term " ++ dp1Nam ++ ";"
+    emit $ "if (term_is_atom(" ++ valNam ++ ")) {"
+    tabInc
+    emit $ "itrs += 1;"
+    emit $ dp0Nam ++ " = " ++ valNam ++ ";"
+    emit $ dp1Nam ++ " = " ++ valNam ++ ";"
+    tabDec
+    emit $ "} else {"
+    tabInc
+    dupNam <- fresh "dup"
+    compileFastAlloc dupNam 1
+    emit $ "set(" ++ dupNam ++ " + 0, " ++ valNam ++ ");"
+    -- Set to the dynamic label.
+    emit $ dp0Nam ++ " = term_new(DP0, term_loc(" ++ labNam ++ "), " ++ dupNam ++ " + 0);"
+    emit $ dp1Nam ++ " = term_new(DP1, term_loc(" ++ labNam ++ "), " ++ dupNam ++ " + 0);"
+    tabDec
+    emit $ "}"
+    bind dp0 dp0Nam
+    bind dp1 dp1Nam
+    compileFastBody book fid bod ctx stop itr
 
 compileFastBody book fid term ctx stop itr = do
   body <- compileFastCore book fid term
@@ -627,9 +668,9 @@ compileFastCore book fid (Dup lab dp0 dp1 val bod) = do
 
 compileFastCore book fid (Ctr nam fds) = do
   ctrNam <- fresh "ctr"
-  let arity = length fds
+  let ari = length fds
   let cid = mget (ctrToCid book) nam
-  compileFastAlloc ctrNam arity
+  compileFastAlloc ctrNam ari
   fdsT <- mapM (\ (i,fd) -> compileFastCore book fid fd) (zip [0..] fds)
   sequence_ [emit $ "set(" ++ ctrNam ++ " + " ++ show i ++ ", " ++ fdT ++ ");" | (i,fdT) <- zip [0..] fdsT]
   return $ "term_new(CTR, " ++ show cid ++ ", " ++ ctrNam ++ ")"
@@ -702,52 +743,13 @@ compileFastCore book fid (Op2 opr nu0 nu1) = do
   return $ retNam
 
 compileFastCore book fid t@(Ref rNam rFid rArg) = do
-  checkRefAri book t
-
-  -- Inline Dynamic SUP
-  if rNam == "SUP" then do
-    let [lab, tm0, tm1] = rArg
-    supNam <- fresh "sup"
-    labNam <- fresh "lab"
-    labT <- compileFastCore book fid lab
-    emit $ "Term " ++ labNam ++ " = reduce(" ++ labT ++ ");"
-    emit $ "if (term_tag(" ++ labNam ++ ") != W32) {"
-    emit $ "  printf(\"ERROR:non-numeric-sup-label\\n\");"
-    emit $ "}"
-    emit $ "itrs += 1;"
-    compileFastAlloc supNam 2
-    tm0T <- compileFastCore book fid tm0
-    tm1T <- compileFastCore book fid tm1
-    emit $ "set(" ++ supNam ++ " + 0, " ++ tm0T ++ ");"
-    emit $ "set(" ++ supNam ++ " + 1, " ++ tm1T ++ ");"
-    return $ "term_new(SUP, term_loc(" ++ labNam ++ "), " ++ supNam ++ ")"
-
-  -- Inline Dynamic DUP
-  else if rNam == "DUP" && (case rArg of [_, _, Lam _ (Lam _ _)] -> True ; _ -> False) then do
-    let [lab, val, Lam x (Lam y body)] = rArg
-    dupNam <- fresh "dup"
-    labNam <- fresh "lab"
-    labT <- compileFastCore book fid lab
-    emit $ "Term " ++ labNam ++ " = reduce(" ++ labT ++ ");"
-    emit $ "if (term_tag(" ++ labNam ++ ") != W32) {"
-    emit $ "  printf(\"ERROR:non-numeric-sup-label\\n\");"
-    emit $ "}"
-    emit $ "itrs += 3;"
-    compileFastAlloc dupNam 1
-    valT <- compileFastCore book fid val
-    emit $ "set(" ++ dupNam ++ " + 0, " ++ valT ++ ");"
-    bind x $ "term_new(DP0, term_loc(" ++ labNam ++ "), " ++ dupNam ++ " + 0)"
-    bind y $ "term_new(DP1, term_loc(" ++ labNam ++ "), " ++ dupNam ++ " + 0)"
-    compileFastCore book fid body
-
-  -- Create REF node
-  else do
-    refNam <- fresh "ref"
-    let arity = length rArg
-    compileFastAlloc refNam arity
-    argsT <- mapM (\ (i,arg) -> compileFastCore book fid arg) (zip [0..] rArg)
-    sequence_ [emit $ "set(" ++ refNam ++ " + " ++ show i ++ ", " ++ argT ++ ");" | (i,argT) <- zip [0..] argsT]
-    return $ "term_new(REF, " ++ show rFid ++ ", " ++ refNam ++ ")"
+  checkRefAri book fid t
+  refNam <- fresh "ref"
+  let arity = length rArg
+  compileFastAlloc refNam arity
+  argsT <- mapM (\ (i,arg) -> compileFastCore book fid arg) (zip [0..] rArg)
+  sequence_ [emit $ "set(" ++ refNam ++ " + " ++ show i ++ ", " ++ argT ++ ");" | (i,argT) <- zip [0..] argsT]
+  return $ "term_new(REF, " ++ show rFid ++ ", " ++ refNam ++ ")"
 
 compileFastCore book fid (Inc val) = do
   incNam <- fresh "inc"
@@ -773,15 +775,16 @@ compileFastVar var = do
     Nothing -> do
       return $ "<ERR>"
 
-checkRefAri :: Book -> Core -> Compile ()
-checkRefAri book core = do
+checkRefAri :: Book -> Word16 -> Core -> Compile ()
+checkRefAri book orig core = do
   case core of
     Ref nam lab arg -> do
       let fid = fromIntegral lab
       let ari = funArity book fid
       let len = length arg
       when (ari /= fromIntegral len) $ do
-        error $ "Arity mismatch on term: " ++ show core ++ ". Expected " ++ show ari ++ ", got " ++ show len ++ "."
+        let nam = mget (fidToNam book) orig
+        error $ "On function @" ++ nam ++ ": Arity mismatch on term: " ++ show core ++ ". Expected " ++ show ari ++ ", got " ++ show len ++ "."
     _ -> return ()
 
 -- Generates the forward declarations of the compiled C functions

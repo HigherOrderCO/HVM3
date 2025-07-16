@@ -465,7 +465,7 @@ Term reduce_app_sup(Term app, Term sup) {
 // ⊥
 Term reduce_app_ctr(Term app, Term ctr) {
   //printf("reduce_app_ctr "); print_term(app); printf("\n");
-  printf("invalid:app-ctr");
+  printf("invalid:app-ctr(%lu)", (unsigned long)term_lab(ctr));
   exit(0);
 }
 
@@ -474,7 +474,7 @@ Term reduce_app_ctr(Term app, Term ctr) {
 // ⊥
 Term reduce_app_w32(Term app, Term w32) {
   //printf("reduce_app_w32 "); print_term(app); printf("\n");
-  printf("invalid:app-w32");
+  printf("invalid:app-w32(%llu)", (unsigned long long)term_loc(w32));
   exit(0);
 }
 
@@ -836,6 +836,12 @@ Term reduce_mat_ctr(Term mat, Term ctr) {
     u64 ctr_num = ctr_lab;
     u64 ctr_ari = HVM.cari[ctr_num];
     u64 mat_ctr = mat_lab;
+    u64 cadt = HVM.cadt[mat_ctr];
+    u64 clen = HVM.clen[mat_ctr];
+    if (ctr_num < cadt || ctr_num >= cadt + clen) {
+      printf("invalid:mat-ctr(%llu, %llu)\n", (unsigned long long)ctr_num, (unsigned long long)cadt);
+      exit(1);
+    }
     u64 cse_idx = ctr_num - mat_ctr;
     Term app = got(mat_loc + 1 + cse_idx);
     Loc loc = alloc_node(ctr_ari * 2);
