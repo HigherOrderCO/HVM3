@@ -295,7 +295,9 @@ compileFastBody :: Book -> Word16 -> Core -> [String] -> Bool -> Int -> Compile 
 compileFastBody book fid term@(Mat kin val mov css) ctx stop@False itr = do
   valT   <- compileFastCore book fid val
   valNam <- fresh "val"
-  emit $ "Term " ++ valNam ++ " = (" ++ valT ++ ");"
+  emit $ "Term " ++ valNam ++ " = reduce(" ++ valT ++ ");"
+  let valVar = "scrut%"++valNam
+  bind valVar valNam
   let isNumeric = length css > 0 && (let (ctr,fds,bod) = css !! 0 in ctr == "0")
 
   -- Numeric Pattern-Matching
@@ -338,7 +340,7 @@ compileFastBody book fid term@(Mat kin val mov css) ctx stop@False itr = do
     tabDec
     emit $ "} else {"
     tabInc
-    val <- compileFastCore book fid term
+    val <- compileFastCore book fid (Mat kin (Var valVar) mov css)
     emit $ "itrs += " ++ show itr ++ ";"
     compileFastSave book fid term ctx itr
     emit $ "return " ++ val ++ ";"
@@ -348,9 +350,9 @@ compileFastBody book fid term@(Mat kin val mov css) ctx stop@False itr = do
   -- Constructor Pattern-Matching (with IfLet)
   else if (case kin of { (IFL _) -> True ; _ -> False }) then do
     let (Var defNam) = val
-    let css          = undoIfLetChain defNam term
-    let (_, dflt)    = last css
-    let othCss       = init css
+    let iflCss       = undoIfLetChain defNam term
+    let (_, dflt)    = last iflCss
+    let othCss       = init iflCss
     emit $ "if (term_tag(" ++ valNam ++ ") == CTR) {"
     tabInc
     emit $ "switch (term_lab(" ++ valNam ++ ")) {"
@@ -393,7 +395,7 @@ compileFastBody book fid term@(Mat kin val mov css) ctx stop@False itr = do
     tabDec
     emit $ "} else {"
     tabInc
-    val <- compileFastCore book fid term
+    val <- compileFastCore book fid (Mat kin (Var valVar) mov css)
     emit $ "itrs += " ++ show itr ++ ";"
     compileFastSave book fid term ctx itr
     emit $ "return " ++ val ++ ";"
@@ -431,7 +433,7 @@ compileFastBody book fid term@(Mat kin val mov css) ctx stop@False itr = do
     tabDec
     emit $ "} else {"
     tabInc
-    val <- compileFastCore book fid term
+    val <- compileFastCore book fid (Mat kin (Var valVar) mov css)
     emit $ "itrs += " ++ show itr ++ ";"
     compileFastSave book fid term ctx itr
     emit $ "return " ++ val ++ ";"
