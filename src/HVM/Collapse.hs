@@ -134,13 +134,19 @@ collapse :: [CTerm] -> SemiTerm -> CTerm
 collapse [] semi = case complete semi of CApp _ x -> x; term -> term
 collapse ((wnf -> tm) : tms) semi =
   case tm of
-    CSup l a b  -> CSup l (collapse (a : map (CCol l 0) tms) semi)
-                        (collapse (b : map (CCol l 1) tms) semi)
+    CSup l a b  -> if null tms 
+                     then CSup l (collapse [a] start) (collapse [b] start)
+                     else CSup l (collapse (a : map (CCol l 0) tms) semi)
+                                 (collapse (b : map (CCol l 1) tms) semi)
     CCol l i x  -> collapse (x : tms) $ extend semi (SS SZ) (CCol l i)
     CVar k      -> collapse tms $ extend semi SZ (CVar k)
     CEra        -> CEra
-    CLam x f    -> collapse (f : tms) $ extend semi (SS SZ) (\b -> CLam x b)
-    CApp f x    -> collapse (f : x : tms) semi
+    CLam x f    -> if null tms
+                     then CLam x (collapse [f] start)
+                     else collapse (f : tms) $ extend semi (SS SZ) (\b -> CLam x b)
+    CApp f x    -> if null tms
+                     then CApp (collapse [f] start) (collapse [x] start)
+                     else collapse (f : x : tms) semi
     COp2 o a b  -> collapse (a : b : tms) $ extend semi (SS (SS SZ)) (COp2 o)
     CCtr k xs   -> withSNat (length xs) $ \sNat -> collapse (xs ++ tms) $ extend semi sNat (buildCtr sNat k)
     CRef k i xs -> withSNat (length xs) $ \sNat -> collapse (xs ++ tms) $ extend semi sNat (buildRef sNat k i)
