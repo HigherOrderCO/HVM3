@@ -165,8 +165,7 @@ collapse ((wnf -> tm) : tms) semi =
   case tm of
     CVar k       -> collapse tms $ extend semi SZ (CVar k)
     CLam k f     -> 
-      let f' = substCTerm k (CVar k) f
-      in collapse (f' : tms) $ extend semi (SS SZ) (\body -> CLam k body)
+      collapse (f : tms) $ extend semi (SS SZ) (CLam k)
     CApp f x     -> collapse (f : x : tms) $ extend semi (SS (SS SZ)) CApp
     CCtr n fields -> 
       let arity = length fields
