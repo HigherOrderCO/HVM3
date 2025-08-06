@@ -5,6 +5,8 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module HVM.Collapse where
 
@@ -12,6 +14,7 @@ import Control.Monad (ap, forM, forM_)
 import Control.Monad.IO.Class
 import Data.Char (chr, ord)
 import qualified Data.Kind as DK
+import Unsafe.Coerce (unsafeCoerce)
 import Data.IORef
 import Data.Bits ((.&.), xor, (.|.), complement, shiftR)
 import Data.Word
@@ -61,25 +64,13 @@ type family CtrT (n :: Nat) :: DK.Type where
   CtrT (S p) = CTerm -> CtrT p
 
 data SomeSNat where SomeSNat :: SNat n -> SomeSNat
+
 toSomeSNat :: Int -> SomeSNat
 toSomeSNat 0 = SomeSNat SZ
 toSomeSNat n = case toSomeSNat (n-1) of SomeSNat s -> SomeSNat (SS s)
 
 withSNat :: Int -> (forall n. SNat n -> r) -> r
 withSNat n f = case toSomeSNat n of SomeSNat s -> f s
-
--- Recursive, type-safe builder functions
-buildCtr :: SNat n -> String -> CtrT n
-buildCtr s k = buildCtr' s [] where
-  buildCtr' :: SNat m -> [CTerm] -> CtrT m
-  buildCtr' SZ     acc = CCtr k (reverse acc)
-  buildCtr' (SS s') acc = \arg -> buildCtr' s' (arg : acc)
-
-buildRef :: SNat n -> String -> Word16 -> CtrT n
-buildRef s k i = buildRef' s [] where
-  buildRef' :: SNat m -> [CTerm] -> CtrT m
-  buildRef' SZ      acc = CRef k i (reverse acc)
-  buildRef' (SS s') acc = \arg -> buildRef' s' (arg : acc)
 
 data SemiTerm where
   SemiTerm :: SNat k -> (CTerm -> CtrT k) -> SemiTerm
@@ -114,62 +105,123 @@ complete (SemiTerm (SS p) l) = complete (SemiTerm p (l (CVar "X")))
 
 
 wnf :: CTerm -> CTerm
+wnf (CApp f x)   = app f x
 wnf (CCol l i x) = col l i x
 wnf v            = v
 
+app :: CTerm -> CTerm -> CTerm
+app (wnf -> CLam k f)   (wnf -> x) = wnf $ substCTerm k x f
+app (wnf -> CSup l x y) (wnf -> v) = CSup l (CApp x (CCol l 0 v)) (CApp y (CCol l 1 v))
+app f                   x          = CApp f x
+
+substCTerm :: String -> CTerm -> CTerm -> CTerm
+substCTerm var val term = case term of
+  CVar v | v == var -> val
+  CVar v            -> CVar v
+  CRef n f args     -> CRef n f (map (substCTerm var val) args)
+  CEra              -> CEra
+  CLam v b | v /= var -> CLam v (substCTerm var val b)
+  CLam v b          -> CLam v b
+  CApp f x          -> CApp (substCTerm var val f) (substCTerm var val x)
+  CSup l a b        -> CSup l (substCTerm var val a) (substCTerm var val b)
+  CCtr n fields     -> CCtr n (map (substCTerm var val) fields)
+  CU32 v            -> CU32 v
+  CChr c            -> CChr c
+  COp2 o a b        -> COp2 o (substCTerm var val a) (substCTerm var val b)
+  CLet m v e b | v /= var -> CLet m v (substCTerm var val e) (substCTerm var val b)
+  CLet m v e b      -> CLet m v (substCTerm var val e) b
+  CMat t v m c      -> CMat t (substCTerm var val v) 
+                          (map (\(k,e) -> (k, substCTerm var val e)) m)
+                          (map (\(cn,vs,b) -> if var `elem` vs then (cn,vs,b) else (cn,vs,substCTerm var val b)) c)
+  CInc x            -> CInc (substCTerm var val x)
+  CDec x            -> CDec (substCTerm var val x)
+  CCol l i x        -> CCol l i (substCTerm var val x)
+
 col :: Word32 -> Int -> CTerm -> CTerm
-col l i (wnf -> CSup r x y)   = if l == r then [x, y] !! i else CSup r (col l i x) (col l i y)
-col l i (wnf -> CLam n f)     = CLam n (col l i f)
-col l i (wnf -> CApp f x)     = CApp (col l i f) (col l i x)
-col l i (wnf -> CCtr k xs)    = CCtr k (map (col l i) xs)
-col l i (wnf -> CRef k r xs)  = CRef k r (map (col l i) xs)
-col l i (wnf -> COp2 o a b)   = COp2 o (col l i a) (col l i b)
-col l i (wnf -> CLet m n v b) = CLet m n (col l i v) (col l i b)
-col l i (wnf -> CMat t s ms cs) = CMat t (col l i s) (map (fmap (col l i)) ms) (map (\(c,vs,b) -> (c,vs,col l i b)) cs)
-col l i (wnf -> CInc x)       = CInc (col l i x)
-col l i (wnf -> CDec x)       = CDec (col l i x)
-col l i (wnf -> x)            = x
+col l i (wnf -> CVar k)     = CVar k
+col l i (wnf -> CLam k f)   = CLam k (CCol l i f)
+col l i (wnf -> CApp f x)   = CApp f x
+col l i (wnf -> CCtr n fs)  = CCtr n (map (CCol l i) fs)
+col l i (wnf -> CEra)       = CEra
+col l i (wnf -> CSup r x y) = if l == r then [x,y] !! i else CSup r (CCol l i x) (CCol l i y)
+col l i (wnf -> CCol r j x) = CCol l i (CCol r j x)
+col l i (wnf -> CU32 v)     = CU32 v
+col l i (wnf -> CChr c)     = CChr c
+col l i (wnf -> COp2 o a b) = COp2 o (CCol l i a) (CCol l i b)
+col l i (wnf -> CRef n f args) = CRef n f (map (CCol l i) args)
+col l i (wnf -> CLet m v e b) = CLet m v (CCol l i e) (CCol l i b)
+col l i (wnf -> CMat t v m c) = CMat t (CCol l i v) 
+                                   (map (\(k,e) -> (k, CCol l i e)) m)
+                                   (map (\(cn,vs,b) -> (cn,vs,CCol l i b)) c)
+col l i (wnf -> CInc x)     = CInc (CCol l i x)
+col l i (wnf -> CDec x)     = CDec (CCol l i x)
 
 collapse :: [CTerm] -> SemiTerm -> CTerm
-collapse [] semi = case complete semi of CApp _ x -> x; term -> term
+collapse [] semi =
+  case complete semi of
+    CApp _ x  -> x
+    otherwise -> error "unreachable"
 collapse ((wnf -> tm) : tms) semi =
   case tm of
-    CSup l a b  -> if null tms 
-                     then CSup l (collapse [a] start) (collapse [b] start)
-                     else CSup l (collapse (a : map (CCol l 0) tms) semi)
-                                 (collapse (b : map (CCol l 1) tms) semi)
-    CCol l i x  -> collapse (x : tms) $ extend semi (SS SZ) (CCol l i)
-    CVar k      -> collapse tms $ extend semi SZ (CVar k)
-    CEra        -> CEra
-    CLam x f    -> if null tms
-                     then CLam x (collapse [f] start)
-                     else collapse (f : tms) $ extend semi (SS SZ) (\b -> CLam x b)
-    CApp f x    -> if null tms
-                     then CApp (collapse [f] start) (collapse [x] start)
-                     else collapse (f : x : tms) semi
-    COp2 o a b  -> collapse (a : b : tms) $ extend semi (SS (SS SZ)) (COp2 o)
-    CCtr k xs   -> withSNat (length xs) $ \sNat -> collapse (xs ++ tms) $ extend semi sNat (buildCtr sNat k)
-    CRef k i xs -> withSNat (length xs) $ \sNat -> collapse (xs ++ tms) $ extend semi sNat (buildRef sNat k i)
-    CU32 n      -> collapse tms $ extend semi SZ (CU32 n)
-    CChr c      -> collapse tms $ extend semi SZ (CChr c)
-    CInc x      -> collapse (x : tms) $ extend semi (SS SZ) CInc
-    CDec x      -> collapse (x : tms) $ extend semi (SS SZ) CDec
-    CLet m k v b-> collapse (v : b : tms) $ extend semi (SS (SS SZ)) (CLet m k)
-    CMat t v m c-> collapse tms $ extend semi SZ (CMat t v m c)
-    _           -> tm
+    CVar k       -> collapse tms $ extend semi SZ (CVar k)
+    CLam k f     -> 
+      let f' = substCTerm k (CVar k) f
+      in collapse (f' : tms) $ extend semi (SS SZ) (\body -> CLam k body)
+    CApp f x     -> collapse (f : x : tms) $ extend semi (SS (SS SZ)) CApp
+    CCtr n fields -> 
+      let arity = length fields
+      in withSNat arity $ \snat ->
+        collapse (fields ++ tms) $ extend semi snat (unsafeCoerce $ buildCtr n arity)
+    CEra         -> CEra
+    CSup l a b   -> CSup l (collapse (a : map (CCol l 0) tms) semi) (collapse (b : map (CCol l 1) tms) semi)
+    CCol l i x   -> collapse (x : tms) $ extend semi (SS SZ) (CCol l i)
+    CU32 v       -> collapse tms $ extend semi SZ (CU32 v)
+    CChr c       -> collapse tms $ extend semi SZ (CChr c)
+    COp2 o a b   -> collapse (a : b : tms) $ extend semi (SS (SS SZ)) (COp2 o)
+    CRef n f args -> 
+      let arity = length args
+      in withSNat arity $ \snat ->
+        collapse (args ++ tms) $ extend semi snat (unsafeCoerce $ buildRef n f arity)
+    CLet m v e b -> collapse (e : b : tms) $ extend semi (SS (SS SZ)) (CLet m v)
+    CMat t v m c -> 
+      let moves = map snd m
+          movesArity = length moves
+      in withSNat (1 + movesArity) $ \snat ->
+        collapse (v : moves ++ tms) $ extend semi snat (unsafeCoerce $ buildMat t (map fst m) c (1 + movesArity))
+    CInc x       -> collapse (x : tms) $ extend semi (SS SZ) CInc
+    CDec x       -> collapse (x : tms) $ extend semi (SS SZ) CDec
 
+buildCtr :: forall n. String -> Int -> CtrT n
+buildCtr name = go where
+  go :: Int -> CtrT n
+  go 0 = unsafeCoerce (CCtr name [])
+  go n = unsafeCoerce $ \x -> unsafeCoerce $ buildCtrAux name (n-1) [x]
+  
+  buildCtrAux :: String -> Int -> [CTerm] -> CTerm
+  buildCtrAux name 0 acc = CCtr name (reverse acc)
+  buildCtrAux name n acc = unsafeCoerce $ \x -> buildCtrAux name (n-1) (x:acc)
 
+buildRef :: forall n. String -> Word16 -> Int -> CtrT n
+buildRef name fid = go where
+  go :: Int -> CtrT n
+  go 0 = unsafeCoerce (CRef name fid [])
+  go n = unsafeCoerce $ \x -> unsafeCoerce $ buildRefAux name fid (n-1) [x]
+  
+  buildRefAux :: String -> Word16 -> Int -> [CTerm] -> CTerm  
+  buildRefAux name fid 0 acc = CRef name fid (reverse acc)
+  buildRefAux name fid n acc = unsafeCoerce $ \x -> buildRefAux name fid (n-1) (x:acc)
 
--- The Collapse Monad 
--- ------------------
--- See: https://gist.github.com/VictorTaelin/60d3bc72fb4edefecd42095e44138b41
+buildMat :: forall n. MatT -> [String] -> [(String, [String], CTerm)] -> Int -> CtrT n
+buildMat t moveKeys cases = go where
+  go :: Int -> CtrT n
+  go 1 = unsafeCoerce $ \v -> CMat t v [] cases
+  go n = unsafeCoerce $ buildMatAux t moveKeys cases n Nothing []
+  
+  buildMatAux :: MatT -> [String] -> [(String, [String], CTerm)] -> Int -> Maybe CTerm -> [CTerm] -> CTerm
+  buildMatAux t mk cs 1 (Just v) moves = CMat t v (zip mk (reverse moves)) cs
+  buildMatAux t mk cs n Nothing moves = unsafeCoerce $ \v -> buildMatAux t mk cs (n-1) (Just v) moves
+  buildMatAux t mk cs n (Just v) moves = unsafeCoerce $ \m -> buildMatAux t mk cs (n-1) (Just v) (m:moves)
 
--- A bit-string
-data Bin
-  = O Bin
-  | I Bin
-  | E
-  deriving Show
 
 -- Dup Collapser
 -- -------------
@@ -337,19 +389,19 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
 
 -- Tree Collapser
 -- --------------
-
-doCollapseAt :: ReduceAt -> Book -> Loc -> HVM Core
-doCollapseAt reduceAt book host = do
+--
+-- doCollapseAt :: ReduceAt -> Book -> Loc -> HVM Core
+-- doCollapseAt reduceAt book host = do
   -- Step 1: Read the low-level representation into a high-level Core term.
-  initialCore <- collapseDupsAt IM.empty reduceAt book host
+--   initialCore <- collapseDupsAt IM.empty reduceAt book host
   -- Step 2: Convert to our internal CTerm AST.
-  let initialCTerm = coreToCTerm initialCore
+--   let initialCTerm = coreToCTerm initialCore
   -- Step 3: Run the new, powerful collapse algorithm.
-  let collapsedCTerm = collapse [initialCTerm] start
+--   let collapsedCTerm = collapse [initialCTerm] start
   -- Step 4: Convert the resulting Sup-tree back to the public Core type.
-  let finalCore = ctermToCore collapsedCTerm
-  return finalCore
-
+--   let finalCore = ctermToCore collapsedCTerm
+--   return finalCore
+--
 
 data SQ a = SQ [a] [a]
 
