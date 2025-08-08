@@ -8,9 +8,9 @@ implementation of this new paradigm, and can be seen as a fast engine for
 symbolic computations.
 
 In some ways, it is very similar to Haskell, but it has some key differences:
-- Lambdas must be linear oraffine, making it resource-aware
+- Lambdas must be linear or affine, making it resource-aware
 - Lambdas have no scope boundaries, enabling global substitutions
-- First-class duplications allow a term to be copied into to two locations
+- First-class duplications allow a term to be copied into two locations
 - First-class superpositions allow 2 terms to be stored in 1 location
 
 These primitives allow HVM to natively represent concepts that are not present
@@ -46,4 +46,4 @@ hvm run file.hvml -c # runs compiled (fast)
 ```
 
 Note: the `-c` flag will also generate a standalone `.main.c` file, which if you
-want, you can compile and run it independently. See examples on the [book/](book/) directory.
+want, you can compile and run it independently. See examples in the [book/](book/) directory.
