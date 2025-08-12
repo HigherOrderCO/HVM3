@@ -8,6 +8,11 @@ author:             Victor Taelin
 maintainer:         victor.taelin@gmail.com
 category:           Language
 build-type:         Simple
+extra-source-files:
+  src/HVM/Runtime.h
+  src/HVM/runtime/*.c
+  src/HVM/runtime/reduce/*.c
+  src/HVM/runtime/prim/*.c
 
 
 library
@@ -35,6 +40,10 @@ library
                     , HVM.API
     other-modules:
     hs-source-dirs:   src
+    include-dirs:     src/HVM
+    includes:         Runtime.h
+    install-includes: Runtime.h
+    -- Build the runtime as a single translation unit for performance
     c-sources:        src/HVM/Runtime.c
     extra-libraries:  c
     ghc-options:     -Wno-all

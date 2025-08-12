@@ -18,8 +18,142 @@ import HVM.Type
 import qualified Data.Map.Strict as MS
 
 -- The Runtime.c file content embedded in the binary
+-- Embed the entire runtime as a single translation unit for compiled mode.
+-- We inline Runtime.h and concatenate all .c modules with the include line removed.
+runtime_h      :: String
+runtime_h      = $(embedStringFile "./src/HVM/Runtime.h")
+rt_state_c     :: String; rt_state_c  = $(embedStringFile "./src/HVM/runtime/state.c")
+rt_heap_c      :: String; rt_heap_c   = $(embedStringFile "./src/HVM/runtime/heap.c")
+rt_term_c      :: String; rt_term_c   = $(embedStringFile "./src/HVM/runtime/term.c")
+rt_stack_c     :: String; rt_stack_c  = $(embedStringFile "./src/HVM/runtime/stack.c")
+rt_print_c     :: String; rt_print_c  = $(embedStringFile "./src/HVM/runtime/print.c")
+rt_memory_c    :: String; rt_memory_c = $(embedStringFile "./src/HVM/runtime/memory.c")
+rt_reduce_c    :: String; rt_reduce_c = $(embedStringFile "./src/HVM/runtime/reduce.c")
+rt_pr_SUP_c    :: String; rt_pr_SUP_c = $(embedStringFile "./src/HVM/runtime/prim/SUP.c")
+rt_pr_DUP_c    :: String; rt_pr_DUP_c = $(embedStringFile "./src/HVM/runtime/prim/DUP.c")
+rt_pr_LOG_c    :: String; rt_pr_LOG_c = $(embedStringFile "./src/HVM/runtime/prim/LOG.c")
+rt_red_app_ctr :: String; rt_red_app_ctr = $(embedStringFile "./src/HVM/runtime/reduce/app_ctr.c")
+rt_red_app_era :: String; rt_red_app_era = $(embedStringFile "./src/HVM/runtime/reduce/app_era.c")
+rt_red_app_lam :: String; rt_red_app_lam = $(embedStringFile "./src/HVM/runtime/reduce/app_lam.c")
+rt_red_app_sup :: String; rt_red_app_sup = $(embedStringFile "./src/HVM/runtime/reduce/app_sup.c")
+rt_red_app_una :: String; rt_red_app_una = $(embedStringFile "./src/HVM/runtime/reduce/app_una.c")
+rt_red_app_w32 :: String; rt_red_app_w32 = $(embedStringFile "./src/HVM/runtime/reduce/app_w32.c")
+rt_red_dup_ctr :: String; rt_red_dup_ctr = $(embedStringFile "./src/HVM/runtime/reduce/dup_ctr.c")
+rt_red_dup_era :: String; rt_red_dup_era = $(embedStringFile "./src/HVM/runtime/reduce/dup_era.c")
+rt_red_dup_lam :: String; rt_red_dup_lam = $(embedStringFile "./src/HVM/runtime/reduce/dup_lam.c")
+rt_red_dup_ref :: String; rt_red_dup_ref = $(embedStringFile "./src/HVM/runtime/reduce/dup_ref.c")
+rt_red_dup_sup :: String; rt_red_dup_sup = $(embedStringFile "./src/HVM/runtime/reduce/dup_sup.c")
+rt_red_dup_una :: String; rt_red_dup_una = $(embedStringFile "./src/HVM/runtime/reduce/dup_una.c")
+rt_red_dup_w32 :: String; rt_red_dup_w32 = $(embedStringFile "./src/HVM/runtime/reduce/dup_w32.c")
+rt_red_let     :: String; rt_red_let     = $(embedStringFile "./src/HVM/runtime/reduce/let.c")
+rt_red_ref     :: String; rt_red_ref     = $(embedStringFile "./src/HVM/runtime/reduce/ref.c")
+rt_red_ref_sup :: String; rt_red_ref_sup = $(embedStringFile "./src/HVM/runtime/reduce/ref_sup.c")
+rt_red_mat_ctr :: String; rt_red_mat_ctr = $(embedStringFile "./src/HVM/runtime/reduce/mat_ctr.c")
+rt_red_mat_era :: String; rt_red_mat_era = $(embedStringFile "./src/HVM/runtime/reduce/mat_era.c")
+rt_red_mat_lam :: String; rt_red_mat_lam = $(embedStringFile "./src/HVM/runtime/reduce/mat_lam.c")
+rt_red_mat_sup :: String; rt_red_mat_sup = $(embedStringFile "./src/HVM/runtime/reduce/mat_sup.c")
+rt_red_mat_una :: String; rt_red_mat_una = $(embedStringFile "./src/HVM/runtime/reduce/mat_una.c")
+rt_red_mat_w32 :: String; rt_red_mat_w32 = $(embedStringFile "./src/HVM/runtime/reduce/mat_w32.c")
+rt_red_opx_ctr :: String; rt_red_opx_ctr = $(embedStringFile "./src/HVM/runtime/reduce/opx_ctr.c")
+rt_red_opx_era :: String; rt_red_opx_era = $(embedStringFile "./src/HVM/runtime/reduce/opx_era.c")
+rt_red_opx_lam :: String; rt_red_opx_lam = $(embedStringFile "./src/HVM/runtime/reduce/opx_lam.c")
+rt_red_opx_sup :: String; rt_red_opx_sup = $(embedStringFile "./src/HVM/runtime/reduce/opx_sup.c")
+rt_red_opx_una :: String; rt_red_opx_una = $(embedStringFile "./src/HVM/runtime/reduce/opx_una.c")
+rt_red_opx_w32 :: String; rt_red_opx_w32 = $(embedStringFile "./src/HVM/runtime/reduce/opx_w32.c")
+rt_red_opy_ctr :: String; rt_red_opy_ctr = $(embedStringFile "./src/HVM/runtime/reduce/opy_ctr.c")
+rt_red_opy_era :: String; rt_red_opy_era = $(embedStringFile "./src/HVM/runtime/reduce/opy_era.c")
+rt_red_opy_lam :: String; rt_red_opy_lam = $(embedStringFile "./src/HVM/runtime/reduce/opy_lam.c")
+rt_red_opy_sup :: String; rt_red_opy_sup = $(embedStringFile "./src/HVM/runtime/reduce/opy_sup.c")
+rt_red_opy_una :: String; rt_red_opy_una = $(embedStringFile "./src/HVM/runtime/reduce/opy_una.c")
+rt_red_opy_w32 :: String; rt_red_opy_w32 = $(embedStringFile "./src/HVM/runtime/reduce/opy_w32.c")
+
+stripIncl :: String -> String
+stripIncl = unlines . filter (not . isPrefixOf "#include \"Runtime.h\"") . lines
+
 runtime_c :: String
-runtime_c = $(embedStringFile "./src/HVM/Runtime.c")
+runtime_c = unlines
+  [ runtime_h
+  , stripIncl rt_state_c
+  , stripIncl rt_heap_c
+  , stripIncl rt_term_c
+  , stripIncl rt_stack_c
+  , stripIncl rt_print_c
+  , stripIncl rt_memory_c
+  , stripIncl rt_reduce_c
+  , "Term reduce_ref(Term ref) { inc_itr(); return HVM.book[term_lab(ref)](ref); }"
+  , unlines
+      [ "Term reduce_ref_sup(Term ref, u16 idx) {"
+      , "  inc_itr();"
+      , "  Loc ref_loc = term_loc(ref);"
+      , "  Lab ref_lab = term_lab(ref);"
+      , "  u16 fun_id = ref_lab;"
+      , "  u16 arity  = HVM.fari[fun_id];"
+      , "  if (idx >= arity) { printf(\"ERROR: Invalid index in reduce_ref_sup\\n\"); exit(1); }"
+      , "  Term sup = got(ref_loc + idx);"
+      , "  if (term_tag(sup) != SUP) { printf(\"ERROR: Expected SUP at index %u\\n\", idx); exit(1); }"
+      , "  Lab sup_lab = term_lab(sup);"
+      , "  Loc sup_loc = term_loc(sup);"
+      , "  Term sup0 = got(sup_loc + 0);"
+      , "  Term sup1 = got(sup_loc + 1);"
+      , "  Loc ref1_loc = alloc_node(arity);"
+      , "  for (u64 i = 0; i < arity; ++i) {"
+      , "    if (i != idx) {"
+      , "      Term arg = got(ref_loc + i);"
+      , "      Loc dup_loc = alloc_node(1);"
+      , "      set(dup_loc + 0, arg);"
+      , "      set(ref_loc + i, term_new(DP0, sup_lab, dup_loc));"
+      , "      set(ref1_loc + i, term_new(DP1, sup_lab, dup_loc));"
+      , "    } else {"
+      , "      set(ref_loc + i, sup0);"
+      , "      set(ref1_loc + i, sup1);"
+      , "    }"
+      , "  }"
+      , "  Term ref0 = term_new(REF, ref_lab, ref_loc);"
+      , "  Term ref1 = term_new(REF, ref_lab, ref1_loc);"
+      , "  set(sup_loc + 0, ref0);"
+      , "  set(sup_loc + 1, ref1);"
+      , "  return term_new(SUP, sup_lab, sup_loc);"
+      , "}"
+      ]
+  , stripIncl rt_pr_SUP_c
+  , stripIncl rt_pr_DUP_c
+  , stripIncl rt_pr_LOG_c
+  , stripIncl rt_red_app_ctr
+  , stripIncl rt_red_app_era
+  , stripIncl rt_red_app_lam
+  , stripIncl rt_red_app_sup
+  , stripIncl rt_red_app_una
+  , stripIncl rt_red_app_w32
+  , stripIncl rt_red_dup_ctr
+  , stripIncl rt_red_dup_era
+  , stripIncl rt_red_dup_lam
+  , stripIncl rt_red_dup_ref
+  , stripIncl rt_red_dup_sup
+  , stripIncl rt_red_dup_una
+  , stripIncl rt_red_dup_w32
+  , stripIncl rt_red_let
+  , stripIncl rt_red_ref
+  , stripIncl rt_red_ref_sup
+  , stripIncl rt_red_mat_ctr
+  , stripIncl rt_red_mat_era
+  , stripIncl rt_red_mat_lam
+  , stripIncl rt_red_mat_sup
+  , stripIncl rt_red_mat_una
+  , stripIncl rt_red_mat_w32
+  , stripIncl rt_red_opx_ctr
+  , stripIncl rt_red_opx_era
+  , stripIncl rt_red_opx_lam
+  , stripIncl rt_red_opx_sup
+  , stripIncl rt_red_opx_una
+  , stripIncl rt_red_opx_w32
+  , stripIncl rt_red_opy_ctr
+  , stripIncl rt_red_opy_era
+  , stripIncl rt_red_opy_lam
+  , stripIncl rt_red_opy_sup
+  , stripIncl rt_red_opy_una
+  , stripIncl rt_red_opy_w32
+  ]
+
 
 -- Generates the complete C code for a Book
 compileBook :: Book -> String -> String

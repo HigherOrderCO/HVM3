@@ -3,7 +3,7 @@
   1+p: @count(p,(+ k 2))
 }
 
-@main = @count(2_000_000 0)
+@main = @count(2_000_000_000 0)
 
 //WORK: 12000000004 interactions
 //TIME: 1.1376750 seconds
