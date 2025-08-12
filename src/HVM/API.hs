@@ -84,57 +84,8 @@ runBook book root mode compiled debug =
 
 compileBookToBin :: FilePath -> Book -> IO FilePath
 compileBookToBin filePath book = do
-  runtime_c_str <- do
-    let strip incl = unlines . filter (not . ("#include \"Runtime.h\"" `isPrefixOf`)) . lines $ incl
-    hdr <- readFile' "src/HVM/Runtime.h"
-    parts <- mapM (readFile')
-      [ "src/HVM/runtime/state.c"
-      , "src/HVM/runtime/heap.c"
-      , "src/HVM/runtime/term.c"
-      , "src/HVM/runtime/stack.c"
-      , "src/HVM/runtime/print.c"
-      , "src/HVM/runtime/memory.c"
-      , "src/HVM/runtime/reduce.c"
-      , "src/HVM/runtime/prim/SUP.c"
-      , "src/HVM/runtime/prim/DUP.c"
-      , "src/HVM/runtime/prim/LOG.c"
-      , "src/HVM/runtime/reduce/app_ctr.c"
-      , "src/HVM/runtime/reduce/app_era.c"
-      , "src/HVM/runtime/reduce/app_lam.c"
-      , "src/HVM/runtime/reduce/app_sup.c"
-      , "src/HVM/runtime/reduce/app_una.c"
-      , "src/HVM/runtime/reduce/app_w32.c"
-      , "src/HVM/runtime/reduce/dup_ctr.c"
-      , "src/HVM/runtime/reduce/dup_era.c"
-      , "src/HVM/runtime/reduce/dup_lam.c"
-      , "src/HVM/runtime/reduce/dup_ref.c"
-      , "src/HVM/runtime/reduce/dup_sup.c"
-      , "src/HVM/runtime/reduce/dup_una.c"
-      , "src/HVM/runtime/reduce/dup_w32.c"
-      , "src/HVM/runtime/reduce/let.c"
-      , "src/HVM/runtime/reduce/ref.c"
-      , "src/HVM/runtime/reduce/ref_sup.c"
-      , "src/HVM/runtime/reduce/mat_ctr.c"
-      , "src/HVM/runtime/reduce/mat_era.c"
-      , "src/HVM/runtime/reduce/mat_lam.c"
-      , "src/HVM/runtime/reduce/mat_sup.c"
-      , "src/HVM/runtime/reduce/mat_una.c"
-      , "src/HVM/runtime/reduce/mat_w32.c"
-      , "src/HVM/runtime/reduce/opx_ctr.c"
-      , "src/HVM/runtime/reduce/opx_era.c"
-      , "src/HVM/runtime/reduce/opx_lam.c"
-      , "src/HVM/runtime/reduce/opx_sup.c"
-      , "src/HVM/runtime/reduce/opx_una.c"
-      , "src/HVM/runtime/reduce/opx_w32.c"
-      , "src/HVM/runtime/reduce/opy_ctr.c"
-      , "src/HVM/runtime/reduce/opy_era.c"
-      , "src/HVM/runtime/reduce/opy_lam.c"
-      , "src/HVM/runtime/reduce/opy_sup.c"
-      , "src/HVM/runtime/reduce/opy_una.c"
-      , "src/HVM/runtime/reduce/opy_w32.c"
-      ]
-    return $ unlines (hdr : map strip parts)
-  let mainC = compileBook book runtime_c_str
+  -- Use the embedded runtime sources so compiled mode doesn't depend on CWD
+  let mainC = compileBook book runtime_c
   callCommand "mkdir -p .build"
   let fName = last $ words $ map (\c -> if c == '/' then ' ' else c) filePath
   let cPath = ".build/" ++ fName ++ ".c"
