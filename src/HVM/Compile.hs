@@ -70,9 +70,13 @@ rt_red_opy_w32 :: String; rt_red_opy_w32 = $(embedStringFile "./src/HVM/runtime/
 stripIncl :: String -> String
 stripIncl = unlines . filter (not . isPrefixOf "#include \"Runtime.h\"") . lines
 
+-- Remove header-only pragmas that are noisy in a main TU
+stripHdr :: String -> String
+stripHdr = unlines . filter (not . isPrefixOf "#pragma once") . lines
+
 runtime_c :: String
 runtime_c = unlines
-  [ runtime_h
+  [ stripHdr runtime_h
   , stripIncl rt_state_c
   , stripIncl rt_heap_c
   , stripIncl rt_term_c
