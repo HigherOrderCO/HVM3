@@ -20,8 +20,8 @@ import qualified Data.Map.Strict as MS
 -- ----------
 
 type Tag  = Word8
-type Lab  = Word32
-type Loc  = Word32
+type Lab  = Word16
+type Loc  = Word64
 type Term = Word64
 
 type Name = String

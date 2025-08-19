@@ -1,22 +1,22 @@
 // Term encoding and helpers
 // -------------------------
 // Layout (least-significant bit on the right):
-//   [ 63 ............... 32 ][ 31 .... 8 ][ 7 ][ 6 .... 0 ]
-//        location (32b)          lab(24b)  S        tag(7b)
+//   [ 63 ............... 24 ][ 23 .... 8 ][ 7 ][ 6 .... 0 ]
+//        location (40b)          lab(16b)  S        tag(7b)
 //   - tag: 7-bit node tag (see Runtime.h constants)
 //   - S  : substitution/"sub" bit (1 when value is substituted)
-//   - lab: constructor/operator label (24 bits)
-//   - loc: heap location (32 bits)
+//   - lab: constructor/operator label (16 bits)
+//   - loc: heap location / payload (40 bits)
 
 #include "Runtime.h"
 
 // Bit masks and shifts for clarity (no behavior change)
 #define TAG_MASK   (0x7FULL)
 #define SUB_MASK   (1ULL << 7)
-#define LAB_MASK   (0xFFFFFFULL)
-#define LOC_MASK   (0xFFFFFFFFULL)
+#define LAB_MASK   (0xFFFFULL)
+#define LOC_MASK   (0xFFFFFFFFFFULL)
 #define LAB_SHIFT  (8)
-#define LOC_SHIFT  (32)
+#define LOC_SHIFT  (24)
 
 Term term_new(Tag tag, Lab lab, Loc loc) {
   return ((Term)tag)
@@ -49,7 +49,7 @@ Term term_rem_bit(Term x) {
 }
 
 Term term_set_loc(Term x, Loc loc) {
-  return (x & 0x00000000FFFFFFFFULL) | ((Term)loc << LOC_SHIFT);
+  return (x & 0x0000000000FFFFFFULL) | ((Term)loc << LOC_SHIFT);
 }
 
 _Bool term_is_atom(Term t) {

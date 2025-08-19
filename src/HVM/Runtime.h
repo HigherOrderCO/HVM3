@@ -23,13 +23,13 @@
 #endif
 
 // Limits
-#define MAX_HEAP_SIZE (1ULL << 32)
+#define MAX_HEAP_SIZE (1ULL << 40)
 #define MAX_STACK_SIZE (1ULL << 28)
 
 // Basic types
 typedef uint8_t  Tag;
-typedef uint32_t Lab;
-typedef uint32_t Loc;
+typedef uint16_t Lab; // 16-bit label (fits 65536 ctors/ops)
+typedef uint64_t Loc; // up to 40-bit heap index in term payload
 typedef uint64_t Term;
 typedef uint16_t u16;
 typedef uint32_t u32;
