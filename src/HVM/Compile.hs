@@ -643,6 +643,12 @@ compileFastBody book fid term@(Ref fNam fFid fArg) ctx stop itr
     emit $ dp0Nam ++ " = " ++ valNam ++ ";"
     emit $ dp1Nam ++ " = " ++ valNam ++ ";"
     tabDec
+    emit $ "} else if (term_tag(" ++ valNam ++ ") == SUP && term_lab(" ++ valNam ++ ") == term_loc(" ++ labNam ++ ")) {"
+    tabInc
+    emit $ "itrs += 1;"
+    emit $ dp0Nam ++ " = got(term_loc(" ++ valNam ++ ") + 0);"
+    emit $ dp1Nam ++ " = got(term_loc(" ++ valNam ++ ") + 1);"
+    tabDec
     emit $ "} else {"
     tabInc
     dupNam <- fresh "dup"
@@ -766,6 +772,12 @@ compileFastCore book fid (Dup lab dp0 dp1 val bod) = do
   emit $ "itrs += 1;"
   emit $ dp0Nam ++ " = " ++ valNam ++ ";"
   emit $ dp1Nam ++ " = " ++ valNam ++ ";"
+  tabDec
+  emit $ "} else if (term_tag(" ++ valNam ++ ") == SUP && term_lab(" ++ valNam ++ ") == " ++ show lab ++ ") {"
+  tabInc
+  emit $ "itrs += 1;"
+  emit $ dp0Nam ++ " = got(term_loc(" ++ valNam ++ ") + 0);"
+  emit $ dp1Nam ++ " = got(term_loc(" ++ valNam ++ ") + 1);"
   tabDec
   emit $ "} else {"
   tabInc
@@ -933,12 +945,9 @@ genMain book = case MS.lookup "main" (namToFid book) of
 
 isTailRecursive :: Core -> Word16 -> Bool
 isTailRecursive core fid = case core of
-  Ref "DUP" _ [_, _, Lam _ (Lam _ f)] ->
-    isTailRecursive f fid
-  Ref fNam fFid fArg
-    | fFid == fid -> True
-    | otherwise   -> False
-  Dup _ _ _ _ f -> isTailRecursive f fid
-  Let _ _ _ f   -> isTailRecursive f fid
-  Mat _ _ _ c   -> any (\(_,_,f) -> isTailRecursive f fid) c
-  _             -> False
+  Ref _ fFid _ | fFid == fid          -> True
+  Ref "DUP" _ [_, _, Lam _ (Lam _ f)] -> isTailRecursive f fid
+  Dup _ _ _ _ f                       -> isTailRecursive f fid
+  Let _ _ _ f                         -> isTailRecursive f fid
+  Mat _ _ _ c                         -> any (\(_,_,f) -> isTailRecursive f fid) c
+  _                                   -> False
