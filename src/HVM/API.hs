@@ -93,7 +93,7 @@ compileBookToBin filePath book = do
   oldCFile <- tryIOError (readFile' cPath)
   when (oldCFile /= Right mainC) $ do
     writeFile cPath mainC
-    callCommand $ "gcc -O2 -fPIC -shared " ++ cPath ++ " -o " ++ oPath
+    callCommand $ "gcc -O2 -fPIC -flto -shared " ++ cPath ++ " -o " ++ oPath
   return oPath
 
 injectRoot :: Book -> Core -> IO ()
