@@ -173,13 +173,15 @@ renderHeatmapPNG outPath = do
   let totals = [ fromIntegral (readsV VU.! i) + fromIntegral (writesV VU.! i) | i <- [0 .. len - 1] ] :: [Double]
   let maxTot = maximum (0.0 : totals)
   let scale c = if maxTot <= 0 then 0 else realToFrac (log (1 + c) / log (1 + maxTot)) :: Double
+  let minDark = 0.18  -- ensure every touched pixel is visibly darker than white
   let toPix i =
         let r  = fromIntegral (readsV  VU.! i) :: Double
             wv = fromIntegral (writesV VU.! i) :: Double
             t = r + wv
         in if t <= 0
              then (255,255,255)
-             else let d = scale t
+             else let d0 = scale t
+                      d  = max d0 minDark
                       p = r / t -- read proportion
                       base | p >= 0.5 = -- between gray and red
                                let a = (p - 0.5) * 2 in -- 0..1
@@ -187,12 +189,12 @@ renderHeatmapPNG outPath = do
                                    g0 = round (90   * (1 - a) +   0 * a) :: Int
                                    b0 = round (90   * (1 - a) +   0 * a) :: Int
                                in (r0,g0,b0)
-                          | otherwise = -- between green and gray
-                            let a = (0.5 - p) * 2 in -- 0..1
-                            let r0 = round (90   * (1 - a) +   0 * a) :: Int
-                                g0 = round (90   * (1 - a) + 160 * a) :: Int
-                                b0 = round (90   * (1 - a) +   0 * a) :: Int
-                            in (r0,g0,b0)
+                           | otherwise = -- between green and gray
+                               let a = (0.5 - p) * 2 in -- 0..1
+                               let r0 = round (90   * (1 - a) +   0 * a) :: Int
+                                   g0 = round (90   * (1 - a) + 160 * a) :: Int
+                                   b0 = round (90   * (1 - a) +   0 * a) :: Int
+                               in (r0,g0,b0)
                       mix a b t' = round (fromIntegral a * d + fromIntegral b * (1 - d))
                       (br,bg,bb) = base
                   in ( mix br 255 d
