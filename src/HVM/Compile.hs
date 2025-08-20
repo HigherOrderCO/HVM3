@@ -141,6 +141,7 @@ data CompileState = CompileState
   , vars :: [(String, String)]    -- [(var_name, var_host)]
   , code :: [String]
   , reus :: MS.Map Int [String]   -- arity => [reuse_loc]
+  , tco  :: Bool                  -- tail-call optimization
   }
 
 type Compile = State CompileState
@@ -157,7 +158,8 @@ compileWith cmp book fid =
   let copy   = fst (fst (mget (fidToFun book) fid)) in
   let args   = snd (fst (mget (fidToFun book) fid)) in
   let core   = snd (mget (fidToFun book) fid) in
-  let state  = CompileState 0 0 MS.empty [] [] MS.empty in
+  let tco    = isTailRecursive core fid in
+  let state  = CompileState 0 0 MS.empty [] [] MS.empty tco in
   let result = runState (cmp book fid core copy args) state in
   unlines $ reverse $ code (snd result)
 
@@ -367,8 +369,7 @@ compileFast book fid core copy args = do
             emit $ "    && lab != " ++ show lab
           emit $ ") {"
           tabInc
-          emit $ "Term term = reduce_ref_sup(ref, " ++ show i ++ ");"
-          emit $ "return term;"
+          emit $ "return reduce_ref_sup(ref, " ++ show i ++ ");"
           tabDec
           emit $ "}"
           tabDec
@@ -386,12 +387,16 @@ compileFast book fid core copy args = do
 -- Compiles a fast function's argument list
 compileFastArgs :: Book -> Word16 -> Core -> [String] -> Compile ()
 compileFastArgs book fid body ctx = do
-  emit $ "_Bool fst_iter = 1;"
-  emit $ "while (1) {"
-  tabInc
-  compileFastBody book fid body ctx False 0
-  tabDec
-  emit $ "}"
+  tco <- gets tco
+  if tco then do
+    emit $ "_Bool fst_iter = true;"
+    emit $ "while (1) {"
+    tabInc
+    compileFastBody book fid body ctx False 0
+    tabDec
+    emit $ "}"
+  else do
+    compileFastBody book fid body ctx False 0
 
 -- Compiles a fast function body (pattern-matching)
 compileFastBody :: Book -> Word16 -> Core -> [String] -> Bool -> Int -> Compile ()
@@ -527,6 +532,7 @@ compileFastBody book fid term@(Mat kin val mov css) ctx stop@False itr = do
       tabDec
       emit $ "}"
       modify $ \st -> st { reus = reuse' }
+    emit $ "default: { exit(1); }"
     tabDec
     emit $ "}"
     tabDec
@@ -678,11 +684,15 @@ compileFastAlloc name arity = do
     ((k,loc:locs):_) -> do
       emit $ "Loc " ++ name ++ ";"
       -- Too hard to determine statically if reusing is ok in tail-call-optimization
-      emit $ "if (fst_iter) {"
-      emit $ "  " ++ name ++ " = " ++ loc ++ ";"
-      emit $ "} else {"
-      emit $ "  " ++ name ++ " = alloc_node(" ++ show arity ++ ");"
-      emit $ "}"
+      tco <- gets tco
+      if tco then do
+        emit $ "if (fst_iter) {"
+        emit $ "  " ++ name ++ " = " ++ loc ++ ";"
+        emit $ "} else {"
+        emit $ "  " ++ name ++ " = alloc_node(" ++ show arity ++ ");"
+        emit $ "}"
+      else do
+        emit $ name ++ " = " ++ loc ++ ";"
       -- Remove the used location
       let reuse' = MS.insert k locs reuse
       -- If we used a location bigger than needed, add the remainder back
@@ -920,3 +930,15 @@ genMain book = case MS.lookup "main" (namToFid book) of
   Nothing -> ""
   where 
     registerFuncs = unlines ["  hvm_define(" ++ show fid ++ ", " ++ name ++ "_f);" | (fid, name) <- MS.toList (fidToNam book)]
+
+isTailRecursive :: Core -> Word16 -> Bool
+isTailRecursive core fid = case core of
+  Ref "DUP" _ [_, _, Lam _ (Lam _ f)] ->
+    isTailRecursive f fid
+  Ref fNam fFid fArg
+    | fFid == fid -> True
+    | otherwise   -> False
+  Dup _ _ _ _ f -> isTailRecursive f fid
+  Let _ _ _ f   -> isTailRecursive f fid
+  Mat _ _ _ c   -> any (\(_,_,f) -> isTailRecursive f fid) c
+  _             -> False
