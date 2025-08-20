@@ -1,4 +1,0 @@
-access_count=1
-sum_tot=1
-max_tot=1
-nonzero=1
