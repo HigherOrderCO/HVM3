@@ -42,6 +42,7 @@ Loc alloc_node(Loc arity) {
   }
   u64 old = *HVM.size;
   *HVM.size += arity;
+  heatmap_on_write(old);
   return old;
 }
 

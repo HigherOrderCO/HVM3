@@ -126,11 +126,12 @@ cliRun filePath debug compiled mode showStats hideQuotes heatmap strArgs = do
       (vals1, stats1) <- runBook book (Ref "main" maxBound args) mode compiled debug
       -- Discard outputs from dry run; free and re-init
       hvmFree
-      -- Second run with heatmap enabled
+      -- Second run with heatmap enabled (count from injection onwards)
       hvmInit
+      -- Begin heatmap BEFORE initBook so compiled runtime receives updated state
+      heatmapBegin (rsTime stats1) (rsSize stats1) (rsItrs stats1) 1280 1280
       initBook filePath book compiled
       injectRoot book (Ref "main" maxBound args)
-      heatmapBegin (rsTime stats1) (rsSize stats1) (rsItrs stats1) 1280 1280
       rxAt <- if compiled then return (reduceCAt debug) else return (reduceAt debug)
       ((), stats2) <- withRunStats $ do
         case mode of
@@ -172,34 +173,42 @@ renderHeatmapPNG outPath = do
   -- Find global max
   let totals = [ fromIntegral (readsV VU.! i) + fromIntegral (writesV VU.! i) | i <- [0 .. len - 1] ] :: [Double]
   let maxTot = maximum (0.0 : totals)
+  -- Debug: count non-white pixels
+  let touched = length (filter (>0) totals)
+  hPutStrLn stderr ("heatmap touched bins: " ++ show touched)
   let scale c = if maxTot <= 0 then 0 else realToFrac (log (1 + c) / log (1 + maxTot)) :: Double
-  let minDark = 0.18  -- ensure every touched pixel is visibly darker than white
+  let minDark = 0.22  -- ensure every touched pixel is visibly darker than white
   let toPix i =
         let r  = fromIntegral (readsV  VU.! i) :: Double
             wv = fromIntegral (writesV VU.! i) :: Double
-            t = r + wv
+            t  = r + wv
         in if t <= 0
              then (255,255,255)
-             else let d0 = scale t
-                      d  = max d0 minDark
-                      p = r / t -- read proportion
+             else let d0   = scale t
+                      d    = max d0 minDark
+                      p    = r / t -- read proportion
                       base | p >= 0.5 = -- between gray and red
-                               let a = (p - 0.5) * 2 in -- 0..1
+                               let a  = (p - 0.5) * 2 in -- 0..1
                                let r0 = round (90   * (1 - a) + 160 * a) :: Int
                                    g0 = round (90   * (1 - a) +   0 * a) :: Int
                                    b0 = round (90   * (1 - a) +   0 * a) :: Int
                                in (r0,g0,b0)
                            | otherwise = -- between green and gray
-                               let a = (0.5 - p) * 2 in -- 0..1
+                               let a  = (0.5 - p) * 2 in -- 0..1
                                let r0 = round (90   * (1 - a) +   0 * a) :: Int
                                    g0 = round (90   * (1 - a) + 160 * a) :: Int
                                    b0 = round (90   * (1 - a) +   0 * a) :: Int
                                in (r0,g0,b0)
                       mix a b t' = round (fromIntegral a * d + fromIntegral b * (1 - d))
                       (br,bg,bb) = base
-                  in ( mix br 255 d
-                     , mix bg 255 d
-                     , mix bb 255 d
+                      (pr,pg,pb) = ( mix br 255 d
+                                   , mix bg 255 d
+                                   , mix bb 255 d )
+                      -- Ensure a touched pixel is never identical to pure white
+                      clamp255 x = if x >= 255 then 252 else x
+                  in ( clamp255 pr
+                     , clamp255 pg
+                     , clamp255 pb
                      )
   let img = generateImage
               (\x y -> let i = y * w + x

@@ -32,6 +32,14 @@ void hvm_set_state(State* hvm) {
     HVM.clen[i] = hvm->clen[i];
     HVM.cadt[i] = hvm->cadt[i];
   }
+  // Copy heatmap instrumentation state so compiled runtime writes into host buffers
+  HVM.heat_enabled = hvm->heat_enabled;
+  HVM.heat_w       = hvm->heat_w;
+  HVM.heat_h       = hvm->heat_h;
+  HVM.heat_itrs_max= hvm->heat_itrs_max;
+  HVM.heat_mem_max = hvm->heat_mem_max;
+  HVM.heat_reads   = hvm->heat_reads;
+  HVM.heat_writes  = hvm->heat_writes;
 }
 
 void hvm_define(u16 fid, Term (*func)()) {
@@ -53,4 +61,3 @@ void hvm_set_clen(u16 cid, u16 cases) {
 void hvm_set_cadt(u16 cid, u16 adt) {
   HVM.cadt[cid] = adt;
 }
-
