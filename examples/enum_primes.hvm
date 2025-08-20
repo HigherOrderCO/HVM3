@@ -123,4 +123,4 @@ data Bin { #O{pred} #I{pred} #E }
 
 ////INJECT//
 
-@main = @if(@eq(@mul(@X_B @Y_B) @P_B) λt(t @u32(@X_B) @u32(@Y_B)) *)
+@main = @if(@eq(@mul(@X_C @Y_C) @P_C) λt(t @u32(@X_C) @u32(@Y_C)) *)

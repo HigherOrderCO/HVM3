@@ -23,3 +23,11 @@ TIMES/
 .main*
 .build/
 dist/
+heatmap.png
+mem-heat.png
+examples/mem-heat.png
+mh-debug.txt
+check_png_not_white.py
+.bin/
+cabal.project.local
+src/HVM/runtime/bench/

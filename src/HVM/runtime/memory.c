@@ -105,19 +105,23 @@ u32* heatmap_get_writes() { return HVM.heat_writes; }
 
 static inline u32 map_x(Loc loc) {
   if (HVM.heat_mem_max == 0 || HVM.heat_w <= 1) return 0;
-  u64 den = HVM.heat_mem_max - 1;
+  u64 den = HVM.heat_mem_max - 1; // map [0..den] -> [0..W-1]
   if (den == 0) return 0;
   if (loc > den) loc = den;
-  return (u32)((loc * (HVM.heat_w - 1)) / den);
+  u64 num = loc * (u64)(HVM.heat_w - 1);
+  // round-half-up to avoid systematic underfill at bin edges
+  return (u32)((num + den/2) / den);
 }
 
 static inline u32 map_y() {
   if (HVM.heat_itrs_max == 0 || HVM.heat_h <= 1) return 0;
   u64 itrs = *HVM.itrs;
-  u64 den = HVM.heat_itrs_max - 1;
+  u64 den  = HVM.heat_itrs_max - 1; // map [0..den] -> [0..H-1]
   if (den == 0) return 0;
   if (itrs > den) itrs = den;
-  return (u32)((itrs * (HVM.heat_h - 1)) / den);
+  u64 num = itrs * (u64)(HVM.heat_h - 1);
+  // round-half-up to reduce missed early bins on the diagonal
+  return (u32)((num + den/2) / den);
 }
 
 void heatmap_on_read(Loc loc) {
