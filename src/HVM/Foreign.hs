@@ -207,6 +207,36 @@ foreign import ccall unsafe "Runtime.c hvm_set_cadt"
 foreign import ccall unsafe "Runtime.c hvm_set_fari"
   hvmSetFari :: Word16 -> Word16 -> IO ()
 
+-- FFI imports for interaction counts
+foreign import ccall unsafe "Runtime.c hvm_get_let_lazy"    hvmGetLetLazy :: IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_let_stri"    hvmGetLetStri :: IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_app_era"     hvmGetAppEra :: IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_app_lam"     hvmGetAppLam :: IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_app_sup"     hvmGetAppSup :: IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_dup_era"     hvmGetDupEra :: IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_dup_lam"     hvmGetDupLam :: IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_dup_sup_anni" hvmGetDupSupAnni :: IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_dup_sup_comm" hvmGetDupSupComm :: IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_dup_ctr"     hvmGetDupCtr :: Word16 -> IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_dup_w32"     hvmGetDupW32 :: IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_mat_era"     hvmGetMatEra :: IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_mat_sup"     hvmGetMatSup :: IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_mat_ctr"     hvmGetMatCtr :: Word16 -> IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_mat_w32"     hvmGetMatW32 :: IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_opx_era"     hvmGetOpxEra :: IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_opx_sup"     hvmGetOpxSup :: IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_opx_w32"     hvmGetOpxW32 :: IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_opy_era"     hvmGetOpyEra :: IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_opy_sup"     hvmGetOpySup :: IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_opy_w32"     hvmGetOpyW32 :: IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_ref_dup"     hvmGetRefDup :: Word16 -> IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_ref_sup"     hvmGetRefSup :: Word16 -> IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_ref_era"     hvmGetRefEra :: Word16 -> IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_ref_fast"    hvmGetRefFast :: Word16 -> IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_ref_slow"    hvmGetRefSlow :: Word16 -> IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_ref_fall"    hvmGetRefFall :: Word16 -> IO Word64
+foreign import ccall unsafe "Runtime.c hvm_get_ref_itrs"    hvmGetRefItrs :: Word16 -> IO Word64
+
 showTerm :: Term -> String
 showTerm term =
   let tag = showTag (termTag term)

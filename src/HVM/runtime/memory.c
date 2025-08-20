@@ -18,6 +18,7 @@ void hvm_init() {
   HVM.size = alloc_huge(sizeof(u64));
   HVM.itrs = alloc_huge(sizeof(u64));
   HVM.frsh = alloc_huge(sizeof(u64));
+  HVM.interactions = alloc_huge(sizeof(Interactions));
 
   #define CHECK_ALLOC(ptr, name) if (!(ptr)) { printf(name " alloc failed\n"); allocs_failed++; }
   int allocs_failed = 0;
@@ -27,6 +28,7 @@ void hvm_init() {
   CHECK_ALLOC(HVM.size, "size");
   CHECK_ALLOC(HVM.itrs, "itrs");
   CHECK_ALLOC(HVM.frsh, "frsh");
+  CHECK_ALLOC(HVM.interactions, "interactions");
   if (allocs_failed > 0) {
     printf("hvm_init alloc's failed: %d allocations failed\n", allocs_failed);
     exit(1);
@@ -37,6 +39,7 @@ void hvm_init() {
   *HVM.size = 1;
   *HVM.itrs = 0;
   *HVM.frsh = 0x20;
+  memset(HVM.interactions, 0, sizeof(Interactions));
   HVM.book[SUP_F] = SUP_f;
   HVM.book[DUP_F] = DUP_f;
   HVM.book[LOG_F] = LOG_f;
@@ -65,5 +68,6 @@ void hvm_free() {
     hvm_munmap(HVM.size, sizeof(u64), "size");
     hvm_munmap(HVM.itrs, sizeof(u64), "itrs");
     hvm_munmap(HVM.frsh, sizeof(u64), "frsh");
+    hvm_munmap(HVM.interactions, sizeof(Interactions), "interactions");
 }
 

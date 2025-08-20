@@ -6,6 +6,7 @@
 // y <- 123
 Term reduce_dup_w32(Term dup, Term w32) {
   inc_itr();
+  HVM.interactions->dup_w32++;
   Loc dup_loc = term_loc(dup);
   sub(dup_loc + 0, w32);
   return w32;

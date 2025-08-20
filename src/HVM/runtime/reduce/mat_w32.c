@@ -6,6 +6,7 @@
 // else    : KN(num-N)
 Term reduce_mat_w32(Term mat, Term w32) {
   inc_itr();
+  HVM.interactions->mat_w32++;
   Loc mat_loc = term_loc(mat);
   Lab mat_lab = term_lab(mat);
   u64 mat_len = mat_lab;

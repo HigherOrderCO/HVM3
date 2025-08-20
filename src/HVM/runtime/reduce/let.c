@@ -7,6 +7,7 @@
 // bod
 Term reduce_let(Term let, Term val) {
   inc_itr();
+  HVM.interactions->let_lazy++;
   Loc let_loc = term_loc(let);
   Term bod    = got(let_loc + 1);
   sub(let_loc + 0, val);

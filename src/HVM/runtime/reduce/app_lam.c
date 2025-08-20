@@ -6,6 +6,7 @@
 // body
 Term reduce_app_lam(Term app, Term lam) {
   inc_itr();
+  HVM.interactions->app_lam++;
   Loc app_loc = term_loc(app);
   Loc lam_loc = term_loc(lam);
   Term bod    = got(lam_loc + 0);

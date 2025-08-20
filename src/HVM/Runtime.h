@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <stdbool.h>
+#include <string.h>
 
 // mmap portability helpers (e.g., macOS)
 #ifndef MAP_ANONYMOUS
@@ -86,6 +87,37 @@ typedef uint64_t u64;
 
 #define VOID 0x00000000000000ULL
 
+typedef struct {
+  u64 let_lazy;
+  u64 let_stri;
+  u64 app_era;
+  u64 app_lam;
+  u64 app_sup;
+  u64 dup_era;
+  u64 dup_lam;
+  u64 dup_sup_anni;
+  u64 dup_sup_comm;
+  u64 dup_ctr[65536];
+  u64 dup_w32;
+  u64 mat_era;
+  u64 mat_sup;
+  u64 mat_ctr[65536];
+  u64 mat_w32;
+  u64 opx_era;
+  u64 opx_sup;
+  u64 opx_w32;
+  u64 opy_era;
+  u64 opy_sup;
+  u64 opy_w32;
+  u64 ref_sup[65536];
+  u64 ref_dup[65536];
+  u64 ref_era[65536];
+  u64 ref_fast[65536];
+  u64 ref_itrs[65536];
+  u64 ref_fall[65536];
+  u64 ref_slow[65536];
+} Interactions;
+
 // Runtime State
 typedef struct {
   Term*  sbuf; // reduction stack buffer
@@ -99,6 +131,8 @@ typedef struct {
   u16    clen[65536]; // case length of each constructor
   u16    cadt[65536]; // ADT id of each constructor
   u16    fari[65536]; // arity of each function
+
+  Interactions* interactions;
 } State;
 
 // Global runtime state
@@ -218,3 +252,33 @@ void hvm_set_cari(u16 cid, u16 arity);
 void hvm_set_fari(u16 fid, u16 arity);
 void hvm_set_clen(u16 cid, u16 cases);
 void hvm_set_cadt(u16 cid, u16 adt);
+
+// Interaction getters
+u64 hvm_get_let_lazy();
+u64 hvm_get_let_stri();
+u64 hvm_get_app_era();
+u64 hvm_get_app_lam();
+u64 hvm_get_app_sup();
+u64 hvm_get_dup_era();
+u64 hvm_get_dup_lam();
+u64 hvm_get_dup_sup_anni();
+u64 hvm_get_dup_sup_comm();
+u64 hvm_get_dup_ctr(u16 cid);
+u64 hvm_get_dup_w32();
+u64 hvm_get_mat_era();
+u64 hvm_get_mat_sup();
+u64 hvm_get_mat_ctr(u16 cid);
+u64 hvm_get_mat_w32();
+u64 hvm_get_opx_era();
+u64 hvm_get_opx_sup();
+u64 hvm_get_opx_w32();
+u64 hvm_get_opy_era();
+u64 hvm_get_opy_sup();
+u64 hvm_get_opy_w32();
+u64 hvm_get_ref_dup(u16 fid);
+u64 hvm_get_ref_sup(u16 fid);
+u64 hvm_get_ref_era(u16 fid);
+u64 hvm_get_ref_fast(u16 fid);
+u64 hvm_get_ref_fall(u16 fid);
+u64 hvm_get_ref_itrs(u16 fid);
+u64 hvm_get_ref_slow(u16 fid);

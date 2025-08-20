@@ -5,6 +5,7 @@ Term reduce_mat_ctr(Term mat, Term ctr) {
   Tag mat_tag = term_tag(mat);
   Loc mat_loc = term_loc(mat);
   Lab mat_lab = term_lab(mat);
+  HVM.interactions->mat_ctr[(u16)term_lab(ctr)]++;
   // If-Let
   if (mat_tag == IFL) {
     Loc ctr_loc = term_loc(ctr);

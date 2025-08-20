@@ -8,6 +8,7 @@
 // x <- &L{x0 x1}
 Term reduce_dup_lam(Term dup, Term lam) {
   inc_itr();
+  HVM.interactions->dup_lam++;
   Loc dup_loc = term_loc(dup);
   Loc lam_loc = term_loc(lam);
   Lab dup_lab = term_lab(dup);

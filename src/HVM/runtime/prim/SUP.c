@@ -19,6 +19,7 @@ Term SUP_f(Term ref) {
   set(sup + 0, tm0);
   set(sup + 1, tm1);
   *HVM.itrs += 1;
+  HVM.interactions->ref_fast[SUP_F]++;
   return ret;
 }
 

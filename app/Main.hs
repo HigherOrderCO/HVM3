@@ -3,7 +3,7 @@ module Main where
 import Network.Socket as Network
 import System.IO (hSetEncoding, utf8, hPutStrLn, stderr)
 import Control.Exception (try, fromException, SomeException, finally, AsyncException(UserInterrupt))
-import Control.Monad (when, forM_, unless)
+import Control.Monad (when, forM_, unless, foldM)
 import Data.List (partition, isPrefixOf, find)
 import HVM.API
 import HVM.Collapse
@@ -17,6 +17,7 @@ import System.Exit (exitWith, ExitCode(ExitSuccess, ExitFailure))
 import System.IO
 import Text.Printf
 import Text.Read (readMaybe)
+import Data.Word
 import qualified Data.Map.Strict as MS
 
 -- Main
@@ -33,8 +34,9 @@ main = do
       let stats          = "-s" `elem` flags
       let debug          = "-d" `elem` flags
       let hideQuotes     = "-Q" `elem` flags
+      let interactions   = "-I" `elem` flags
       let mode           = case collapseFlag of { Just n -> Collapse n ; Nothing -> Normalize }
-      cliRun file debug compiled mode stats hideQuotes sArgs
+      cliRun file debug compiled mode stats hideQuotes interactions sArgs
     ("serve" : file : rest) -> do
       let (flags, _)     = partition ("-" `isPrefixOf`) rest
       let compiled       = "-c" `elem` flags
@@ -70,6 +72,7 @@ printHelp = do
   putStrLn "    -C  # Collapse the result to a list of λ-Terms"
   putStrLn "    -CN # Same as above, but show only first N results"
   putStrLn "    -s  # Show statistics"
+  putStrLn "    -I  # Show interaction statistics"
   putStrLn "    -d  # Print execution steps (debug mode)"
   putStrLn "    -Q  # Hide quotes in output"
   return $ Right ()
@@ -77,8 +80,8 @@ printHelp = do
 -- CLI Commands
 -- ------------
 
-cliRun :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> [String] -> IO (Either String ())
-cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
+cliRun :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> Bool -> [String] -> IO (Either String ())
+cliRun filePath debug compiled mode showStats hideQuotes interactions strArgs = do
   code <- readFile' filePath
   book <- doParseBook filePath code
   hvmInit
@@ -103,9 +106,11 @@ cliRun filePath debug compiled mode showStats hideQuotes strArgs = do
         let val = doLiftDups core
         let out = if hideQuotes then removeQuotes (show val) else show val
         printf "%s\n" out
-  hvmFree
   when showStats $ do
     print stats
+  when interactions $ do
+    printInteractions book
+  hvmFree
   return $ Right ()
 
 cliServe :: FilePath -> Bool -> Bool -> RunMode -> Bool -> Bool -> IO (Either String ())
@@ -165,6 +170,79 @@ checkHasMain book = do
   when (not $ MS.member "main" (namToFid book)) $ do
     putStrLn "Error: 'main' not found."
     exitWith (ExitFailure 1)
+
+-- | Prints interaction statistics with function names from the Book
+printInteractions :: Book -> IO ()
+printInteractions book = do
+  -- Get interaction counts from HVM state
+  let baseFns = 
+        [ ("let_lazy", hvmGetLetLazy)
+        , ("let_strict", hvmGetLetStri)
+        , ("app_era", hvmGetAppEra)
+        , ("app_lam", hvmGetAppLam)
+        , ("app_sup", hvmGetAppSup)
+        , ("dup_era", hvmGetDupEra)
+        , ("dup_lam", hvmGetDupLam)
+        , ("dup_sup_anni", hvmGetDupSupAnni)
+        , ("dup_sup_comm", hvmGetDupSupComm)
+        , ("dup_w32", hvmGetDupW32)
+        , ("mat_era", hvmGetMatEra)
+        , ("mat_sup", hvmGetMatSup)
+        , ("opx_era", hvmGetOpxEra)
+        , ("opx_sup", hvmGetOpxSup)
+        , ("opx_w32", hvmGetOpxW32)
+        , ("opy_era", hvmGetOpyEra)
+        , ("opy_sup", hvmGetOpySup)
+        , ("opy_w32", hvmGetOpyW32)
+        , ("dup_ctr (total)", foldM (\acc i -> hvmGetDupCtr i >>= \count -> return (acc + count)) 0 [0..65535])
+        , ("mat_ctr (total)", foldM (\acc i -> hvmGetMatCtr i >>= \count -> return (acc + count)) 0 [0..65535])
+        , ("ref_sup (total)", foldM (\acc i -> hvmGetRefSup i >>= \count -> return (acc + count)) 0 [0..65535])
+        , ("ref_dup (total)", foldM (\acc i -> hvmGetRefDup i >>= \count -> return (acc + count)) 0 [0..65535])
+        , ("ref_era (total)", foldM (\acc i -> hvmGetRefEra i >>= \count -> return (acc + count)) 0 [0..65535])
+        , ("ref_fast (total)", foldM (\acc i -> hvmGetRefFast i >>= \count -> return (acc + count)) 0 [0..65535])
+        , ("ref_slow (total)", foldM (\acc i -> hvmGetRefSlow i >>= \count -> return (acc + count)) 0 [0..65535])
+        , ("ref_itrs (total)", foldM (\acc i -> hvmGetRefItrs i >>= \count -> return (acc + count)) 0 [0..65535])
+        , ("ref_fall (total)", foldM (\acc i -> hvmGetRefFall i >>= \count -> return (acc + count)) 0 [0..65535])
+        ]
+
+  putStrLn "Interactions:"
+  forM_ baseFns $ \(name, fn) -> do
+    count <- fn
+    printf "  %s: %s\n" name (formatLargeNumber count)
+  
+  putStrLn "Ctr interactions:"
+  forM_ (MS.toList (cidToCtr book)) $ \(i, name) -> do
+    dupCount <- hvmGetDupCtr i
+    matCount <- hvmGetMatCtr i
+    when (matCount > 0 || dupCount > 0) $ do
+      printf "  %-15s: mat_ctr:%-12s dup_ctr:%-12s\n" name (formatLargeNumber matCount) (formatLargeNumber dupCount)  
+
+  putStrLn "Call interactions:"
+  forM_ (MS.toList (fidToFun book)) $ \(fid, (_, _)) -> do
+    refFast <- hvmGetRefFast fid
+    refSlow <- hvmGetRefSlow fid
+    refItrs <- hvmGetRefItrs fid
+    refFall <- hvmGetRefFall fid
+    refEra <- hvmGetRefEra fid
+    refDup <- hvmGetRefDup fid
+    refSup <- hvmGetRefSup fid
+    when (refFast > 0 || refSlow > 0) $ do
+      (printf
+        "  %-25s: fast:%-10s itrs:%-10s fall:%-10s sup:%-10s era:%-10s slow:%-10s\n"
+        (mget (fidToNam book) fid)
+        (formatLargeNumber refFast)
+        (formatLargeNumber refItrs)
+        (formatLargeNumber refFall)
+        (formatLargeNumber refSup)
+        (formatLargeNumber refEra)
+        (formatLargeNumber refSlow))
+  return ()
+
+-- Helper to format large numbers
+formatLargeNumber :: Word64 -> String
+formatLargeNumber n
+  | n < 1000000 = show n
+  | otherwise     = printf "%.3f M" (fromIntegral n / 1000000.0 :: Double)
 
 checkMainArgs :: Book -> [Core] -> IO ()
 checkMainArgs book args = do

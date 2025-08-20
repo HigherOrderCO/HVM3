@@ -19,9 +19,20 @@ Term reduce(Term term) {
     switch (tag) {
       case LET: {
         switch (lab) {
-          case LAZY: next = reduce_let(next, got(loc + 0)); continue;
-          case STRI: spush(next, sbuf, &spos); next = got(loc + 0); continue;
-          default:  printf("invalid:let"); exit(0);
+          case LAZY: {
+            next = reduce_let(next, got(loc + 0));
+            continue;
+          }
+          case STRI: {
+            HVM.interactions->let_stri++;
+            spush(next, sbuf, &spos);
+            next = got(loc + 0);
+            continue;
+          }
+          default: {
+            printf("invalid:let");
+            exit(0);
+          }
         }
       }
       case APP:

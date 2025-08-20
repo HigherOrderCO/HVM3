@@ -6,6 +6,7 @@
 // &L{<op(x0 y0) <op(x1 y1)}
 Term reduce_opx_sup(Term opx, Term sup) {
   inc_itr();
+  HVM.interactions->opx_sup++;
   Loc opx_loc = term_loc(opx);
   Loc sup_loc = term_loc(sup);
   Lab sup_lab = term_lab(sup);

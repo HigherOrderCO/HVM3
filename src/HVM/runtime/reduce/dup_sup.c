@@ -17,6 +17,7 @@ Term reduce_dup_sup(Term dup, Term sup) {
   Lab sup_lab = term_lab(sup);
   Loc sup_loc = term_loc(sup);
   if (dup_lab == sup_lab) {
+    HVM.interactions->dup_sup_anni++;
     Term tm0 = got(sup_loc + 0);
     Term tm1 = got(sup_loc + 1);
     if (term_tag(dup) == DP0) {
@@ -27,6 +28,7 @@ Term reduce_dup_sup(Term dup, Term sup) {
       return tm1;
     }
   } else {
+    HVM.interactions->dup_sup_comm++;
     Loc loc = alloc_node(4);
     Loc du0 = sup_loc + 0;
     Loc du1 = sup_loc + 1;

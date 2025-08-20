@@ -5,6 +5,7 @@
 // >op(x0 x1)
 Term reduce_opx_w32(Term opx, Term nmx) {
   inc_itr();
+  HVM.interactions->opx_w32++;
   Lab opx_lab = term_lab(opx);
   Loc opx_loc = term_loc(opx);
   Term nmy = got(opx_loc + 1);

@@ -12,6 +12,7 @@ Term reduce_ref_sup(Term ref, u16 idx) {
   Lab ref_lab = term_lab(ref);
   u16 fun_id = ref_lab;
   u16 arity  = HVM.fari[fun_id];
+  HVM.interactions->ref_sup[fun_id]++;
   if (idx >= arity) {
     printf("ERROR: Invalid index in reduce_ref_sup\n");
     exit(1);

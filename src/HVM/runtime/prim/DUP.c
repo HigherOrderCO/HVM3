@@ -3,6 +3,7 @@
 // Primitive: Dynamic Dup `@DUP(lab val λdp0λdp1(bod))`
 // Creates a DUP node with given label.
 Term DUP_f(Term ref) {
+  HVM.interactions->ref_fast[DUP_F]++;
   Loc ref_loc = term_loc(ref);
   Term lab = reduce(got(ref_loc + 0));
   Term lab_val = term_loc(lab);
@@ -35,6 +36,7 @@ Term DUP_f(Term ref) {
   set(app1 + 0, term_new(APP, 0, app0));
   set(app1 + 1, term_new(DP1, lab_val, dup));
   *HVM.itrs += 1;
+  HVM.interactions->ref_fall[DUP_F]++;
   return term_new(APP, 0, app1);
 }
 

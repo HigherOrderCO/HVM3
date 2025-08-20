@@ -5,5 +5,6 @@
 // *
 Term reduce_mat_era(Term mat, Term era) {
   inc_itr();
+  HVM.interactions->mat_era++;
   return era;
 }

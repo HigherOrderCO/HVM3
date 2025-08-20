@@ -6,6 +6,7 @@
 // &L{(a x0) (b x1)}
 Term reduce_app_sup(Term app, Term sup) {
   inc_itr();
+  HVM.interactions->app_sup++;
   Loc app_loc = term_loc(app);
   Loc sup_loc = term_loc(sup);
   Lab sup_lab = term_lab(sup);

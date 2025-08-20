@@ -10,6 +10,7 @@
 //     ~ y {K0b K1b K2b ...} }
 Term reduce_mat_sup(Term mat, Term sup) {
   inc_itr();
+  HVM.interactions->mat_sup++;
   Tag mat_tag = term_tag(mat);
   Lab mat_lab = term_lab(mat);
   Loc mat_loc = term_loc(mat);

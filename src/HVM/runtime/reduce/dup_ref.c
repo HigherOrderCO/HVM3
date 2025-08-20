@@ -15,6 +15,7 @@ Term reduce_dup_ref(Term dup, Term ref) {
   Loc ref_loc = term_loc(ref);
   Lab ref_lab = term_lab(ref);
   u64 ref_ari = HVM.fari[ref_lab];
+  HVM.interactions->ref_dup[(u16)ref_lab]++;
 
   Loc loc     = alloc_node(ref_ari * 2);
   Loc ref0    = ref_loc;

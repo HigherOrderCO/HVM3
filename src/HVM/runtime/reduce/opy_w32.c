@@ -5,6 +5,7 @@
 // x op y
 Term reduce_opy_w32(Term opy, Term w32) {
   inc_itr();
+  HVM.interactions->opy_w32++;
   Loc opy_loc = term_loc(opy);
   Tag t = term_tag(w32);
   u32 x = term_loc(got(opy_loc + 1));

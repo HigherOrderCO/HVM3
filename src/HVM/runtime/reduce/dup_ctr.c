@@ -15,6 +15,7 @@ Term reduce_dup_ctr(Term dup, Term ctr) {
   Loc ctr_loc = term_loc(ctr);
   Lab ctr_lab = term_lab(ctr);
   u64 ctr_ari = HVM.cari[ctr_lab];
+  HVM.interactions->dup_ctr[(u16)ctr_lab]++;
 
   Loc loc     = alloc_node(ctr_ari * 2);
   Loc ctr0    = ctr_loc;
