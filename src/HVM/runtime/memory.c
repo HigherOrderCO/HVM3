@@ -46,6 +46,15 @@ void hvm_init() {
     HVM.cadt[i] = 0;
     HVM.fari[i] = 0;
   }
+
+  // Heatmap defaults
+  HVM.heat_enabled = 0;
+  HVM.heat_w = 0;
+  HVM.heat_h = 0;
+  HVM.heat_mem_max = 0;
+  HVM.heat_itrs_max = 0;
+  HVM.heat_reads = NULL;
+  HVM.heat_writes = NULL;
 }
 
 static void hvm_munmap(void *ptr, size_t size, const char *name) {
@@ -65,5 +74,66 @@ void hvm_free() {
     hvm_munmap(HVM.size, sizeof(u64), "size");
     hvm_munmap(HVM.itrs, sizeof(u64), "itrs");
     hvm_munmap(HVM.frsh, sizeof(u64), "frsh");
+
+    if (HVM.heat_reads) { free(HVM.heat_reads); HVM.heat_reads = NULL; }
+    if (HVM.heat_writes) { free(HVM.heat_writes); HVM.heat_writes = NULL; }
+    HVM.heat_enabled = 0;
 }
 
+void heatmap_begin(double total_secs, u64 mem_max, u64 itrs_max, u32 w, u32 h) {
+  (void)total_secs; // Y-axis uses interactions only
+  if (HVM.heat_reads) { free(HVM.heat_reads); HVM.heat_reads = NULL; }
+  if (HVM.heat_writes) { free(HVM.heat_writes); HVM.heat_writes = NULL; }
+  HVM.heat_w = w;
+  HVM.heat_h = h;
+  HVM.heat_itrs_max = itrs_max;
+  HVM.heat_mem_max  = mem_max;
+  size_t count = (size_t)w * (size_t)h;
+  HVM.heat_reads  = (u32*)calloc(count, sizeof(u32));
+  HVM.heat_writes = (u32*)calloc(count, sizeof(u32));
+  HVM.heat_enabled = (HVM.heat_reads && HVM.heat_writes);
+}
+
+void heatmap_end() {
+  HVM.heat_enabled = 0;
+}
+
+u32 heatmap_get_width()  { return HVM.heat_w; }
+u32 heatmap_get_height() { return HVM.heat_h; }
+u32* heatmap_get_reads()  { return HVM.heat_reads; }
+u32* heatmap_get_writes() { return HVM.heat_writes; }
+
+static inline u32 map_x(Loc loc) {
+  if (HVM.heat_mem_max == 0 || HVM.heat_w <= 1) return 0;
+  u64 den = HVM.heat_mem_max - 1;
+  if (den == 0) return 0;
+  if (loc > den) loc = den;
+  return (u32)((loc * (HVM.heat_w - 1)) / den);
+}
+
+static inline u32 map_y() {
+  if (HVM.heat_itrs_max == 0 || HVM.heat_h <= 1) return 0;
+  u64 itrs = *HVM.itrs;
+  u64 den = HVM.heat_itrs_max - 1;
+  if (den == 0) return 0;
+  if (itrs > den) itrs = den;
+  return (u32)((itrs * (HVM.heat_h - 1)) / den);
+}
+
+void heatmap_on_read(Loc loc) {
+  if (!HVM.heat_enabled) return;
+  if (!HVM.heat_reads || !HVM.heat_writes) return;
+  u32 x = map_x(loc);
+  u32 y = map_y();
+  size_t idx = (size_t)y * (size_t)HVM.heat_w + (size_t)x;
+  HVM.heat_reads[idx] += 1;
+}
+
+void heatmap_on_write(Loc loc) {
+  if (!HVM.heat_enabled) return;
+  if (!HVM.heat_reads || !HVM.heat_writes) return;
+  u32 x = map_x(loc);
+  u32 y = map_y();
+  size_t idx = (size_t)y * (size_t)HVM.heat_w + (size_t)x;
+  HVM.heat_writes[idx] += 1;
+}

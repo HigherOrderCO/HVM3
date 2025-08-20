@@ -47,12 +47,15 @@ library
     c-sources:        src/HVM/Runtime.c
     extra-libraries:  c
     ghc-options:     -Wno-all
+    cc-options:      -O3 -DNDEBUG
 
 executable hvm
     default-language: GHC2024
     build-depends:    base ^>=4.21.0.0,
                       containers ^>=0.7,
-                      network
+                      network,
+                      JuicyPixels,
+                      vector
     main-is:          Main.hs
     build-depends:    HVM
     hs-source-dirs:   app

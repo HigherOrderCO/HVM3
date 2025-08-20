@@ -14,6 +14,8 @@ Term reduce(Term term) {
     Lab lab = term_lab(next);
     Loc loc = term_loc(next);
 
+    // No heatmap sampling here; reads/writes are tracked in heap accessors
+
     // On variables: substitute
     // On eliminators: move to field
     switch (tag) {
@@ -112,7 +114,9 @@ Term reduce(Term term) {
     spush(prev, sbuf, &spos);
     while (spos > stop) {
       Term host = spop(sbuf, &spos);
-      set(term_loc(host) + 0, next);
+      Loc wloc = term_loc(host) + 0;
+      set(wloc, next);
+      // No heatmap sampling here; writes are tracked in set()
       next = host;
     }
     *HVM.spos = spos;

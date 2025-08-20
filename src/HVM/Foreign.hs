@@ -207,6 +207,31 @@ foreign import ccall unsafe "Runtime.c hvm_set_cadt"
 foreign import ccall unsafe "Runtime.c hvm_set_fari"
   hvmSetFari :: Word16 -> Word16 -> IO ()
 
+-- Heatmap controls
+foreign import ccall unsafe "Runtime.c heatmap_begin"
+  heatmapBegin :: Double -> Word64 -> Word64 -> Word32 -> Word32 -> IO ()
+
+foreign import ccall unsafe "Runtime.c heatmap_end"
+  heatmapEnd :: IO ()
+
+foreign import ccall unsafe "Runtime.c heatmap_get_width"
+  heatmapGetWidth :: IO Word32
+
+foreign import ccall unsafe "Runtime.c heatmap_get_height"
+  heatmapGetHeight :: IO Word32
+
+foreign import ccall unsafe "Runtime.c heatmap_get_reads"
+  heatmapGetReads :: IO (Ptr Word32)
+
+foreign import ccall unsafe "Runtime.c heatmap_get_writes"
+  heatmapGetWrites :: IO (Ptr Word32)
+
+foreign import ccall unsafe "Runtime.c heatmap_mark_read"
+  heatmapMarkRead :: Loc -> IO ()
+
+foreign import ccall unsafe "Runtime.c heatmap_mark_write"
+  heatmapMarkWrite :: Loc -> IO ()
+
 showTerm :: Term -> String
 showTerm term =
   let tag = showTag (termTag term)

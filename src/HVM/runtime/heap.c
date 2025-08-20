@@ -11,10 +11,12 @@ u64  fresh()   { return (*HVM.frsh)++; }
 Term swap(Loc loc, Term term) {
   Term val = HVM.heap[loc];
   HVM.heap[loc] = term;
+  heatmap_on_write(loc);
   if (val == 0) {
     printf("SWAP 0 at %08llx\n", (u64)loc);
     exit(0);
   }
+  heatmap_on_read(loc);
   return val;
 }
 
@@ -24,10 +26,11 @@ Term got(Loc loc) {
     printf("GOT 0 at %08llx\n", (u64)loc);
     exit(0);
   }
+  heatmap_on_read(loc);
   return val;
 }
 
-void set(Loc loc, Term term) { HVM.heap[loc] = term; }
+void set(Loc loc, Term term) { HVM.heap[loc] = term; heatmap_on_write(loc); }
 void sub(Loc loc, Term term) { set(loc, term_set_bit(term)); }
 Term take(Loc loc) { return swap(loc, VOID); }
 
@@ -43,4 +46,3 @@ Loc alloc_node(Loc arity) {
 }
 
 void inc_itr() { (*HVM.itrs)++; }
-

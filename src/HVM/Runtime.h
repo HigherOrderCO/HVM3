@@ -99,6 +99,13 @@ typedef struct {
   u16    clen[65536]; // case length of each constructor
   u16    cadt[65536]; // ADT id of each constructor
   u16    fari[65536]; // arity of each function
+  // Heatmap instrumentation (shared; used by both host and compiled runtimes)
+  _Bool  heat_enabled;
+  u32    heat_w, heat_h;
+  u64    heat_itrs_max;   // total interactions from dry run
+  u64    heat_mem_max;    // max heap size from dry run
+  u32*   heat_reads;      // [heat_h][heat_w] row-major
+  u32*   heat_writes;     // [heat_h][heat_w] row-major
 } State;
 
 // Global runtime state
@@ -218,3 +225,30 @@ void hvm_set_cari(u16 cid, u16 arity);
 void hvm_set_fari(u16 fid, u16 arity);
 void hvm_set_clen(u16 cid, u16 cases);
 void hvm_set_cadt(u16 cid, u16 adt);
+
+// Heatmap control/query
+void heatmap_begin(double total_secs, u64 mem_max, u64 itrs_max, u32 w, u32 h);
+void heatmap_end();
+u32  heatmap_get_width();
+u32  heatmap_get_height();
+u32* heatmap_get_reads();
+u32* heatmap_get_writes();
+void heatmap_on_read(Loc loc);
+void heatmap_on_write(Loc loc);
+State* hvm_get_state();
+void hvm_set_state(State* hvm);
+void hvm_define(u16 fid, Term (*func)());
+void hvm_set_cari(u16 cid, u16 arity);
+void hvm_set_fari(u16 fid, u16 arity);
+void hvm_set_clen(u16 cid, u16 cases);
+void hvm_set_cadt(u16 cid, u16 adt);
+
+// Heatmap control/query
+void heatmap_begin(double total_secs, u64 mem_max, u64 itrs_max, u32 w, u32 h);
+void heatmap_end();
+u32  heatmap_get_width();
+u32  heatmap_get_height();
+u32* heatmap_get_reads();
+u32* heatmap_get_writes();
+void heatmap_on_read(Loc loc);
+void heatmap_on_write(Loc loc);
