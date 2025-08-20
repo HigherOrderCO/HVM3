@@ -564,6 +564,12 @@ compileFastBody book fid term@(Dup lab dp0 dp1 val bod) ctx stop itr = do
   emit $ dp0Nam ++ " = " ++ valNam ++ ";"
   emit $ dp1Nam ++ " = " ++ valNam ++ ";"
   tabDec
+  emit $ "} else if (term_tag(" ++ valNam ++ ") == SUP && term_lab(" ++ valNam ++ ") == " ++ show lab ++ ") {"
+  tabInc
+  emit $ "itrs += 1;"
+  emit $ dp0Nam ++ " = got(term_loc(" ++ valNam ++ ") + 0);"
+  emit $ dp1Nam ++ " = got(term_loc(" ++ valNam ++ ") + 1);"
+  tabDec
   emit $ "} else {"
   tabInc
   dupNam <- fresh "dup"
