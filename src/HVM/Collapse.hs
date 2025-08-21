@@ -534,7 +534,7 @@ coreToCTerm core = case core of
   Era             -> CEra
   Lam name body   -> CLam name (coreToCTerm body)
   App fun arg     -> CApp (coreToCTerm fun) (coreToCTerm arg)
-  Sup lab a b     -> CSup lab (coreToCTerm a) (coreToCTerm b)
+  Sup lab a b     -> CSup (fromIntegral lab) (coreToCTerm a) (coreToCTerm b)
   Ctr name fields -> CCtr name (map coreToCTerm fields)
   U32 val         -> CU32 val
   Chr val         -> CChr val
@@ -553,7 +553,7 @@ ctermToCore cterm = case cterm of
   CEra            -> Era
   CLam name body  -> Lam name (ctermToCore body)
   CApp fun arg    -> App (ctermToCore fun) (ctermToCore arg)
-  CSup lab a b    -> Sup lab (ctermToCore a) (ctermToCore b)
+  CSup lab a b    -> Sup (fromIntegral lab) (ctermToCore a) (ctermToCore b)
   CCtr name fields-> Ctr name (map ctermToCore fields)
   CU32 val        -> U32 val
   CChr val        -> Chr val
