@@ -187,8 +187,8 @@ collapse ((wnf -> tm) : tms) semi =
           movesArity = length moves
       in withSNat (1 + movesArity) $ \snat ->
         collapse (v : moves ++ tms) $ extend semi snat (unsafeCoerce $ buildMat t (map fst m) c (1 + movesArity))
-    CInc x       -> collapse (x : tms) $ extend semi (SS SZ) CInc
-    CDec x       -> collapse (x : tms) $ extend semi (SS SZ) CDec
+    CInc x -> CInc (collapse (x : tms) semi)
+    CDec x -> CDec (collapse (x : tms) semi)
 
 buildCtr :: forall n. String -> Int -> CtrT n
 buildCtr name = go where
@@ -218,7 +218,7 @@ buildMat t moveKeys cases = go where
   
   buildMatAux :: MatT -> [String] -> [(String, [String], CTerm)] -> Int -> Maybe CTerm -> [CTerm] -> CTerm
   buildMatAux t mk cs 1 (Just v) moves = CMat t v (zip mk (reverse moves)) cs
-  buildMatAux t mk cs n Nothing moves = unsafeCoerce $ \v -> buildMatAux t mk cs (n-1) (Just v) moves
+  buildMatAux t mk cs n Nothing  moves = unsafeCoerce $ \v -> buildMatAux t mk cs (n-1) (Just v) moves
   buildMatAux t mk cs n (Just v) moves = unsafeCoerce $ \m -> buildMatAux t mk cs (n-1) (Just v) (m:moves)
 
 
