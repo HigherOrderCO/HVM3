@@ -43,7 +43,7 @@ data CTerm
   | CInc CTerm
   | CDec CTerm
   | CCol Word32 Int CTerm -- Internal "selection tag"
-  deriving (Eq)
+  deriving (Eq, Show)
 
 data Nat = Z | S Nat
 
@@ -562,4 +562,5 @@ ctermToCore cterm = case cterm of
   CMat t v m c    -> Mat t (ctermToCore v) (map (fmap ctermToCore) m) (map (\(cn,vs,b) -> (cn,vs,ctermToCore b)) c)
   CInc x          -> Inc (ctermToCore x)
   CDec x          -> Dec (ctermToCore x)
-  _               -> error "ctermToCore: unsupported CTerm construct"
+  CCol l i x      -> ctermToCore x  -- CCol is transparent: just recurse on the inner term
+  trm             -> error ("ctermToCore: unsupported CTerm construct"  ++ (show trm))
