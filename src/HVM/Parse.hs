@@ -773,9 +773,9 @@ genFreshLabel = do
   st <- getState
   let lbl = pFreshLab st
   putState st { pFreshLab = lbl + 1 }
-  when (lbl > 0x7FFFFF) $ do
+  when (lbl > 0x7FFF) $ do
     error "Label overflow: generated label would be too large"
-  return $ lbl + 0x800000
+  return $ lbl + 0x8000
 
 -- Collects all labels used
 collectLabels :: Core -> MS.Map Lab ()

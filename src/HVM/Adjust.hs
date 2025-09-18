@@ -229,8 +229,10 @@ insertDups fresh binds term =
     genFresh :: State (Lab, MS.Map String [String]) Lab
     genFresh = do
       (lab, _) <- get
+      when (lab > 0x7FFF) $ do
+        error "Label overflow: generated label would be too large"
       modify (\(lab, uses) -> (lab + 1, uses))
-      return $ 0x800000 + lab
+      return $ 0x8000 + lab
 
     useVar :: String -> State (Lab, MS.Map String [String]) String
     useVar nam@('$':_) = do
