@@ -1,20 +1,11 @@
 {-./Type.hs-}
 {-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 
 module HVM.Collapse where
 
 import Control.Monad (ap, forM, forM_)
 import Control.Monad.IO.Class
 import Data.Char (chr, ord)
-import qualified Data.Kind as DK
-import Unsafe.Coerce (unsafeCoerce)
 import Data.IORef
 import Data.Bits ((.&.), xor, (.|.), complement, shiftR)
 import Data.Word
@@ -27,204 +18,72 @@ import System.IO.Unsafe (unsafeInterleaveIO)
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Map.Strict as MS
 
-data CTerm
-  = CVar String
-  | CRef String Word16 [CTerm]
+-- The Collapse Monad 
+-- ------------------
+-- See: https://gist.github.com/VictorTaelin/60d3bc72fb4edefecd42095e44138b41
+
+-- A bit-string
+data Bin
+  = O Bin
+  | I Bin
+  | E
+  deriving Show
+
+-- A Collapse is a tree of superposed values
+data Collapse a
+  = CSup !Lab (Collapse a) (Collapse a)
+  | CInc (Collapse a)
+  | CDec (Collapse a)
+  | CVal !a
   | CEra
-  | CLam String CTerm
-  | CApp CTerm CTerm
-  | CSup Word32 CTerm CTerm
-  | CCtr String [CTerm]
-  | CU32 Word32
-  | CChr Char
-  | COp2 Oper CTerm CTerm
-  | CLet LetT String CTerm CTerm
-  | CMat MatT CTerm [(String, CTerm)] [(String, [String], CTerm)]
-  | CInc CTerm
-  | CDec CTerm
-  | CCol Word32 Int CTerm -- Internal "selection tag"
-  deriving (Eq, Show)
+  deriving Show
 
-data Nat = Z | S Nat
+bind :: Collapse a -> (a -> Collapse b) -> Collapse b
+bind k f = fork k IM.empty where
+  -- fork :: Collapse a -> IntMap (Bin -> Bin) -> Collapse b
+  fork CEra         paths = CEra
+  fork (CVal v)     paths = pass (f v) (IM.map (\x -> x E) paths)
+  fork (CInc x)     paths = CInc (fork x paths)
+  fork (CDec x)     paths = CDec (fork x paths)
+  fork (CSup k x y) paths =
+    let lft = fork x $ IM.alter (\x -> Just (maybe (putO id) putO x)) (fromIntegral k) paths in
+    let rgt = fork y $ IM.alter (\x -> Just (maybe (putI id) putI x)) (fromIntegral k) paths in
+    CSup k lft rgt 
+  -- pass :: Collapse b -> IntMap Bin -> Collapse b
+  pass CEra         paths = CEra
+  pass (CVal v)     paths = CVal v
+  pass (CInc x)     paths = CInc (pass x paths)
+  pass (CDec x)     paths = CDec (pass x paths)
+  pass (CSup k x y) paths = case IM.lookup (fromIntegral k) paths of
+    Just (O p) -> pass x (IM.insert (fromIntegral k) p paths)
+    Just (I p) -> pass y (IM.insert (fromIntegral k) p paths)
+    Just E     -> CSup k (pass x paths) (pass y paths)
+    Nothing    -> CSup k (pass x paths) (pass y paths)
+  -- putO :: (Bin -> Bin) -> (Bin -> Bin)
+  putO bs = \x -> bs (O x)
+  -- putI :: (Bin -> Bin) -> (Bin -> Bin) 
+  putI bs = \x -> bs (I x)
 
-data SNat :: Nat -> DK.Type where
-  SZ :: SNat Z
-  SS :: SNat n -> SNat (S n)
+instance Functor Collapse where
+  fmap f (CVal v)     = CVal (f v)
+  fmap f (CSup k x y) = CSup k (fmap f x) (fmap f y)
+  fmap f (CInc x)     = CInc (fmap f x)
+  fmap f (CDec x)     = CDec (fmap f x)
+  fmap _ CEra         = CEra
 
-type family Add (n :: Nat) (m :: Nat) :: Nat where
-  Add Z     m = m
-  Add (S n) m = S (Add n m)
+instance Applicative Collapse where
+  pure  = CVal
+  (<*>) = ap
 
-addSNat :: SNat n -> SNat m -> SNat (Add n m)
-addSNat SZ     m = m
-addSNat (SS n) m = SS (addSNat n m)
-
-type family CtrT (n :: Nat) :: DK.Type where
-  CtrT Z     = CTerm
-  CtrT (S p) = CTerm -> CtrT p
-
-data SomeSNat where SomeSNat :: SNat n -> SomeSNat
-
-toSomeSNat :: Int -> SomeSNat
-toSomeSNat 0 = SomeSNat SZ
-toSomeSNat n = case toSomeSNat (n-1) of SomeSNat s -> SomeSNat (SS s)
-
-withSNat :: Int -> (forall n. SNat n -> r) -> r
-withSNat n f = case toSomeSNat n of SomeSNat s -> f s
-
-data SemiTerm where
-  SemiTerm :: SNat k -> (CTerm -> CtrT k) -> SemiTerm
-
--- An initial term with no hole.
-start :: SemiTerm
-start = SemiTerm SZ id
-
--- Replaces the leftmost hole in S, by a term T with N holes.
--- When T has no holes (N=0):
--- - If S has a leftmost hole: fill it.
--- - Else: apply S to T, extending the spine.
--- Examples:
--- - extend (_,_) X     ~> (X,_)     -- fill the leftmost hole
--- - extend (A,_) (_,X) ~> (A,(_,X)) -- fill the leftmost hole
--- - extend (A,B) X     ~> ((A,B) X) -- extend the spine
-extend :: SemiTerm -> SNat n -> CtrT n -> SemiTerm
-extend (SemiTerm k l) n ctr = case k of
-  SZ    -> SemiTerm n               (ini l n ctr)
-  SS k' -> SemiTerm (addSNat n k')  (ext k' l n ctr)
-  where ini :: (CTerm -> CTerm) -> SNat n -> CtrT n -> (CTerm -> CtrT n)
-        ext :: SNat k -> (CTerm -> CtrT (S k)) -> SNat n -> CtrT n -> CtrT (S (Add n k))
-        ini   l SZ      ctr = \k -> CApp (l k) ctr
-        ini   l (SS n') ctr = \x -> ini l n' (ctr x)
-        ext _ l SZ      ctr = l ctr
-        ext k l (SS n') ctr = \x -> ext k l n' (ctr x)
-
--- Fills remaining holes with a placeholder variable.
-complete :: SemiTerm -> CTerm
-complete (SemiTerm SZ     l) = l (CVar "F")
-complete (SemiTerm (SS p) l) = complete (SemiTerm p (l (CVar "X")))
-
-
-wnf :: CTerm -> CTerm
-wnf (CApp f x)   = app f x
-wnf (CCol l i x) = col l i x
-wnf v            = v
-
-app :: CTerm -> CTerm -> CTerm
-app (wnf -> CLam k f)   (wnf -> x) = wnf $ substCTerm k x f
-app (wnf -> CSup l x y) (wnf -> v) = CSup l (CApp x (CCol l 0 v)) (CApp y (CCol l 1 v))
-app f                   x          = CApp f x
-
-substCTerm :: String -> CTerm -> CTerm -> CTerm
-substCTerm var val term = case term of
-  CVar v | v == var -> val
-  CVar v            -> CVar v
-  CRef n f args     -> CRef n f (map (substCTerm var val) args)
-  CEra              -> CEra
-  CLam v b | v /= var -> CLam v (substCTerm var val b)
-  CLam v b          -> CLam v b
-  CApp f x          -> CApp (substCTerm var val f) (substCTerm var val x)
-  CSup l a b        -> CSup l (substCTerm var val a) (substCTerm var val b)
-  CCtr n fields     -> CCtr n (map (substCTerm var val) fields)
-  CU32 v            -> CU32 v
-  CChr c            -> CChr c
-  COp2 o a b        -> COp2 o (substCTerm var val a) (substCTerm var val b)
-  CLet m v e b | v /= var -> CLet m v (substCTerm var val e) (substCTerm var val b)
-  CLet m v e b      -> CLet m v (substCTerm var val e) b
-  CMat t v m c      -> CMat t (substCTerm var val v) 
-                          (map (\(k,e) -> (k, substCTerm var val e)) m)
-                          (map (\(cn,vs,b) -> if var `elem` vs then (cn,vs,b) else (cn,vs,substCTerm var val b)) c)
-  CInc x            -> CInc (substCTerm var val x)
-  CDec x            -> CDec (substCTerm var val x)
-  CCol l i x        -> CCol l i (substCTerm var val x)
-
-col :: Word32 -> Int -> CTerm -> CTerm
-col l i (wnf -> CVar k)     = CVar k
-col l i (wnf -> CLam k f)   = CLam k (CCol l i f)
-col l i (wnf -> CApp f x)   = CApp f x
-col l i (wnf -> CCtr n fs)  = CCtr n (map (CCol l i) fs)
-col l i (wnf -> CEra)       = CEra
-col l i (wnf -> CSup r x y) = if l == r then [x,y] !! i else CSup r (CCol l i x) (CCol l i y)
-col l i (wnf -> CCol r j x) = CCol l i (CCol r j x)
-col l i (wnf -> CU32 v)     = CU32 v
-col l i (wnf -> CChr c)     = CChr c
-col l i (wnf -> COp2 o a b) = COp2 o (CCol l i a) (CCol l i b)
-col l i (wnf -> CRef n f args) = CRef n f (map (CCol l i) args)
-col l i (wnf -> CLet m v e b) = CLet m v (CCol l i e) (CCol l i b)
-col l i (wnf -> CMat t v m c) = CMat t (CCol l i v) 
-                                   (map (\(k,e) -> (k, CCol l i e)) m)
-                                   (map (\(cn,vs,b) -> (cn,vs,CCol l i b)) c)
-col l i (wnf -> CInc x)     = CInc (CCol l i x)
-col l i (wnf -> CDec x)     = CDec (CCol l i x)
-
-collapse :: [CTerm] -> SemiTerm -> CTerm
-collapse [] semi =
-  case complete semi of
-    CApp _ x  -> x
-    otherwise -> error "unreachable"
-collapse ((wnf -> tm) : tms) semi =
-  case tm of
-    CVar k       -> collapse tms $ extend semi SZ (CVar k)
-    CLam k f     -> 
-      collapse (f : tms) $ extend semi (SS SZ) (CLam k)
-    CApp f x     -> collapse (f : x : tms) $ extend semi (SS (SS SZ)) CApp
-    CCtr n fields -> 
-      let arity = length fields
-      in withSNat arity $ \snat ->
-        collapse (fields ++ tms) $ extend semi snat (unsafeCoerce $ buildCtr n arity)
-    CEra         -> CEra
-    CSup l a b   -> CSup l (collapse (a : map (CCol l 0) tms) semi) (collapse (b : map (CCol l 1) tms) semi)
-    CCol l i x   -> collapse (x : tms) $ extend semi (SS SZ) (CCol l i)
-    CU32 v       -> collapse tms $ extend semi SZ (CU32 v)
-    CChr c       -> collapse tms $ extend semi SZ (CChr c)
-    COp2 o a b   -> collapse (a : b : tms) $ extend semi (SS (SS SZ)) (COp2 o)
-    CRef n f args -> 
-      let arity = length args
-      in withSNat arity $ \snat ->
-        collapse (args ++ tms) $ extend semi snat (unsafeCoerce $ buildRef n f arity)
-    CLet m v e b -> collapse (e : b : tms) $ extend semi (SS (SS SZ)) (CLet m v)
-    CMat t v m c -> 
-      let moves = map snd m
-          movesArity = length moves
-      in withSNat (1 + movesArity) $ \snat ->
-        collapse (v : moves ++ tms) $ extend semi snat (unsafeCoerce $ buildMat t (map fst m) c (1 + movesArity))
-    CInc x -> CInc (collapse (x : tms) semi)
-    CDec x -> CDec (collapse (x : tms) semi)
-
-buildCtr :: forall n. String -> Int -> CtrT n
-buildCtr name = go where
-  go :: Int -> CtrT n
-  go 0 = unsafeCoerce (CCtr name [])
-  go n = unsafeCoerce $ \x -> unsafeCoerce $ buildCtrAux name (n-1) [x]
-  
-  buildCtrAux :: String -> Int -> [CTerm] -> CTerm
-  buildCtrAux name 0 acc = CCtr name (reverse acc)
-  buildCtrAux name n acc = unsafeCoerce $ \x -> buildCtrAux name (n-1) (x:acc)
-
-buildRef :: forall n. String -> Word16 -> Int -> CtrT n
-buildRef name fid = go where
-  go :: Int -> CtrT n
-  go 0 = unsafeCoerce (CRef name fid [])
-  go n = unsafeCoerce $ \x -> unsafeCoerce $ buildRefAux name fid (n-1) [x]
-  
-  buildRefAux :: String -> Word16 -> Int -> [CTerm] -> CTerm  
-  buildRefAux name fid 0 acc = CRef name fid (reverse acc)
-  buildRefAux name fid n acc = unsafeCoerce $ \x -> buildRefAux name fid (n-1) (x:acc)
-
-buildMat :: forall n. MatT -> [String] -> [(String, [String], CTerm)] -> Int -> CtrT n
-buildMat t moveKeys cases = go where
-  go :: Int -> CtrT n
-  go 1 = unsafeCoerce $ \v -> CMat t v [] cases
-  go n = unsafeCoerce $ buildMatAux t moveKeys cases n Nothing []
-  
-  buildMatAux :: MatT -> [String] -> [(String, [String], CTerm)] -> Int -> Maybe CTerm -> [CTerm] -> CTerm
-  buildMatAux t mk cs 1 (Just v) moves = CMat t v (zip mk (reverse moves)) cs
-  buildMatAux t mk cs n Nothing  moves = unsafeCoerce $ \v -> buildMatAux t mk cs (n-1) (Just v) moves
-  buildMatAux t mk cs n (Just v) moves = unsafeCoerce $ \m -> buildMatAux t mk cs (n-1) (Just v) (m:moves)
-
+instance Monad Collapse where
+  return = pure
+  (>>=)  = bind
 
 -- Dup Collapser
 -- -------------
+
 collapseDupsAt :: IM.IntMap [Int] -> ReduceAt -> Book -> Loc -> HVM Core
+
 collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
   term <- reduceAt book host
   case termTag term of
@@ -383,24 +242,98 @@ collapseDupsAt state@(paths) reduceAt book host = unsafeInterleaveIO $ do
       return $ Dec val0
 
     tag -> do
-      return $ Var ("?" ++ show tag)
+      return $ Var "?"
       -- exitFailure
+
+-- Sup Collapser
+-- -------------
+
+collapseSups :: Book -> Core -> Collapse Core
+
+collapseSups book core = case core of
+
+  Var name -> do
+    return $ Var name
+
+  Ref name fid args -> do
+    args <- mapM (collapseSups book) args
+    return $ Ref name fid args
+
+  Lam name body -> do
+    body <- collapseSups book body
+    return $ Lam name body
+
+  App fun arg -> do
+    fun <- collapseSups book fun
+    arg <- collapseSups book arg
+    return $ App fun arg
+
+  Dup lab x y val body -> do
+    val <- collapseSups book val
+    body <- collapseSups book body
+    return $ Dup lab x y val body
+
+  Ctr nam fields -> do
+    fields <- mapM (collapseSups book) fields
+    return $ Ctr nam fields
+
+  Mat kin val mov css -> do
+    val <- collapseSups book val
+    mov <- mapM (\(key, expr) -> do
+      expr <- collapseSups book expr
+      return (key, expr)) mov
+    css <- mapM (\(ctr, fds, bod) -> do
+      bod <- collapseSups book bod
+      return (ctr, fds, bod)) css
+    return $ Mat kin val mov css
+
+  U32 val -> do
+    return $ U32 val
+
+  Chr val -> do
+    return $ Chr val
+
+  Op2 op x y -> do
+    x <- collapseSups book x
+    y <- collapseSups book y
+    return $ Op2 op x y
+
+  Let mode name val body -> do
+    val <- collapseSups book val
+    body <- collapseSups book body
+    return $ Let mode name val body
+
+  Era -> do
+    CEra
+
+  Sup lab tm0 tm1 -> do
+    let tm0' = collapseSups book tm0
+    let tm1' = collapseSups book tm1
+    CSup lab tm0' tm1'
+
+  Inc val -> do
+    let val' = collapseSups book val
+    CInc val'
+
+  Dec val -> do
+    let val' = collapseSups book val
+    CDec val'
 
 -- Tree Collapser
 -- --------------
---
--- doCollapseAt :: ReduceAt -> Book -> Loc -> HVM Core
--- doCollapseAt reduceAt book host = do
-  -- Step 1: Read the low-level representation into a high-level Core term.
---   initialCore <- collapseDupsAt IM.empty reduceAt book host
-  -- Step 2: Convert to our internal CTerm AST.
---   let initialCTerm = coreToCTerm initialCore
-  -- Step 3: Run the new, powerful collapse algorithm.
---   let collapsedCTerm = collapse [initialCTerm] start
-  -- Step 4: Convert the resulting Sup-tree back to the public Core type.
---   let finalCore = ctermToCore collapsedCTerm
---   return finalCore
---
+
+doCollapseAt :: ReduceAt -> Book -> Loc -> HVM (Collapse Core)
+doCollapseAt reduceAt book host = do
+  -- namesRef <- newIORef MS.empty
+  let state = (IM.empty)
+  core <- collapseDupsAt state reduceAt book host
+  return $ collapseSups book core
+
+-- Simple Queue
+-- ------------
+-- Allows pushing to an end, and popping from another.
+-- Simple purely functional implementation.
+-- Includes sqPop and sqPut.
 
 data SQ a = SQ [a] [a]
 
@@ -418,25 +351,27 @@ sqPut x (SQ xs ys) = SQ xs (x:ys)
 -- Priority Queue
 -- --------------
 -- A stable min-heap implemented with a radix tree.
+-- Orders by an Int priority and a unique Word64 key.
+-- Based on IntPSQ from the the psqueues library (https://hackage.haskell.org/package/psqueues-0.2.8.1)
+
 data PQ p v
     = Bin !Word64 !p v !Word64 !(PQ p v) !(PQ p v)
     | Tip !Word64 !p v
     | Nil
-    deriving Show
 
 pqPush :: Ord p => Word64 -> p -> v -> PQ p v -> PQ p v
 pqPush k1 p1 x1 t = case t of
-  Nil -> Tip k1 p1 x1
+  Nil                                      -> Tip k1 p1 x1
   (Tip k2 p2 x2)
-    | (p1, k1) < (p2, k2) -> link k1 p1 x1 k2 (Tip k2 p2 x2) Nil
-    | otherwise           -> link k2 p2 x2 k1 (Tip k1 p1 x1) Nil
+    | (p1, k1) < (p2, k2)                  -> link k1 p1 x1 k2 (Tip k2 p2 x2) Nil
+    | otherwise                            -> link k2 p2 x2 k1 (Tip k1 p1 x1) Nil
   (Bin k2 p2 x2 m l r)
     | nomatch k1 k2 m, (p1, k1) < (p2, k2) -> link k1 p1 x1 k2 (Bin k2 p2 x2 m l r) Nil
-    | nomatch k1 k2 m                     -> link k2 p2 x2 k1 (Tip k1 p1 x1) (pqMerge m l r)
-    | (p1, k1) < (p2, k2), zero k2 m      -> Bin k1 p1 x1 m (pqPush k2 p2 x2 l) r
-    | (p1, k1) < (p2, k2)                 -> Bin k1 p1 x1 m l (pqPush k2 p2 x2 r)
-    | zero k1 m                           -> Bin k2 p2 x2 m (pqPush k1 p1 x1 l) r
-    | otherwise                           -> Bin k2 p2 x2 m l (pqPush k1 p1 x1 r)
+    | nomatch k1 k2 m                      -> link k2 p2 x2 k1 (Tip k1 p1 x1) (pqMerge m l r)
+    | (p1, k1) < (p2, k2), zero k2 m       -> Bin k1 p1 x1 m (pqPush k2 p2 x2 l) r
+    | (p1, k1) < (p2, k2)                  -> Bin k1 p1 x1 m l (pqPush k2 p2 x2 r)
+    | zero k1 m                            -> Bin k2 p2 x2 m (pqPush k1 p1 x1 l) r
+    | otherwise                            -> Bin k2 p2 x2 m l (pqPush k1 p1 x1 r)
   where
     nomatch :: Word64 -> Word64 -> Word64 -> Bool
     nomatch k1 k2 m =
@@ -471,96 +406,74 @@ pqPop t = case t of
 
 pqMerge :: Ord p => Word64 -> PQ p v -> PQ p v -> PQ p v
 pqMerge m l r = case (l, r) of
-  (Nil, r) -> r
-  (l, Nil) -> l
+  (Nil, r)                     -> r
+  (l, Nil)                     -> l
   (Tip lk lp lx, Tip rk rp rx)
-    | (lp, lk) < (rp, rk) -> Bin lk lp lx m Nil r
-    | otherwise           -> Bin rk rp rx m l Nil
+    | (lp, lk) < (rp, rk)      -> Bin lk lp lx m Nil r
+    | otherwise                -> Bin rk rp rx m l Nil
   (Tip lk lp lx, Bin rk rp rx rm rl rr)
-    | (lp, lk) < (rp, rk) -> Bin lk lp lx m Nil r
-    | otherwise           -> Bin rk rp rx m l (pqMerge rm rl rr)
+    | (lp, lk) < (rp, rk)      -> Bin lk lp lx m Nil r
+    | otherwise                -> Bin rk rp rx m l (pqMerge rm rl rr)
   (Bin lk lp lx lm ll lr, Tip rk rp rx)
-    | (lp, lk) < (rp, rk) -> Bin lk lp lx m (pqMerge lm ll lr) r
-    | otherwise           -> Bin rk rp rx m l Nil
+    | (lp, lk) < (rp, rk)      -> Bin lk lp lx m (pqMerge lm ll lr) r
+    | otherwise                -> Bin rk rp rx m l Nil
   (Bin lk lp lx lm ll lr, Bin rk rp rx rm rl rr)
-    | (lp, lk) < (rp, rk) -> Bin lk lp lx m (pqMerge lm ll lr) r
-    | otherwise           -> Bin rk rp rx m l (pqMerge rm rl rr)
+    | (lp, lk) < (rp, rk)      -> Bin lk lp lx m (pqMerge lm ll lr) r
+    | otherwise                -> Bin rk rp rx m l (pqMerge rm rl rr)
 
--- Flattener 
--- ---------------------------------------
--- Traverses the CTerm tree, returning a list of non-superposed terms.
--- It correctly handles Inc/Dec to adjust priority without including
--- them in the final output.
-flattenPRI :: CTerm -> [CTerm]
+
+-- Flattener
+-- ---------
+
+flattenDFS :: Collapse a -> [a]
+flattenDFS (CSup k a b) = flatten a ++ flatten b
+flattenDFS (CVal x)     = [x]
+flattenDFS (CInc x)     = flattenDFS x
+flattenDFS (CDec x)     = flattenDFS x
+flattenDFS CEra         = []
+
+flattenBFS :: Collapse a -> [a]
+flattenBFS term = go term (sqNew :: SQ (Collapse a)) where
+  go (CSup k a b) sq = go CEra (sqPut b $ sqPut a $ sq)
+  go (CVal x)     sq = x : go CEra sq
+  go (CInc x)     sq = go x sq
+  go (CDec x)     sq = go x sq
+  go CEra         sq = case sqPop sq of
+    Just (v,sq) -> go v sq
+    Nothing     -> []
+
+-- Priority-Queue Flattener
+-- ------------------------
+-- * priority starts at 0
+-- * since PQ is a min-queue, we invert the scoers:
+-- * passing through (CInc t) subs 1 ; (CDec t) adds 1
+-- * when no Inc/Dec are present every node has priority == depth
+--   hence the order matches plain BFS exactly (stable heap).
+
+flattenPRI :: Collapse a -> [a]
 flattenPRI term = go 1 (Tip 0 0 term) where
-  -- The go loop takes a unique key 'i' and the priority queue 'pq'.
-  go :: Word64 -> PQ Int CTerm -> [CTerm]
   go i pq = case pqPop pq of
     Nothing -> []
     Just (_, pri, node, pq') -> case node of
-      -- Traversal-control nodes: these are consumed to guide the search.
-      CEra -> go i pq'
+      CEra   -> go i pq'
+      CVal v -> v : go i pq'
       CInc t -> go (i + 1) (pqPush i (pri - 1) t pq')
       CDec t -> go (i + 1) (pqPush i (pri + 1) t pq')
       CSup _ a b ->
-        let pq1 = pqPush (i + 0) (pri + 1) a pq'
-            pq2 = pqPush (i + 1) (pri + 1) b pq1
+        let pq1 = (pqPush (i + 0) (pri + 1) a pq')
+            pq2 = (pqPush (i + 1) (pri + 1) b pq1)
         in go (i + 2) pq2
-      
-      -- Value nodes: any other constructor is a terminal value for the
-      -- flattening process and is added to the result list.
-      val -> val : go i pq'
 
-flatten :: CTerm -> [CTerm]
-flatten term = go term (sqNew :: SQ CTerm) where
-  go (CSup k a b) sq = go CEra (sqPut b $ sqPut a $ sq)
-  go CEra         sq = case sqPop sq of { Just (v,sq) -> go v sq ; Nothing -> [] }
-  go x            sq = x : go CEra sq
+-- Default Flattener
+-- -----------------
+
+flatten :: Collapse a -> [a]
+flatten = flattenPRI
+
+-- Flat Collapser
+-- --------------
 
 doCollapseFlatAt :: ReduceAt -> Book -> Loc -> HVM [Core]
 doCollapseFlatAt reduceAt book host = do
-  initialCore <- collapseDupsAt IM.empty reduceAt book host
-  let initialCTerm = coreToCTerm initialCore
-  let collapsedCTerm = collapse [initialCTerm] start
-  let flattenedCTerms = flattenPRI collapsedCTerm
-  let finalCores = map ctermToCore flattenedCTerms
-  return finalCores
-
--- Convert Core to CTerm
-coreToCTerm :: Core -> CTerm
-coreToCTerm core = case core of
-  Var name        -> CVar name
-  Ref name fid args -> CRef name fid (map coreToCTerm args)
-  Era             -> CEra
-  Lam name body   -> CLam name (coreToCTerm body)
-  App fun arg     -> CApp (coreToCTerm fun) (coreToCTerm arg)
-  Sup lab a b     -> CSup (fromIntegral lab) (coreToCTerm a) (coreToCTerm b)
-  Ctr name fields -> CCtr name (map coreToCTerm fields)
-  U32 val         -> CU32 val
-  Chr val         -> CChr val
-  Op2 oper a b    -> COp2 oper (coreToCTerm a) (coreToCTerm b)
-  Let m n v f     -> CLet m n (coreToCTerm v) (coreToCTerm f)
-  Mat t v m c     -> CMat t (coreToCTerm v) (map (fmap coreToCTerm) m) (map (\(cn,vs,b) -> (cn,vs,coreToCTerm b)) c)
-  Inc x           -> CInc (coreToCTerm x)
-  Dec x           -> CDec (coreToCTerm x)
-  _               -> error "coreToCTerm: unsupported Core construct"
-
--- Convert CTerm to Core
-ctermToCore :: CTerm -> Core
-ctermToCore cterm = case cterm of
-  CVar name       -> Var name
-  CRef name fid args -> Ref name fid (map ctermToCore args)
-  CEra            -> Era
-  CLam name body  -> Lam name (ctermToCore body)
-  CApp fun arg    -> App (ctermToCore fun) (ctermToCore arg)
-  CSup lab a b    -> Sup (fromIntegral lab) (ctermToCore a) (ctermToCore b)
-  CCtr name fields-> Ctr name (map ctermToCore fields)
-  CU32 val        -> U32 val
-  CChr val        -> Chr val
-  COp2 oper a b   -> Op2 oper (ctermToCore a) (ctermToCore b)
-  CLet m n v f    -> Let m n (ctermToCore v) (ctermToCore f)
-  CMat t v m c    -> Mat t (ctermToCore v) (map (fmap ctermToCore) m) (map (\(cn,vs,b) -> (cn,vs,ctermToCore b)) c)
-  CInc x          -> Inc (ctermToCore x)
-  CDec x          -> Dec (ctermToCore x)
-  CCol l i x      -> ctermToCore x  -- CCol is transparent: just recurse on the inner term
-  trm             -> error ("ctermToCore: unsupported CTerm construct"  ++ (show trm))
+  coll <- doCollapseAt reduceAt book host
+  return $ flatten coll
