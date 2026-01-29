@@ -5,4 +5,4 @@ package *
 
 source-repository-package
   type: git
-  location: https://github.com/HigherOrderCO/hs-highlight
+  location: https://github.com/HigherOrderCO-archive/hs-highlight
